@@ -1,0 +1,110 @@
+<form class="pf2e-sound-config-form">
+  {{!-- Slot Display Name --}}
+  <div class="form-group">
+    <label for="slot-name"><i class="fa-solid fa-tag"></i> Slot Label</label>
+    <div class="form-fields">
+      <input type="text" id="slot-name" name="name" value="{{slot.name}}" placeholder="e.g., Boss Battle Theme" required />
+    </div>
+    <p class="notes">Title displayed on the soundboard button.</p>
+  </div>
+
+  {{!-- Source Type Selector --}}
+  <div class="form-group">
+    <label for="slot-source-type"><i class="fa-solid fa-layer-group"></i> Audio Source</label>
+    <div class="form-fields">
+      <select id="slot-source-type" name="type">
+        <option value="playlist-sound" {{#if (eq slot.type "playlist-sound")}}selected{{/if}}>Playlist Sound (Foundry Playlist)</option>
+        <option value="playlist" {{#if (eq slot.type "playlist")}}selected{{/if}}>Whole Playlist (Play / Shuffle)</option>
+        <option value="file" {{#if (eq slot.type "file")}}selected{{/if}}>Direct Audio File (SFX / Custom File)</option>
+      </select>
+    </div>
+  </div>
+
+  {{!-- Playlist Selection (for Playlist & PlaylistSound) --}}
+  <div class="form-group group-playlist">
+    <label for="slot-playlist"><i class="fa-solid fa-list"></i> Target Playlist</label>
+    <div class="form-fields">
+      <select id="slot-playlist" name="playlistId">
+        {{#each playlists}}
+        <option value="{{this.id}}" {{#if (eq ../slot.playlistId this.id)}}selected{{/if}}>{{this.name}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+
+  {{!-- Sound Selection (for PlaylistSound) --}}
+  <div class="form-group group-sound">
+    <label for="slot-sound"><i class="fa-solid fa-music"></i> Target Track</label>
+    <div class="form-fields">
+      <select id="slot-sound" name="soundId">
+        {{#each sounds}}
+        <option value="{{this.id}}" {{#if (eq ../slot.soundId this.id)}}selected{{/if}}>{{this.name}}</option>
+        {{else}}
+        <option value="">(No sounds in playlist)</option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+
+  {{!-- Direct File Input (for File / SFX) --}}
+  <div class="form-group group-file" style="display: none;">
+    <label for="slot-file-path"><i class="fa-solid fa-file-audio"></i> Audio File Path</label>
+    <div class="form-fields">
+      <input type="text" id="slot-file-path" name="src" value="{{slot.src}}" placeholder="sounds/music/theme.ogg" />
+      <button type="button" class="file-picker-btn" title="Browse Audio Files">
+        <i class="fa-solid fa-folder-open"></i>
+      </button>
+    </div>
+  </div>
+
+  {{!-- Playback Mode --}}
+  <div class="form-group">
+    <label for="slot-mode"><i class="fa-solid fa-arrows-rotate"></i> Playback Mode</label>
+    <div class="form-fields">
+      <select id="slot-mode" name="mode">
+        {{#each modes}}
+        <option value="{{this.key}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+        {{/each}}
+      </select>
+    </div>
+  </div>
+
+  {{!-- Icon Input --}}
+  <div class="form-group">
+    <label for="slot-icon"><i class="fa-solid fa-icons"></i> Button Icon (FontAwesome)</label>
+    <div class="form-fields">
+      <input type="text" id="slot-icon" name="icon" value="{{slot.icon}}" placeholder="fa-solid fa-swords" />
+    </div>
+    <p class="notes">Examples: <code>fa-solid fa-swords</code>, <code>fa-solid fa-dragon</code>, <code>fa-solid fa-beer-mug-empty</code>, <code>fa-solid fa-campground</code>, <code>fa-solid fa-bolt</code></p>
+  </div>
+
+  {{!-- Color Theme Swatches --}}
+  <div class="form-group">
+    <label><i class="fa-solid fa-palette"></i> Button Color Theme</label>
+    <div class="color-swatches-grid">
+      {{#each colorThemes}}
+      <label class="color-swatch-label" title="{{this.label}}">
+        <input type="radio" name="slot-color" value="{{this.key}}" {{#if this.selected}}checked{{/if}} />
+        <span class="color-swatch-box" style="background-color: {{this.color}};"></span>
+      </label>
+      {{/each}}
+    </div>
+  </div>
+
+  {{!-- Slot Default Volume --}}
+  <div class="form-group">
+    <label for="slot-volume"><i class="fa-solid fa-volume-high"></i> Default Volume</label>
+    <div class="form-fields">
+      <input type="range" id="slot-volume" min="0" max="1" step="0.05" value="{{slot.volume}}" />
+      <span id="slot-volume-display" class="range-value">{{slot.displayVolume}}%</span>
+    </div>
+  </div>
+
+  {{!-- Fade In / Out Duration --}}
+  <div class="form-group">
+    <label for="slot-fade"><i class="fa-solid fa-sliders"></i> Crossfade Duration (s)</label>
+    <div class="form-fields">
+      <input type="number" id="slot-fade" min="0" max="5" step="0.5" value="{{slot.fadeDuration}}" />
+    </div>
+  </div>
+</form>

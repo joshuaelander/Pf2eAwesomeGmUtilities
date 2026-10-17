@@ -1,0 +1,82 @@
+{
+  "PF2E_AWESOME_GM": {
+    "ModuleName": "PF2e Awesome GM Utilities",
+    "SoundPad": {
+      "Title": "Music & SFX Sound Pad",
+      "MacroName": "Open Sound Pad",
+      "StopAllMacroName": "Panic: Stop All Sounds",
+      "Panic": "Panic: Stop All",
+      "PanicTooltip": "Instantly stop and fade all playing sounds",
+      "MasterVolume": "Master Volume",
+      "Mute": "Mute",
+      "Unmute": "Unmute",
+      "ToggleCompact": "Toggle Compact / Live Mode",
+      "ToggleEdit": "Toggle Edit Mode",
+      "AddBank": "New Bank",
+      "BankOptions": "Bank Options",
+      "DeleteBank": "Delete Bank",
+      "ConfirmDeleteBank": "Are you sure you want to delete this soundboard bank? All mapped pads in this bank will be lost.",
+      "AddSlot": "Add Sound Slot",
+      "DropHint": "Drag & drop sounds here from the Playlist sidebar",
+      "Playing": "Playing",
+      "Paused": "Paused",
+      "Idle": "Idle",
+      "Previewing": "Sampling (Private GM Preview)",
+      "Broadcasting": "Broadcasting to World",
+      "ClickToPlay": "Click to Play",
+      "ClickToStop": "Click to Stop",
+      "RightClickToEdit": "Right-click or click gear to configure",
+      "PreviewTooltip": "Sample / Audition this track privately (players cannot hear this)",
+      "NowPlaying": "Now Playing",
+      "NoActiveTrack": "No track currently playing",
+      "SeekForward": "Skip +10s",
+      "SeekBackward": "Skip -10s",
+      "Volume": "Track Volume",
+      "EmptySlot": "Empty Slot",
+      "AssignSound": "Click or drop sound to assign",
+      "Config": {
+        "Title": "Configure Sound Pad Slot",
+        "Label": "Button Label",
+        "LabelHint": "Display title for the button on the sound pad",
+        "SourceType": "Audio Source Type",
+        "SourcePlaylistSound": "Playlist Sound (from Foundry Playlist)",
+        "SourcePlaylist": "Whole Playlist (plays/shuffles playlist)",
+        "SourceFile": "Audio File (direct file / SFX)",
+        "SelectPlaylist": "Select Playlist",
+        "SelectSound": "Select Track",
+        "FilePath": "Audio File Path",
+        "ColorTheme": "Button Color Theme",
+        "Icon": "Icon (FontAwesome)",
+        "IconPlaceholder": "e.g., fa-solid fa-swords",
+        "PlaybackMode": "Playback Mode",
+        "ModeToggle": "Toggle (Click to start, click to stop)",
+        "ModeLoop": "Looping Music (Repeats continuously)",
+        "ModeOneshot": "One-Shot (Plays once and stops, ideal for SFX)",
+        "ModeRestart": "Restart on Press (Re-triggers from start)",
+        "Volume": "Default Volume",
+        "FadeDuration": "Fade In/Out Duration (seconds)",
+        "Save": "Save Slot",
+        "Delete": "Clear Slot",
+        "Cancel": "Cancel"
+      }
+    },
+    "Settings": {
+      "AutoStopOtherMusic": {
+        "Name": "Auto-Stop Other Music Tracks",
+        "Hint": "When triggering a music track (loop/toggle), automatically fade out other currently playing music tracks on the sound pad."
+      },
+      "DefaultFadeDuration": {
+        "Name": "Default Fade Duration",
+        "Hint": "Default duration in seconds for smooth crossfading between music tracks."
+      },
+      "SoundPadOpacity": {
+        "Name": "Sound Pad Opacity",
+        "Hint": "Set window opacity percentage so you can see the game canvas underneath."
+      },
+      "SoundPadHotbarMacro": {
+        "Name": "Auto-Sync GM Sound Pad Macros",
+        "Hint": "Automatically creates handy Sound Pad and Panic Stop macros in the Macro Directory."
+      }
+    }
+  }
+}

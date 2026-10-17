@@ -1,0 +1,44 @@
+{
+  "id": "pf2e-awesome-gm-utilities",
+  "title": "PF2e Awesome GM Utilities",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "url": "https://github.com/joshuaelander/Pf2eAwesomeGmUtilities",
+  "manifest": "https://raw.githubusercontent.com/joshuaelander/Pf2eAwesomeGmUtilities/main/module.json",
+  "download": "https://github.com/joshuaelander/Pf2eAwesomeGmUtilities/archive/refs/heads/main.zip",
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/sound-pad.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "languages/en.json"
+    }
+  ],
+  "socket": true,
+  "authors": [
+    {
+      "name": "Aeneas"
+    }
+  ],
+  "description": "Essential widgets, utilities, and UI improvements for Pathfinder 2e Game Masters. Features a fast, detachable Music & SFX Sound Pad with seek/sampling scrubbers, multi-bank presets, drag-and-drop playlist mapping, and live volume controls.",
+  "relationships": {
+    "systems": [
+      {
+        "id": "pf2e",
+        "type": "system",
+        "compatibility": {}
+      }
+    ]
+  },
+  "flags": {
+    "canUpload": true
+  }
+}

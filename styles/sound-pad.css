@@ -1,0 +1,720 @@
+/**
+ * PF2e Awesome GM Utilities - Sound Pad Styles
+ * Rich PF2e aesthetics: Deep slate, obsidian, rich crimson/gold accents,
+ * tactile soundboard pads, animated equalizers, and interactive scrubbers.
+ */
+
+:root {
+  --pf2e-sound-bg: #15171e;
+  --pf2e-sound-card-bg: rgba(26, 29, 38, 0.95);
+  --pf2e-sound-border: #3b3f4f;
+  --pf2e-sound-gold: #c59b27;
+  --pf2e-sound-gold-bright: #e6c55d;
+  --pf2e-sound-crimson: #8b1e1e;
+  --pf2e-sound-crimson-bright: #c93b3b;
+  --pf2e-sound-arcane: #8b5cf6;
+  --pf2e-sound-text: #e2e8f0;
+  --pf2e-sound-text-dim: #94a3b8;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Window & Main Container                                                   */
+/* ------------------------------------------------------------------------- */
+
+.app.pf2e-sound-pad-window,
+.pf2e-sound-pad-window {
+  background: var(--pf2e-sound-bg) !important;
+  color: var(--pf2e-sound-text) !important;
+  border: 1px solid var(--pf2e-sound-gold) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 0 15px rgba(197, 155, 39, 0.25) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.pf2e-sound-pad-window .window-header {
+  background: linear-gradient(180deg, #2a1515 0%, #171111 100%) !important;
+  border-bottom: 1px solid var(--pf2e-sound-gold) !important;
+  color: var(--pf2e-sound-gold-bright) !important;
+  font-weight: 600;
+}
+
+.pf2e-sound-pad-container {
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 12px;
+  min-width: 480px;
+  box-sizing: border-box;
+  font-family: var(--font-primary, "Signika", sans-serif);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Header Navigation & Master Toolbar                                        */
+/* ------------------------------------------------------------------------- */
+
+.sound-pad-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(20, 22, 29, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.bank-tabs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
+}
+
+.bank-tab {
+  background: rgba(35, 39, 52, 0.85);
+  color: var(--pf2e-sound-text-dim);
+  border: 1px solid var(--pf2e-sound-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.bank-tab:hover {
+  background: rgba(50, 56, 75, 0.95);
+  color: var(--pf2e-sound-text);
+  border-color: var(--pf2e-sound-gold);
+}
+
+.bank-tab.active {
+  background: linear-gradient(180deg, #701a1a 0%, #451010 100%);
+  color: #fff;
+  border-color: var(--pf2e-sound-gold-bright);
+  box-shadow: 0 0 8px rgba(197, 155, 39, 0.4);
+}
+
+.bank-action-btn {
+  background: transparent;
+  color: var(--pf2e-sound-gold);
+  border: 1px dashed var(--pf2e-sound-gold);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 0.8em;
+  transition: background 0.2s;
+}
+
+.bank-action-btn:hover {
+  background: rgba(197, 155, 39, 0.2);
+}
+
+/* Master Toolbar */
+.master-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panic-btn {
+  background: linear-gradient(180deg, #a82020 0%, #660e0e 100%);
+  color: #fff;
+  border: 1px solid #d44848;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-weight: bold;
+  font-size: 0.85em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.panic-btn:hover {
+  background: linear-gradient(180deg, #c93030 0%, #851212 100%);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+  transform: translateY(-1px);
+}
+
+.master-volume-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 4px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  flex: 1;
+  max-width: 220px;
+}
+
+.vol-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--pf2e-sound-gold);
+  cursor: pointer;
+  padding: 2px;
+  font-size: 0.9em;
+}
+
+.master-volume-group input[type="range"] {
+  flex: 1;
+  accent-color: var(--pf2e-sound-gold);
+  height: 4px;
+  cursor: pointer;
+}
+
+.vol-pct {
+  font-size: 0.75em;
+  color: var(--pf2e-sound-text-dim);
+  min-width: 32px;
+  text-align: right;
+  font-family: monospace;
+}
+
+.toolbar-toggles {
+  display: flex;
+  gap: 4px;
+}
+
+.tool-btn {
+  background: rgba(40, 44, 58, 0.7);
+  color: var(--pf2e-sound-text-dim);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tool-btn:hover,
+.tool-btn.active {
+  background: rgba(197, 155, 39, 0.25);
+  color: var(--pf2e-sound-gold-bright);
+  border-color: var(--pf2e-sound-gold);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Soundboard Pad Grid                                                       */
+/* ------------------------------------------------------------------------- */
+
+.sound-pad-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 4px 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.sound-pad-btn {
+  position: relative;
+  background: var(--pf2e-sound-card-bg);
+  border: 1.5px solid var(--theme-border, #475569);
+  border-radius: 8px;
+  padding: 10px 8px 12px;
+  min-height: 85px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.sound-pad-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--pf2e-sound-gold);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5), 0 0 10px var(--theme-glow, rgba(197, 155, 39, 0.3));
+}
+
+.sound-pad-btn:active {
+  transform: translateY(1px);
+}
+
+/* Active Playing State */
+.sound-pad-btn.is-playing {
+  background: radial-gradient(circle at center, var(--theme-color) 0%, #151822 100%) !important;
+  border-color: var(--pf2e-sound-gold-bright) !important;
+  box-shadow: 0 0 16px var(--theme-glow), inset 0 0 12px rgba(255, 255, 255, 0.15) !important;
+  animation: soundPadPulse 2.5s infinite alternate ease-in-out;
+}
+
+/* Private Auditioning State */
+.sound-pad-btn.is-previewing {
+  background: radial-gradient(circle at center, #4c1d95 0%, #151822 100%) !important;
+  border-color: var(--pf2e-sound-arcane) !important;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.5) !important;
+}
+
+@keyframes soundPadPulse {
+  0% { border-color: var(--pf2e-sound-gold); }
+  50% { border-color: #fff; box-shadow: 0 0 20px var(--theme-glow); }
+  100% { border-color: var(--pf2e-sound-gold); }
+}
+
+.sound-pad-btn.is-empty {
+  border-style: dashed;
+  opacity: 0.65;
+  background: rgba(20, 22, 30, 0.4);
+}
+
+.sound-pad-btn.is-empty:hover {
+  opacity: 1;
+  border-style: solid;
+}
+
+.sound-pad-btn.drag-target {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.6) !important;
+  background: rgba(34, 197, 94, 0.15) !important;
+}
+
+/* Slot Inner Content */
+.pad-header-tag {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7em;
+  margin-bottom: 4px;
+}
+
+.pad-mode-badge {
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--pf2e-sound-gold);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-weight: bold;
+}
+
+.pad-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.pad-icon {
+  font-size: 1.5em;
+  color: var(--theme-border, #94a3b8);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+  transition: transform 0.2s ease;
+}
+
+.sound-pad-btn:hover .pad-icon {
+  transform: scale(1.1);
+  color: #fff;
+}
+
+.pad-title {
+  font-size: 0.82em;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--pf2e-sound-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Equalizer Bars Animation */
+.sound-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.eq-bar {
+  width: 3px;
+  background: var(--pf2e-sound-gold-bright);
+  border-radius: 1px;
+}
+
+.bar-1 { height: 40%; animation: eqBounce 0.6s infinite ease-in-out alternate; }
+.bar-2 { height: 90%; animation: eqBounce 0.4s infinite ease-in-out 0.2s alternate; }
+.bar-3 { height: 60%; animation: eqBounce 0.7s infinite ease-in-out 0.1s alternate; }
+
+@keyframes eqBounce {
+  0% { height: 20%; }
+  100% { height: 100%; }
+}
+
+.preview-badge {
+  color: var(--pf2e-sound-arcane);
+  font-size: 1em;
+}
+
+/* Slot Action Buttons (Overlay) */
+.slot-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: none;
+  gap: 3px;
+  z-index: 5;
+}
+
+.sound-pad-btn:hover .slot-actions,
+.edit-mode .slot-actions {
+  display: flex;
+}
+
+.slot-btn {
+  background: rgba(15, 17, 23, 0.85);
+  color: var(--pf2e-sound-text-dim);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 0.65em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.slot-btn:hover {
+  background: var(--pf2e-sound-gold);
+  color: #000;
+  border-color: #fff;
+}
+
+.slot-delete-btn:hover {
+  background: #ef4444 !important;
+  color: #fff !important;
+}
+
+.pad-vol-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: var(--theme-border, var(--pf2e-sound-gold));
+  opacity: 0.6;
+}
+
+/* Add Slot Button */
+.add-slot-btn {
+  background: rgba(25, 28, 38, 0.4);
+  border: 1.5px dashed var(--pf2e-sound-border);
+  border-radius: 8px;
+  min-height: 85px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--pf2e-sound-text-dim);
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.add-slot-btn:hover {
+  background: rgba(40, 45, 60, 0.6);
+  border-color: var(--pf2e-sound-gold);
+  color: var(--pf2e-sound-gold-bright);
+}
+
+/* ------------------------------------------------------------------------- */
+/* Active Track Dock & Seek Scrubber                                         */
+/* ------------------------------------------------------------------------- */
+
+.active-track-dock {
+  background: linear-gradient(180deg, #1f2330 0%, #13151d 100%);
+  border: 1px solid var(--pf2e-sound-gold);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.active-track-dock.sampling-dock {
+  border-color: var(--pf2e-sound-arcane);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+}
+
+.dock-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 130px;
+  max-width: 170px;
+}
+
+.dock-status-tag .dock-tag {
+  font-size: 0.68em;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dock-tag.broadcasting {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.dock-tag.sampling {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.dock-title {
+  font-size: 0.85em;
+  font-weight: bold;
+  color: var(--pf2e-sound-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.dock-subtitle {
+  font-size: 0.72em;
+  color: var(--pf2e-sound-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+/* Scrubber & Core Controls */
+.dock-player-core {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 4px;
+}
+
+.dock-transport-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transport-btn {
+  background: rgba(35, 39, 52, 0.8);
+  color: var(--pf2e-sound-text);
+  border: 1px solid var(--pf2e-sound-border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.transport-btn:hover {
+  background: rgba(55, 62, 85, 0.9);
+  border-color: var(--pf2e-sound-gold);
+}
+
+.transport-btn.play-pause-btn {
+  width: 32px;
+  height: 28px;
+  background: var(--pf2e-sound-crimson);
+  border-color: var(--pf2e-sound-crimson-bright);
+  font-size: 0.85em;
+}
+
+.transport-btn.play-pause-btn:hover {
+  background: var(--pf2e-sound-crimson-bright);
+  box-shadow: 0 0 8px rgba(201, 59, 59, 0.6);
+}
+
+/* Timeline Scrubber */
+.dock-scrubber-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.time-label {
+  font-size: 0.72em;
+  color: var(--pf2e-sound-text-dim);
+  font-family: monospace;
+  min-width: 36px;
+}
+
+.slider-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.slider-wrapper input[type="range"] {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--pf2e-sound-gold-bright);
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+/* Dock Side Controls */
+.dock-side-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.broadcast-live-btn {
+  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%);
+  color: #fff;
+  border: 1px solid #4ade80;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75em;
+  font-weight: bold;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  animation: pulseGreen 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0% { box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 10px rgba(34, 197, 94, 0.8); }
+  100% { box-shadow: 0 0 4px rgba(34, 197, 94, 0.4); }
+}
+
+.dock-volume-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75em;
+  color: var(--pf2e-sound-text-dim);
+}
+
+.dock-volume-group input[type="range"] {
+  width: 65px;
+  height: 4px;
+  accent-color: var(--pf2e-sound-gold);
+}
+
+.vol-label {
+  font-family: monospace;
+  min-width: 30px;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Compact Mode                                                              */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-sound-pad-container.compact-mode .sound-pad-header {
+  padding: 4px 6px;
+}
+
+.pf2e-sound-pad-container.compact-mode .bank-tabs-nav {
+  padding-bottom: 3px;
+}
+
+.pf2e-sound-pad-container.compact-mode .sound-pad-grid {
+  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  gap: 6px;
+}
+
+.pf2e-sound-pad-container.compact-mode .sound-pad-btn {
+  min-height: 65px;
+  padding: 6px 4px 8px;
+}
+
+.pf2e-sound-pad-container.compact-mode .pad-icon {
+  font-size: 1.2em;
+}
+
+.pf2e-sound-pad-container.compact-mode .pad-title {
+  font-size: 0.75em;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Slot Config Dialog & Color Swatches                                       */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-sound-config-dialog .window-content {
+  background: var(--pf2e-sound-bg);
+  color: var(--pf2e-sound-text);
+}
+
+.pf2e-sound-config-form .form-group {
+  margin-bottom: 10px;
+}
+
+.color-swatches-grid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.color-swatch-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.color-swatch-label input[type="radio"] {
+  display: none;
+}
+
+.color-swatch-box {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  display: block;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.color-swatch-label input[type="radio"]:checked + .color-swatch-box {
+  border-color: #fff;
+  transform: scale(1.15);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+}
+
+/* Sidebar Header Button */
+.pf2e-sound-pad-btn {
+  background: linear-gradient(180deg, #3b1717 0%, #200c0c 100%) !important;
+  color: var(--pf2e-sound-gold-bright) !important;
+  border: 1px solid var(--pf2e-sound-gold) !important;
+  font-weight: bold !important;
+}
+
+.pf2e-sound-pad-btn:hover {
+  background: linear-gradient(180deg, #5c2020 0%, #301010 100%) !important;
+  box-shadow: 0 0 8px rgba(197, 155, 39, 0.4) !important;
+}

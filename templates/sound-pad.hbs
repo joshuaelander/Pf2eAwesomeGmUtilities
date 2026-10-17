@@ -1,0 +1,210 @@
+<div class="pf2e-sound-pad-container {{#if isCompactMode}}compact-mode{{/if}} {{#if isEditMode}}edit-mode{{/if}}">
+
+  {{!-- TOP HEADER CONTROLS --}}
+  <header class="sound-pad-header">
+    {{!-- Bank Navigation Tabs --}}
+    <nav class="bank-tabs-nav">
+      {{#each banks}}
+      <button type="button" 
+              class="bank-tab {{#if this.isActive}}active{{/if}}" 
+              data-bank-id="{{this.id}}"
+              title="{{this.name}}">
+        <i class="{{this.icon}}"></i>
+        <span class="bank-name">{{this.name}}</span>
+      </button>
+      {{/each}}
+      
+      {{#if isEditMode}}
+      <button type="button" class="bank-action-btn" id="add-bank-btn" title="Add New Bank">
+        <i class="fa-solid fa-plus"></i>
+      </button>
+      <button type="button" class="bank-action-btn" id="bank-options-btn" title="Bank Options">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+      {{/if}}
+    </nav>
+
+    {{!-- Master Controls Toolbar --}}
+    <div class="master-toolbar">
+      {{!-- Master Panic Button --}}
+      <button type="button" class="panic-btn" id="panic-stop-btn" title="Stop All Playing Sounds (Panic)">
+        <i class="fa-solid fa-ban"></i>
+        <span>Stop All</span>
+      </button>
+
+      {{!-- Master Volume Slider --}}
+      <div class="master-volume-group" title="Soundboard Master Volume">
+        <button type="button" class="vol-icon-btn" id="master-mute-btn" title="{{#if isMuted}}Unmute{{else}}Mute{{/if}}">
+          <i class="fa-solid {{#if isMuted}}fa-volume-xmark{{else}}fa-volume-high{{/if}}"></i>
+        </button>
+        <input type="range" 
+               id="master-volume-slider" 
+               min="0" 
+               max="1" 
+               step="0.05" 
+               value="{{masterVolume}}" />
+        <span class="vol-pct" id="master-vol-display">{{masterVolumePct}}%</span>
+      </div>
+
+      {{!-- Utility Toggles --}}
+      <div class="toolbar-toggles">
+        <button type="button" 
+                class="tool-btn {{#if isEditMode}}active{{/if}}" 
+                id="toggle-edit-mode" 
+                title="{{#if isEditMode}}Switch to Live Pad{{else}}Edit Soundboard Layout{{/if}}">
+          <i class="fa-solid {{#if isEditMode}}fa-check{{else}}fa-pen-to-square{{/if}}"></i>
+        </button>
+
+        <button type="button" 
+                class="tool-btn {{#if isCompactMode}}active{{/if}}" 
+                id="toggle-compact-mode" 
+                title="Toggle Compact Mode">
+          <i class="fa-solid {{#if isCompactMode}}fa-expand{{else}}fa-compress{{/if}}"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  {{!-- SOUNDBOARD PADS GRID --}}
+  <main class="sound-pad-grid">
+    {{#each slots}}
+    <div class="sound-pad-btn {{#if this.isPlaying}}is-playing{{/if}} {{#if this.isPreviewing}}is-previewing{{/if}} {{#if this.isEmpty}}is-empty{{/if}} theme-{{this.color}}"
+         data-slot-id="{{this.id}}"
+         style="--theme-color: {{this.themeColor}}; --theme-border: {{this.themeBorder}}; --theme-glow: {{this.themeGlow}};">
+      
+      {{!-- Slot Header Tag --}}
+      <div class="pad-header-tag">
+        <span class="pad-mode-badge">{{this.modeLabel}}</span>
+        {{#if this.isPlaying}}
+        <div class="sound-eq">
+          <span class="eq-bar bar-1"></span>
+          <span class="eq-bar bar-2"></span>
+          <span class="eq-bar bar-3"></span>
+        </div>
+        {{/if}}
+        {{#if this.isPreviewing}}
+        <span class="preview-badge" title="Auditioning privately"><i class="fa-solid fa-headphones"></i></span>
+        {{/if}}
+      </div>
+
+      {{!-- Slot Icon & Title --}}
+      <div class="pad-content">
+        <i class="{{this.icon}} pad-icon"></i>
+        <span class="pad-title">{{this.name}}</span>
+      </div>
+
+      {{!-- Slot Actions (Hover or Edit Mode) --}}
+      <div class="slot-actions">
+        {{#unless this.isEmpty}}
+        <button type="button" 
+                class="slot-btn slot-preview-btn" 
+                data-slot-id="{{this.id}}" 
+                title="Sample Privately (GM Audition)">
+          <i class="fa-solid fa-headphones"></i>
+        </button>
+        {{/unless}}
+
+        <button type="button" 
+                class="slot-btn slot-edit-btn" 
+                data-slot-id="{{this.id}}" 
+                title="Configure Slot">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+
+        {{#if ../isEditMode}}
+        <button type="button" 
+                class="slot-btn slot-delete-btn" 
+                data-slot-id="{{this.id}}" 
+                title="Remove Slot">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+        {{/if}}
+      </div>
+
+      {{!-- Subtle Volume Indicator Bar --}}
+      <div class="pad-vol-indicator" style="width: {{this.displayVolume}}%;"></div>
+    </div>
+    {{/each}}
+
+    {{#if isEditMode}}
+    <button type="button" class="add-slot-btn" id="add-slot-btn" title="Add New Slot">
+      <i class="fa-solid fa-plus"></i>
+      <span>Add Sound Slot</span>
+    </button>
+    {{/if}}
+  </main>
+
+  {{!-- ACTIVE TRACK DOCK & SEEK SCRUBBER --}}
+  {{#if activeTrack}}
+  <footer class="active-track-dock {{#if activeTrack.isSampling}}sampling-dock{{/if}}">
+    {{!-- Track Info --}}
+    <div class="dock-info">
+      <div class="dock-status-tag">
+        {{#if activeTrack.isSampling}}
+        <span class="dock-tag sampling"><i class="fa-solid fa-headphones"></i> Auditioning Privately</span>
+        {{else}}
+        <span class="dock-tag broadcasting"><i class="fa-solid fa-tower-broadcast"></i> Live to Players</span>
+        {{/if}}
+      </div>
+      <div class="dock-title-group">
+        <span class="dock-title" id="dock-track-name">{{activeTrack.name}}</span>
+        <span class="dock-subtitle" id="dock-playlist-name">{{activeTrack.playlistName}}</span>
+      </div>
+    </div>
+
+    {{!-- Scrubber & Transport Controls --}}
+    <div class="dock-player-core">
+      <div class="dock-transport-btns">
+        <button type="button" class="transport-btn" id="dock-skip-back" title="Skip -10 seconds">
+          <i class="fa-solid fa-rotate-left"></i> 10s
+        </button>
+        <button type="button" class="transport-btn play-pause-btn" id="dock-play-pause-btn" title="Play / Pause">
+          <i class="fa-solid {{#if activeTrack.isPlaying}}fa-pause{{else}}fa-play{{/if}}"></i>
+        </button>
+        <button type="button" class="transport-btn" id="dock-stop-btn" title="Stop">
+          <i class="fa-solid fa-stop"></i>
+        </button>
+        <button type="button" class="transport-btn" id="dock-skip-fwd" title="Skip +10 seconds">
+          <i class="fa-solid fa-rotate-right"></i> 10s
+        </button>
+      </div>
+
+      {{!-- Interactive Timeline Scrubber --}}
+      <div class="dock-scrubber-bar">
+        <span class="time-label" id="dock-current-time">{{activeTrack.formattedCurrentTime}}</span>
+        <div class="slider-wrapper">
+          <input type="range" 
+                 id="dock-seek-slider" 
+                 min="0" 
+                 max="{{activeTrack.duration}}" 
+                 step="0.5" 
+                 value="{{activeTrack.currentTime}}" />
+        </div>
+        <span class="time-label" id="dock-total-duration">{{activeTrack.formattedDuration}}</span>
+      </div>
+    </div>
+
+    {{!-- Volume & Broadcast Option --}}
+    <div class="dock-side-controls">
+      {{#if activeTrack.isSampling}}
+      <button type="button" class="broadcast-live-btn" id="dock-broadcast-btn" title="Send this auditioned track live to all players!">
+        <i class="fa-solid fa-tower-broadcast"></i>
+        <span>Go Live!</span>
+      </button>
+      {{/if}}
+
+      <div class="dock-volume-group" title="Active Track Volume">
+        <i class="fa-solid fa-volume-low"></i>
+        <input type="range" 
+               id="dock-volume-slider" 
+               min="0" 
+               max="1" 
+               step="0.05" 
+               value="{{activeTrack.volume}}" />
+        <span class="vol-label" id="dock-volume-pct">{{activeTrack.trackVolumePct}}%</span>
+      </div>
+    </div>
+  </footer>
+  {{/if}}
+
+</div>
