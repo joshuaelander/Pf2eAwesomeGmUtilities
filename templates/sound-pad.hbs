@@ -140,11 +140,15 @@
     {{!-- Track Info --}}
     <div class="dock-info">
       <div class="dock-status-tag">
-        {{#if activeTrack.isSampling}}
-        <span class="dock-tag sampling"><i class="fa-solid fa-headphones"></i> Auditioning Privately</span>
+        {{#unless activeTrack.isPlaying}}
+        <span class="dock-tag paused"><i class="fa-solid fa-pause"></i> Paused</span>
         {{else}}
-        <span class="dock-tag broadcasting"><i class="fa-solid fa-tower-broadcast"></i> Live to Players</span>
-        {{/if}}
+          {{#if activeTrack.isSampling}}
+          <span class="dock-tag sampling"><i class="fa-solid fa-headphones"></i> Auditioning Privately</span>
+          {{else}}
+          <span class="dock-tag broadcasting"><i class="fa-solid fa-tower-broadcast"></i> Live to Players</span>
+          {{/if}}
+        {{/unless}}
       </div>
       <div class="dock-title-group">
         <span class="dock-title" id="dock-track-name">{{activeTrack.name}}</span>
@@ -200,7 +204,7 @@
                min="0" 
                max="1" 
                step="0.05" 
-               value="{{activeTrack.volume}}" />
+               value="{{activeTrack.trackVolumeSlider}}" />
         <span class="vol-label" id="dock-volume-pct">{{activeTrack.trackVolumePct}}%</span>
       </div>
     </div>

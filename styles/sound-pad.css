@@ -489,6 +489,12 @@
   border: 1px solid rgba(139, 92, 246, 0.4);
 }
 
+.dock-tag.paused {
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
 .dock-title {
   font-size: 0.85em;
   font-weight: bold;
@@ -664,13 +670,81 @@
 /* Slot Config Dialog & Color Swatches                                       */
 /* ------------------------------------------------------------------------- */
 
-.pf2e-sound-config-dialog .window-content {
-  background: var(--pf2e-sound-bg);
-  color: var(--pf2e-sound-text);
+.pf2e-sound-config-dialog .window-content,
+.pf2e-sound-config-form {
+  background: var(--pf2e-sound-bg) !important;
+  color: var(--pf2e-sound-text) !important;
 }
 
 .pf2e-sound-config-form .form-group {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.pf2e-sound-config-form label {
+  color: var(--pf2e-sound-gold-bright, #e6c55d) !important;
+  font-weight: 600 !important;
+  font-size: 0.9em !important;
+  margin-bottom: 4px !important;
+  display: block !important;
+}
+
+.pf2e-sound-config-form input[type="text"],
+.pf2e-sound-config-form input[type="number"],
+.pf2e-sound-config-form select,
+.pf2e-sound-config-dialog input[type="text"],
+.pf2e-sound-config-dialog input[type="number"],
+.pf2e-sound-config-dialog select {
+  background: #202433 !important;
+  color: #ffffff !important;
+  border: 1px solid #4a5568 !important;
+  border-radius: 4px !important;
+  padding: 6px 10px !important;
+  font-size: 0.9em !important;
+  font-family: inherit !important;
+  box-sizing: border-box !important;
+}
+
+.pf2e-sound-config-form input[type="text"]:focus,
+.pf2e-sound-config-form input[type="number"]:focus,
+.pf2e-sound-config-form select:focus,
+.pf2e-sound-config-dialog input[type="text"]:focus,
+.pf2e-sound-config-dialog input[type="number"]:focus,
+.pf2e-sound-config-dialog select:focus {
+  border-color: var(--pf2e-sound-gold) !important;
+  box-shadow: 0 0 8px rgba(197, 155, 39, 0.45) !important;
+  color: #ffffff !important;
+  outline: none !important;
+}
+
+.pf2e-sound-config-form select option {
+  background: #1c202d !important;
+  color: #ffffff !important;
+}
+
+.pf2e-sound-config-form .notes {
+  color: #94a3b8 !important;
+  font-size: 0.78em !important;
+  margin-top: 4px !important;
+}
+
+.pf2e-sound-config-form .form-fields {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.pf2e-sound-config-form .file-picker-btn {
+  background: rgba(35, 39, 52, 0.9) !important;
+  color: var(--pf2e-sound-gold) !important;
+  border: 1px solid #4a5568 !important;
+  border-radius: 4px !important;
+  padding: 5px 10px !important;
+  cursor: pointer !important;
+}
+
+.pf2e-sound-config-form .file-picker-btn:hover {
+  background: var(--pf2e-sound-gold) !important;
+  color: #000 !important;
 }
 
 .color-swatches-grid {

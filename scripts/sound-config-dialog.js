@@ -3,6 +3,7 @@
  */
 
 import { MODULE_ID, COLOR_THEMES } from "./constants.js";
+import { volumeToSlider, sliderToVolume } from "./audio-controller.js";
 
 export class SoundConfigDialog {
   /**
@@ -54,7 +55,8 @@ export class SoundConfigDialog {
         src: slot.src || "",
         icon: slot.icon || "fa-solid fa-music",
         volume: slot.volume ?? 0.8,
-        displayVolume: Math.round((slot.volume ?? 0.8) * 100),
+        volumeSlider: volumeToSlider(slot.volume ?? 0.8),
+        displayVolume: Math.round(volumeToSlider(slot.volume ?? 0.8) * 100),
         fadeDuration: slot.fadeDuration ?? 1.5,
         color: slot.color || "crimson"
       },
@@ -143,7 +145,8 @@ export class SoundConfigDialog {
     const color = $html.find("input[name='slot-color']:checked").val() || "crimson";
     const icon = $html.find("#slot-icon").val()?.trim() || "fa-solid fa-music";
     const mode = $html.find("#slot-mode").val() || "loop";
-    const volume = parseFloat($html.find("#slot-volume").val()) || 0.8;
+    const sliderVal = parseFloat($html.find("#slot-volume").val()) || 0.8;
+    const volume = sliderToVolume(sliderVal);
     const fadeDuration = parseFloat($html.find("#slot-fade").val()) || 1.5;
 
     return {

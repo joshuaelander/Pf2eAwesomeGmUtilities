@@ -6,6 +6,28 @@
 
 import { MODULE_ID } from "./constants.js";
 
+/**
+ * Converts a sound gain volume [0, 1] into a linear slider input value [0, 1]
+ * matching Foundry VTT's exponential curve (order = 1.5).
+ */
+export function volumeToSlider(volume) {
+  if (foundry?.audio?.AudioHelper?.volumeToInput) {
+    return foundry.audio.AudioHelper.volumeToInput(volume);
+  }
+  return Math.pow(Math.max(0, Math.min(1, Number(volume) || 0)), 1 / 1.5);
+}
+
+/**
+ * Converts a linear slider input value [0, 1] into a sound gain volume [0, 1]
+ * matching Foundry VTT's exponential curve (order = 1.5).
+ */
+export function sliderToVolume(sliderValue) {
+  if (foundry?.audio?.AudioHelper?.inputToVolume) {
+    return foundry.audio.AudioHelper.inputToVolume(sliderValue);
+  }
+  return Math.pow(Math.max(0, Math.min(1, Number(sliderValue) || 0)), 1.5);
+}
+
 export class AudioController {
   constructor() {
     /** @type {HTMLAudioElement|null} Local preview player for GM sampling */
@@ -24,6 +46,13 @@ export class AudioController {
 
     /** @type {Set<Function>} Listeners notified on playback state changes */
     this.changeListeners = new Set();
+
+    /** @type {boolean} Guard flag while seeking to avoid rapid poll clobbering */
+    this._isSeeking = false;
+    /** @type {number|null} Timeout handle for seek debounce */
+    this._seekDebounceTimer = null;
+    /** @type {number|null} Accumulated target seek position during rapid clicking */
+    this._targetSeekTime = null;
 
     this._initHooks();
   }
@@ -52,6 +81,11 @@ export class AudioController {
 
     Hooks.on("deletePlaylistSound", () => this._notifyListeners());
     Hooks.on("deletePlaylist", () => this._notifyListeners());
+
+    // Listen for core Foundry playlist volume changes
+    Hooks.on("globalPlaylistVolumeChanged", () => {
+      this._notifyListeners();
+    });
   }
 
   /**
@@ -94,8 +128,11 @@ export class AudioController {
   _pollCurrentPlaybackTime() {
     if (!game?.ready || !game?.playlists) return;
 
+    // While the user is actively skipping / seeking, do not overwrite currentTime
+    if (this._isSeeking) return;
+
     // 1. If currently in private GM preview mode
-    if (this.previewAudio && !this.previewAudio.paused) {
+    if (this.previewAudio) {
       const cur = this.previewAudio.currentTime || 0;
       const dur = this.previewAudio.duration || 0;
       this.activeTrack = {
@@ -104,7 +141,7 @@ export class AudioController {
         playlistName: "GM Preview (Private)",
         currentTime: cur,
         duration: isFinite(dur) ? dur : 0,
-        isPlaying: true,
+        isPlaying: !this.previewAudio.paused,
         isSampling: true,
         volume: this.previewAudio.volume || 1.0,
         mode: this.previewData?.mode || "loop"
@@ -149,7 +186,17 @@ export class AudioController {
       return;
     }
 
-    // 3. Nothing active
+    // 2b. Check if our active track is currently in paused state
+    if (this.activeTrack && !this.activeTrack.isSampling && !this.activeTrack.isPlaying && this.activeTrack.soundId) {
+      const pl = game.playlists.get(this.activeTrack.playlistId);
+      const snd = pl?.sounds.get(this.activeTrack.soundId);
+      if (snd && !snd.playing && snd.pausedTime != null) {
+        // Keep dock open in paused state
+        return;
+      }
+    }
+
+    // 3. Nothing active or paused
     if (this.activeTrack && !this.activeTrack.isSampling) {
       this.activeTrack = null;
       this._notifyListeners();
@@ -205,8 +252,7 @@ export class AudioController {
    * @param {object} slot
    */
   async playSlot(slot) {
-    const masterVol = game.settings.get(MODULE_ID, "soundPadMasterVolume") ?? 1.0;
-    const targetVolume = Math.min(1.0, Math.max(0.0, (slot.volume ?? 0.8) * masterVol));
+    const targetVolume = Math.min(1.0, Math.max(0.0, slot.volume ?? 0.8));
 
     // Handle File / SFX
     if (slot.type === "file" && slot.src) {
@@ -228,7 +274,6 @@ export class AudioController {
     if (found) {
       const { playlist, sound } = found;
 
-      // Update volume & repeat flag if different
       const updates = {};
       if (sound.volume !== targetVolume) updates.volume = targetVolume;
       const shouldLoop = slot.mode === "loop";
@@ -281,8 +326,90 @@ export class AudioController {
     const found = this.resolvePlaylistSound(slot);
     if (found) {
       await found.playlist.stopSound(found.sound);
+      await found.sound.update({ pausedTime: null });
       this._notifyListeners();
     }
+  }
+
+  /**
+   * Toggle Pause / Resume for currently active track
+   */
+  async togglePause() {
+    // 1. Preview Mode
+    if (this.previewAudio) {
+      if (this.previewAudio.paused) {
+        await this.previewAudio.play();
+        if (this.activeTrack) this.activeTrack.isPlaying = true;
+      } else {
+        this.previewAudio.pause();
+        if (this.activeTrack) this.activeTrack.isPlaying = false;
+      }
+      this._notifyListeners();
+      return;
+    }
+
+    // 2. Currently playing live PlaylistSound -> PAUSE IT
+    const playing = this.getCurrentlyPlayingPlaylistSound();
+    if (playing) {
+      const soundDoc = playing.soundDoc;
+      const sound = soundDoc.sound;
+      const curTime = sound?.currentTime ?? sound?.element?.currentTime ?? soundDoc.pausedTime ?? 0;
+
+      if (sound) {
+        try {
+          if (typeof sound.pause === "function") sound.pause();
+          else if (sound.element) sound.element.pause();
+        } catch (e) {
+          console.warn("PF2e Awesome GM Utilities | Error pausing sound:", e);
+        }
+      }
+
+      await soundDoc.update({ playing: false, pausedTime: curTime });
+
+      if (this.activeTrack) {
+        this.activeTrack.isPlaying = false;
+        this.activeTrack.currentTime = curTime;
+      }
+      this._notifyListeners();
+      return;
+    }
+
+    // 3. Resuming a paused track from the dock
+    if (this.activeTrack && !this.activeTrack.isPlaying && this.activeTrack.soundId) {
+      const pl = game.playlists.get(this.activeTrack.playlistId);
+      const snd = pl?.sounds.get(this.activeTrack.soundId);
+      if (pl && snd) {
+        await pl.playSound(snd);
+        this.activeTrack.isPlaying = true;
+        this._notifyListeners();
+      }
+    }
+  }
+
+  /**
+   * Stop the active track and clear paused time
+   */
+  async stopActiveTrack() {
+    if (this.previewAudio) {
+      this.stopPreview();
+      return;
+    }
+
+    const playing = this.getCurrentlyPlayingPlaylistSound();
+    if (playing) {
+      await playing.playlist.stopSound(playing.soundDoc);
+      await playing.soundDoc.update({ pausedTime: null });
+    } else if (this.activeTrack?.soundId) {
+      const pl = game.playlists.get(this.activeTrack.playlistId);
+      const snd = pl?.sounds.get(this.activeTrack.soundId);
+      if (pl && snd) {
+        await pl.stopSound(snd);
+        await snd.update({ pausedTime: null });
+      }
+    }
+
+    this.activeTrack = null;
+    this._notifyListeners();
   }
 
   /**
@@ -353,7 +480,6 @@ export class AudioController {
    */
   async playDirectFile(slot, volume) {
     try {
-      // Use Foundry's sound helper
       if (foundry.audio?.AudioHelper?.play) {
         const sound = await foundry.audio.AudioHelper.play({
           src: slot.src,
@@ -383,7 +509,6 @@ export class AudioController {
           }
         }
       } else {
-        // Fallback to HTMLAudioElement
         const audio = new Audio(slot.src);
         audio.volume = volume;
         audio.loop = slot.mode === "loop";
@@ -446,6 +571,14 @@ export class AudioController {
    */
   async seek(targetSeconds) {
     targetSeconds = Math.max(0, targetSeconds);
+    this._targetSeekTime = targetSeconds;
+    this._isSeeking = true;
+
+    clearTimeout(this._seekDebounceTimer);
+    this._seekDebounceTimer = setTimeout(() => {
+      this._isSeeking = false;
+      this._targetSeekTime = null;
+    }, 600);
 
     // 1. If currently sampling/previewing
     if (this.previewAudio) {
@@ -464,54 +597,55 @@ export class AudioController {
       const soundDoc = playing.soundDoc;
       const soundObj = soundDoc.sound;
 
+      if (this.activeTrack) this.activeTrack.currentTime = targetSeconds;
+
       if (soundObj) {
-        // A. Direct container/element seek
-        const mediaEl = soundObj.container || soundObj.element;
-        if (mediaEl && typeof mediaEl.currentTime === "number") {
-          mediaEl.currentTime = targetSeconds;
-          if (this.activeTrack) this.activeTrack.currentTime = targetSeconds;
-          this._notifyListeners();
-          return;
-        }
-
-        // B. Method seek
-        if (typeof soundObj.seek === "function") {
+        // Streamed HTMLAudioElement playback
+        if (soundObj.element) {
+          soundObj.element.currentTime = targetSeconds;
+          if (soundObj.context && typeof soundObj.startTime === "number") {
+            soundObj.startTime = soundObj.context.currentTime - targetSeconds;
+          }
+        } else if (soundObj.container?.currentTime !== undefined) {
+          soundObj.container.currentTime = targetSeconds;
+        } else if (typeof soundObj.seek === "function") {
           soundObj.seek(targetSeconds);
-          if (this.activeTrack) this.activeTrack.currentTime = targetSeconds;
-          this._notifyListeners();
-          return;
-        }
-
-        // C. Offset restart for Web Audio buffer nodes
-        if (typeof soundObj.play === "function") {
-          soundObj.stop();
-          soundObj.play({
+        } else if (soundObj.playing && typeof soundObj.stop === "function" && typeof soundObj.play === "function") {
+          // AudioBufferSourceNode offset restart
+          await soundObj.stop();
+          await soundObj.play({
             offset: targetSeconds,
             volume: soundDoc.volume,
             loop: soundDoc.repeat
           });
-          if (this.activeTrack) this.activeTrack.currentTime = targetSeconds;
-          this._notifyListeners();
-          return;
         }
       }
 
-      // Update pausedTime if supported by document
-      try {
+      // If paused, update pausedTime
+      if (!soundDoc.playing) {
         await soundDoc.update({ pausedTime: targetSeconds });
-      } catch (e) {
-        // ignore if not supported
       }
+
+      this._notifyListeners();
     }
   }
 
   /**
-   * Jump forward or backward by an offset
+   * Jump forward or backward by an offset, accumulating smoothly during rapid clicks
    * @param {number} deltaSeconds
    */
   async skipOffset(deltaSeconds) {
-    const current = this.activeTrack?.currentTime || 0;
-    await this.seek(current + deltaSeconds);
+    const cur = (this._isSeeking && typeof this._targetSeekTime === "number")
+      ? this._targetSeekTime
+      : (this.activeTrack?.currentTime || 0);
+
+    let target = Math.max(0, cur + deltaSeconds);
+    if (this.activeTrack?.duration && isFinite(this.activeTrack.duration)) {
+      target = Math.min(target, this.activeTrack.duration);
+    }
+
+    this._targetSeekTime = target;
+    await this.seek(target);
   }
 
   /* ------------------------------------------------------------------------- */
@@ -525,7 +659,6 @@ export class AudioController {
   async startPreview(slot) {
     if (!slot) return;
 
-    // Determine audio source URL
     let audioSrc = slot.src;
     if (!audioSrc && slot.soundId) {
       const found = this.resolvePlaylistSound(slot);
@@ -537,13 +670,11 @@ export class AudioController {
       return;
     }
 
-    // Stop existing preview if any
     this.stopPreview();
 
     try {
       this.previewAudio = new Audio(audioSrc);
-      const masterVol = game.settings.get(MODULE_ID, "soundPadMasterVolume") ?? 1.0;
-      this.previewAudio.volume = Math.min(1.0, Math.max(0.0, (slot.volume ?? 0.8) * masterVol));
+      this.previewAudio.volume = Math.min(1.0, Math.max(0.0, slot.volume ?? 0.8));
       this.previewAudio.loop = slot.mode === "loop";
 
       this.previewData = {
@@ -596,7 +727,6 @@ export class AudioController {
     const slotId = this.previewData.slotId;
     this.stopPreview();
 
-    // Find slot in soundboard data
     const data = game.settings.get(MODULE_ID, "soundboardData");
     if (!data?.banks) return;
 
@@ -615,11 +745,11 @@ export class AudioController {
   /* ------------------------------------------------------------------------- */
 
   /**
-   * Set live volume for active track or a specific slot
-   * @param {number} volume (0.0 to 1.0)
+   * Set live volume for active track from a slider value [0, 1]
+   * @param {number} sliderValue (0.0 to 1.0)
    */
-  async setTrackVolume(volume) {
-    volume = Math.min(1.0, Math.max(0.0, volume));
+  async setTrackVolume(sliderValue) {
+    const volume = sliderToVolume(sliderValue);
 
     // Preview
     if (this.previewAudio) {
@@ -632,21 +762,39 @@ export class AudioController {
     // Live playlist sound
     const playing = this.getCurrentlyPlayingPlaylistSound();
     if (playing) {
-      await playing.soundDoc.update({ volume: volume });
+      if (typeof playing.soundDoc.debounceVolume === "function") {
+        playing.soundDoc.debounceVolume(volume);
+      } else {
+        await playing.soundDoc.update({ volume });
+      }
       if (this.activeTrack) this.activeTrack.volume = volume;
       this._notifyListeners();
     }
   }
 
   /**
-   * Update master soundboard volume
-   * @param {number} volume
+   * Get the master playlist volume as a slider input value [0, 1]
    */
-  async setMasterVolume(volume) {
-    volume = Math.min(1.0, Math.max(0.0, volume));
-    await game.settings.set(MODULE_ID, "soundPadMasterVolume", volume);
+  getMasterVolume() {
+    if (!game?.settings) return 0.5;
+    const coreVol = game.settings.get("core", "globalPlaylistVolume") ?? 0.5;
+    return volumeToSlider(coreVol);
+  }
 
-    // Apply to preview
+  /**
+   * Set the master playlist volume from a slider input value [0, 1]
+   * Directly sets Foundry VTT's core global playlist volume!
+   * @param {number} sliderValue (0.0 to 1.0)
+   */
+  async setMasterVolume(sliderValue) {
+    const volume = sliderToVolume(sliderValue);
+    if (game?.settings) {
+      await game.settings.set("core", "globalPlaylistVolume", volume);
+      if (game.audio?.globalMute) {
+        game.audio.globalMute = false;
+      }
+    }
+
     if (this.previewAudio && this.activeTrack) {
       this.previewAudio.volume = Math.min(1.0, (this.activeTrack.volume || 0.8) * volume);
     }
@@ -654,18 +802,34 @@ export class AudioController {
   }
 
   /**
+   * Check if Foundry audio is globally muted
+   */
+  isMasterMuted() {
+    return Boolean(game.audio?.globalMute);
+  }
+
+  /**
+   * Toggle Foundry's global audio mute
+   */
+  async toggleGlobalMute() {
+    if (game.audio) {
+      game.audio.globalMute = !game.audio.globalMute;
+      this._notifyListeners();
+    }
+  }
+
+  /**
    * Auto-stop other music tracks when a new music track starts
    * @param {string} excludeSlotId
    */
   async stopOtherMusicTracks(excludeSlotId) {
-    const fadeDuration = game.settings.get(MODULE_ID, "defaultFadeDuration") ?? 1.5;
-
     for (const pl of game.playlists) {
       for (const snd of pl.sounds) {
         if (snd.playing) {
           const slotId = this._findSlotIdForSound(snd.id, snd.path);
           if (slotId !== excludeSlotId) {
             await pl.stopSound(snd);
+            await snd.update({ pausedTime: null });
           }
         }
       }

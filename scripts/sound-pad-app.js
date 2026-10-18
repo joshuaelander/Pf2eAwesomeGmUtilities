@@ -5,7 +5,7 @@
  */
 
 import { MODULE_ID, COLOR_THEMES, DEFAULT_BANKS } from "./constants.js";
-import { audioController } from "./audio-controller.js";
+import { audioController, volumeToSlider, sliderToVolume } from "./audio-controller.js";
 import { SoundConfigDialog } from "./sound-config-dialog.js";
 
 // Determine base Application class (ApplicationV2 for Foundry v14, fallback for v11/v12)
@@ -124,7 +124,6 @@ export class SoundPadApp extends BaseClass {
     }));
 
     // Process slots for active bank
-    const masterVol = game.settings.get(MODULE_ID, "soundPadMasterVolume") ?? 1.0;
     const processedSlots = (activeBank?.slots || []).map(slot => {
       const isPlaying = audioController.isSlotPlaying(slot);
       const isPreviewing = audioController.previewData?.slotId === slot.id;
@@ -138,7 +137,7 @@ export class SoundPadApp extends BaseClass {
         themeBorder: theme.border,
         themeGlow: theme.glow,
         isEmpty: !slot.soundId && !slot.src && !slot.playlistId,
-        displayVolume: Math.round((slot.volume ?? 0.8) * 100),
+        displayVolume: Math.round(volumeToSlider(slot.volume ?? 0.8) * 100),
         modeLabel: slot.mode === "loop" ? "BGM Loop" : (slot.mode === "oneshot" ? "SFX" : "Toggle")
       };
     });
@@ -148,6 +147,8 @@ export class SoundPadApp extends BaseClass {
     let formattedCurrentTime = "00:00";
     let formattedDuration = "00:00";
     let seekPercentage = 0;
+    let trackVolumeSlider = 0.8;
+    let trackVolumePct = 80;
 
     if (activeTrack) {
       formattedCurrentTime = this._formatTime(activeTrack.currentTime || 0);
@@ -155,7 +156,12 @@ export class SoundPadApp extends BaseClass {
       if (activeTrack.duration > 0) {
         seekPercentage = Math.min(100, (activeTrack.currentTime / activeTrack.duration) * 100);
       }
+      trackVolumeSlider = volumeToSlider(activeTrack.volume ?? 0.8);
+      trackVolumePct = Math.round(trackVolumeSlider * 100);
     }
+
+    const masterVol = audioController.getMasterVolume();
+    const isMuted = audioController.isMasterMuted();
 
     return {
       banks: processedBanks,
@@ -165,13 +171,14 @@ export class SoundPadApp extends BaseClass {
       isCompactMode: this.isCompactMode,
       masterVolume: masterVol,
       masterVolumePct: Math.round(masterVol * 100),
-      isMuted: masterVol === 0,
+      isMuted,
       activeTrack: activeTrack ? {
         ...activeTrack,
         formattedCurrentTime,
         formattedDuration,
         seekPercentage,
-        trackVolumePct: Math.round((activeTrack.volume || 0.8) * 100)
+        trackVolumeSlider,
+        trackVolumePct
       } : null
     };
   }
@@ -235,22 +242,16 @@ export class SoundPadApp extends BaseClass {
       this.render({ force: false });
     });
 
-    // Master Volume Slider
+    // Master Volume Slider (Controls Foundry Core Playlist Volume)
     html.find("#master-volume-slider").on("input", async (e) => {
       const val = parseFloat(e.target.value);
       html.find("#master-vol-display").text(`${Math.round(val * 100)}%`);
       await audioController.setMasterVolume(val);
     });
 
-    // Master Mute Toggle
+    // Master Mute Toggle (Toggles Foundry Core Global Mute)
     html.find("#master-mute-btn").on("click", async () => {
-      const current = game.settings.get(MODULE_ID, "soundPadMasterVolume") ?? 1.0;
-      if (current > 0) {
-        this._previousVolume = current;
-        await audioController.setMasterVolume(0);
-      } else {
-        await audioController.setMasterVolume(this._previousVolume || 0.8);
-      }
+      await audioController.toggleGlobalMute();
       this.render({ force: false });
     });
 
@@ -431,25 +432,14 @@ export class SoundPadApp extends BaseClass {
 
     // Play/Pause button
     dock.find("#dock-play-pause-btn").on("click", async () => {
-      const active = audioController.activeTrack;
-      if (!active) return;
-      if (active.isSampling && audioController.previewAudio) {
-        if (audioController.previewAudio.paused) audioController.previewAudio.play();
-        else audioController.previewAudio.pause();
-      } else {
-        const slot = this._getSlot(active.slotId);
-        if (slot) await audioController.stopSlot(slot);
-      }
+      await audioController.togglePause();
+      this.render({ force: false });
     });
 
     // Stop button
     dock.find("#dock-stop-btn").on("click", async () => {
-      const active = audioController.activeTrack;
-      if (active?.isSampling) {
-        audioController.stopPreview();
-      } else {
-        await audioController.stopAll();
-      }
+      await audioController.stopActiveTrack();
+      this.render({ force: false });
     });
 
     // Broadcast Preview to World Button
@@ -476,12 +466,12 @@ export class SoundPadApp extends BaseClass {
       dock.find("#dock-current-time").text(this._formatTime(targetSeconds));
     });
 
-    // Track Volume slider
+    // Track Volume slider (uses Foundry exponential audio curve)
     const volSlider = dock.find("#dock-volume-slider");
     volSlider.on("input", async (e) => {
-      const vol = parseFloat(e.target.value);
-      dock.find("#dock-volume-pct").text(`${Math.round(vol * 100)}%`);
-      await audioController.setTrackVolume(vol);
+      const sliderVal = parseFloat(e.target.value);
+      dock.find("#dock-volume-pct").text(`${Math.round(sliderVal * 100)}%`);
+      await audioController.setTrackVolume(sliderVal);
     });
   }
 
@@ -514,6 +504,16 @@ export class SoundPadApp extends BaseClass {
       $(el).toggleClass("is-previewing", isPreview);
     });
 
+    // Keep master volume in sync if changed from Foundry's User Volume Controls panel
+    const masterSlider = html.find("#master-volume-slider");
+    if (masterSlider.length && !masterSlider.is(":active")) {
+      const curMaster = audioController.getMasterVolume();
+      masterSlider.val(curMaster);
+      html.find("#master-vol-display").text(`${Math.round(curMaster * 100)}%`);
+      const isMuted = audioController.isMasterMuted();
+      html.find("#master-mute-btn i").attr("class", isMuted ? "fa-solid fa-volume-xmark" : "fa-solid fa-volume-high");
+    }
+
     // Update dock scrubber if rendered
     if (active && dock.length) {
       dock.find("#dock-track-name").text(active.name);
@@ -525,6 +525,26 @@ export class SoundPadApp extends BaseClass {
       if (!seekSlider.is(":active")) {
         seekSlider.attr("max", active.duration || 100);
         seekSlider.val(active.currentTime || 0);
+      }
+
+      const volSlider = dock.find("#dock-volume-slider");
+      if (!volSlider.is(":active")) {
+        const sliderVal = volumeToSlider(active.volume ?? 0.8);
+        volSlider.val(sliderVal);
+        dock.find("#dock-volume-pct").text(`${Math.round(sliderVal * 100)}%`);
+      }
+
+      // Update Play/Pause button icon
+      dock.find("#dock-play-pause-btn i").attr("class", active.isPlaying ? "fa-solid fa-pause" : "fa-solid fa-play");
+
+      // Update status tag
+      const statusTag = dock.find(".dock-status-tag");
+      if (!active.isPlaying) {
+        statusTag.html('<span class="dock-tag paused"><i class="fa-solid fa-pause"></i> Paused</span>');
+      } else if (active.isSampling) {
+        statusTag.html('<span class="dock-tag sampling"><i class="fa-solid fa-headphones"></i> Auditioning Privately</span>');
+      } else {
+        statusTag.html('<span class="dock-tag broadcasting"><i class="fa-solid fa-tower-broadcast"></i> Live to Players</span>');
       }
     }
   }
