@@ -11,8 +11,14 @@ export const SOUND_PAD_MACRO_ICON = "icons/tools/instruments/drum-leather-brown.
 export const PANIC_STOP_MACRO_NAME = "Stop All Music (Panic)";
 export const PANIC_STOP_MACRO_ICON = "icons/magic/control/debuff-energy-hold-levitate-yellow.webp";
 
+export const SCENE_SWITCHER_MACRO_NAME = "PF2e Scene Switcher";
+export const SCENE_SWITCHER_MACRO_ICON = "icons/svg/map.svg";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
+
+export const DEFAULT_SESSION_SCENES = [];
+
 
 export const COLOR_THEMES = {
   crimson: { label: "Crimson (Combat)", color: "#8b1e1e", border: "#c93b3b", glow: "rgba(201, 59, 59, 0.45)" },

@@ -78,9 +78,81 @@ game.pf2eAwesomeGmUtilities.soundPad.skip(15);
 
 ---
 
+## Session Scene Switcher
+
+The second utility in this suite is the **Session Scene Switcher** — a dedicated prep & play dock for Game Masters to curate, navigate, and manage the scenes planned for the current game session.
+
+### Key Features
+
+1. **Curated Session Scenes List**
+   - Save only the scenes you expect to use during the session, eliminating constant scrolling through massive world scene folders.
+   - Preserved in persistent world settings so your session plan is ready whenever you log in.
+   - **Compact / Live Mode**: Condense cards into a tight, low-profile row with icon actions to save screen space.
+
+2. **One-Click Scene Transitions**
+   - **View Scene (`Eye` icon)**: Instantly switches the GM's canvas to inspect the scene, tokens, notes, or fog privately without moving or disturbing players.
+   - **Activate Scene (`Power` icon)**: Activates the scene globally in Foundry for all players.
+   - **Pull Players (`Magnet` icon)**: Emits a socket signal to force-pull all connected player clients to the scene immediately.
+   - **Activate & Pull (`Bolt` icon)**: One-click combo to activate the world scene and pull all players in a single action.
+
+3. **Active Scene Quick Banner**
+   - High-contrast banner at the top showing the world's currently active scene, active combat/token indicators, and a one-click **"Pull All Players Here"** button.
+
+4. **Day / Night Lighting Quick Toggle**
+   - Interactive badge on each scene card (`☀️ Day` / `🌙 Night (85%)`) that instantly flips scene darkness between daylight (`0.0`) and darkness (`0.85`) without opening scene sheets.
+
+5. **Instant Drag-and-Drop & Quick Add**
+   - Drag any scene from Foundry's Scenes directory sidebar or navigation bar and drop it directly onto the window to add it to your session plan.
+   - One-click buttons to **"Add Current Scene"** or **"Import Navigated Scenes"**.
+   - Built-in dropdown selector to add unlisted scenes with a single click.
+
+6. **Order & Organization**
+   - Reorder cards up or down to match your adventure's expected storyline or dungeon progression.
+   - Quick gear button to open Foundry's standard Scene Configuration sheet.
+   - Remove or Clear session list without deleting any world scenes.
+
+7. **Convenient GM Access**
+   - **Scene Controls**: Quick-launch button under the Scenes (Navigation) control layer and the `PF2e GM Utilities` layer.
+   - **Scenes Sidebar**: Direct "Scene Switcher" button in the Scene Directory header.
+   - **Keybinding**: Press `Shift + S` to toggle the Scene Switcher at any time.
+   - **Smart Macro Sync**: Automatically creates a ready-to-use "PF2e Scene Switcher" macro in your macro directory.
+
+---
+
+## API & Macro Usage
+
+Developers and GMs can control both utilities directly via macros or chat:
+
+```javascript
+// --- SOUND PAD ---
+game.pf2eAwesomeGmUtilities.soundPad.toggle();
+game.pf2eAwesomeGmUtilities.soundPad.stopAll();
+game.pf2eAwesomeGmUtilities.soundPad.seek(45);
+game.pf2eAwesomeGmUtilities.soundPad.skip(15);
+
+// --- SCENE SWITCHER ---
+game.pf2eAwesomeGmUtilities.sceneSwitcher.toggle();
+game.pf2eAwesomeGmUtilities.sceneSwitcher.view("sceneId123");
+game.pf2eAwesomeGmUtilities.sceneSwitcher.activate("sceneId123");
+game.pf2eAwesomeGmUtilities.sceneSwitcher.pull("sceneId123");
+game.pf2eAwesomeGmUtilities.sceneSwitcher.activateAndPull("sceneId123");
+game.pf2eAwesomeGmUtilities.sceneSwitcher.addScene("sceneId123");
+```
+
+---
+
+## Developer Reference
+
+For technical details on developing modules for Foundry VTT v14 and PF2e, see our comprehensive guide:
+- [Foundry v14 & PF2e Development Reference](FOUNDRY_V14_PF2E_DEVELOPMENT_REFERENCE.md) (covers ApplicationV2 lifecycle, hook signature changes, audio seeking, volume power curves, and UI styling standards).
+
+---
+
 ## Roadmap & Upcoming Utilities
 
 - [x] **Music & SFX Sound Pad with Seeking and Sampling**
+- [x] **Session Scene Switcher with Quick View, Activate, and Pull**
+- [ ] **Unified GM Master Control Panel** (condensed tabbed / docked panel embedding Sound Pad, Scene Switcher, and upcoming widgets)
 - [ ] **Scene Transition & Environment Switcher**: Quick atmosphere shifts combining lighting, weather, and sound presets.
 - [ ] **Enhanced GM Shop & Merchant UI**: Streamlined buying/selling interface for PF2e settlements.
 - [ ] **Encounter Reward & Loot Distributor**: One-click distribution of XP and loot cards.

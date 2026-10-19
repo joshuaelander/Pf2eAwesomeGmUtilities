@@ -60,6 +60,49 @@
         "Cancel": "Cancel"
       }
     },
+    "SceneSwitcher": {
+      "Title": "Session Scene Switcher",
+      "MacroName": "PF2e Scene Switcher",
+      "ActiveScene": "Active World Scene",
+      "NoActiveScene": "No scene is currently active",
+      "PullAllHere": "Pull All Players Here",
+      "PullPlayers": "Pull",
+      "PullPlayersTooltip": "Pull all connected players to this scene immediately",
+      "ViewScene": "View",
+      "ViewSceneTooltip": "Switch GM canvas to view this scene without moving players",
+      "ActivateScene": "Activate",
+      "ActivateSceneTooltip": "Activate this scene globally for the entire world and move players",
+      "Configure": "Configure Scene",
+      "ConfigureTooltip": "Open standard Foundry scene configuration sheet",
+      "Remove": "Remove from Session",
+      "RemoveTooltip": "Remove scene from session list (will not delete the scene)",
+      "MoveUp": "Move Up",
+      "MoveDown": "Move Down",
+      "AddCurrentScene": "Add Current Scene",
+      "AddCurrentSceneTooltip": "Add whichever scene you are currently viewing to this session list",
+      "AddNavigated": "Import Navigated Scenes",
+      "AddNavigatedTooltip": "Add all scenes that are shown in the top navigation bar",
+      "ClearAll": "Clear Session List",
+      "ClearAllTooltip": "Clear all saved scenes from this session's list",
+      "ConfirmClear": "Are you sure you want to clear all scenes from this session's quick list? (This will NOT delete any scenes from your world).",
+      "SelectScenePlaceholder": "-- Choose a Scene to Add --",
+      "AddSelected": "Add to Session",
+      "NoScenesTitle": "No Session Scenes Added Yet",
+      "NoScenesHint": "Drag scenes here from the Scenes directory or use 'Add Current Scene' to populate your session plan.",
+      "DropZoneText": "Drop scenes here to add them to your session list",
+      "BadgeActive": "ACTIVE",
+      "BadgeViewing": "VIEWING",
+      "BadgeNav": "NAV",
+      "TokensCount": "Tokens",
+      "CombatActive": "Combat Active",
+      "Day": "Day",
+      "Night": "Night",
+      "ToggleLighting": "Toggle Day / Night Lighting",
+      "ToggleLightingTooltip": "Quickly switch scene darkness between daylight (0.0) and darkness (0.85)",
+      "NotificationPulled": "Pulled all players to scene: {name}",
+      "NotificationActivated": "Activated scene: {name}",
+      "NotificationViewing": "Now viewing scene: {name}"
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -73,10 +116,15 @@
         "Name": "Sound Pad Opacity",
         "Hint": "Set window opacity percentage so you can see the game canvas underneath."
       },
+      "SceneSwitcherOpacity": {
+        "Name": "Scene Switcher Opacity",
+        "Hint": "Set window opacity percentage for the Scene Switcher so you can see the game canvas underneath."
+      },
       "SoundPadHotbarMacro": {
-        "Name": "Auto-Sync GM Sound Pad Macros",
-        "Hint": "Automatically creates handy Sound Pad and Panic Stop macros in the Macro Directory."
+        "Name": "Auto-Sync GM Utilities Macros",
+        "Hint": "Automatically creates handy Sound Pad and Scene Switcher macros in the Macro Directory."
       }
     }
   }
 }
+

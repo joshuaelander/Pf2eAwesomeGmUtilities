@@ -8,20 +8,32 @@ import {
   SOUND_PAD_MACRO_ICON,
   PANIC_STOP_MACRO_NAME,
   PANIC_STOP_MACRO_ICON,
+  SCENE_SWITCHER_MACRO_NAME,
+  SCENE_SWITCHER_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
-  DEFAULT_BANKS
+  DEFAULT_BANKS,
+  DEFAULT_SESSION_SCENES
 } from "./constants.js";
 import { audioController } from "./audio-controller.js";
 import { SoundPadApp } from "./sound-pad-app.js";
+import { SceneSwitcherApp } from "./scene-switcher.js";
 
 let soundPadInstance = null;
+let sceneSwitcherInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
     soundPadInstance = new SoundPadApp();
   }
   return soundPadInstance;
+}
+
+function getSceneSwitcher() {
+  if (!sceneSwitcherInstance) {
+    sceneSwitcherInstance = new SceneSwitcherApp();
+  }
+  return sceneSwitcherInstance;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -80,6 +92,36 @@ function registerSettings() {
     }
   });
 
+  // Scene Switcher Window Opacity
+  game.settings.register(MODULE_ID, "sceneSwitcherOpacity", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneSwitcherOpacity.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneSwitcherOpacity.Hint"),
+    scope: "client",
+    config: true,
+    type: Number,
+    range: { min: 40, max: 100, step: 5 },
+    default: 100,
+    onChange: (val) => {
+      const el = $(`#pf2e-scene-switcher`);
+      if (el.length) el.css("opacity", val / 100);
+    }
+  });
+
+  // Session Scenes List (World)
+  game.settings.register(MODULE_ID, "sessionScenes", {
+    name: "Session Scenes",
+    hint: "Curated scene IDs for the current gaming session.",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: DEFAULT_SESSION_SCENES,
+    onChange: () => {
+      if (sceneSwitcherInstance?.rendered) {
+        sceneSwitcherInstance.render({ force: false });
+      }
+    }
+  });
+
   // Master Volume (Client-side)
   game.settings.register(MODULE_ID, "soundPadMasterVolume", {
     name: "Sound Pad Master Volume",
@@ -124,6 +166,22 @@ function registerKeybindings() {
     restricted: true,
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
+
+  game.keybindings.register(MODULE_ID, "toggleSceneSwitcher", {
+    name: "Toggle Scene Switcher",
+    hint: "Quickly open or close the Session Scene Switcher window.",
+    editable: [
+      { key: "KeyS", modifiers: ["Shift"] }
+    ],
+    onDown: () => {
+      if (!game.user.isGM) return;
+      const switcher = getSceneSwitcher();
+      switcher.toggle();
+      return true;
+    },
+    restricted: true,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
 }
 
 /* ------------------------------------------------------------------------- */
@@ -134,16 +192,17 @@ function registerSceneControls(controls) {
   if (!game.user.isGM) return;
 
   // Support Array (v12 and earlier), Map/Collection, or Record/Object (v13/v14)
-  let soundsControl = null;
-  if (Array.isArray(controls)) {
-    soundsControl = controls.find(c => c?.name === "sounds");
-  } else if (controls instanceof Map || typeof controls?.get === "function") {
-    soundsControl = controls.get("sounds");
-  } else if (controls && typeof controls === "object") {
-    soundsControl = controls.sounds || Object.values(controls).find(c => c?.name === "sounds");
-  }
+  const findControl = (name) => {
+    if (Array.isArray(controls)) return controls.find(c => c?.name === name);
+    if (controls instanceof Map || typeof controls?.get === "function") return controls.get(name);
+    if (controls && typeof controls === "object") return controls[name] || Object.values(controls).find(c => c?.name === name);
+    return null;
+  };
 
-  const openToolData = {
+  const soundsControl = findControl("sounds");
+  const scenesControl = findControl("scenes");
+
+  const openSoundPadTool = {
     name: "pf2e-sound-pad-open",
     title: "PF2e Music Sound Pad",
     icon: "fa-solid fa-compact-disc",
@@ -170,34 +229,53 @@ function registerSceneControls(controls) {
     }
   };
 
-  // Add tools to the sounds control group if available
-  if (soundsControl) {
-    if (Array.isArray(soundsControl.tools)) {
-      const existingOpen = soundsControl.tools.findIndex(t => t?.name === openToolData.name);
-      if (existingOpen >= 0) soundsControl.tools[existingOpen] = openToolData;
-      else soundsControl.tools.push(openToolData);
-
-      const existingPanic = soundsControl.tools.findIndex(t => t?.name === panicToolData.name);
-      if (existingPanic >= 0) soundsControl.tools[existingPanic] = panicToolData;
-      else soundsControl.tools.push(panicToolData);
-    } else if (soundsControl.tools instanceof Map || typeof soundsControl.tools?.set === "function") {
-      soundsControl.tools.set(openToolData.name, openToolData);
-      soundsControl.tools.set(panicToolData.name, panicToolData);
-    } else if (soundsControl.tools && typeof soundsControl.tools === "object") {
-      soundsControl.tools[openToolData.name] = openToolData;
-      soundsControl.tools[panicToolData.name] = panicToolData;
+  const openSceneSwitcherTool = {
+    name: "pf2e-scene-switcher-open",
+    title: "Session Scene Switcher",
+    icon: "fa-solid fa-map-location-dot",
+    visible: true,
+    button: true,
+    onClick: () => {
+      const switcher = getSceneSwitcher();
+      switcher.toggle();
     }
+  };
+
+  const insertTool = (ctrl, tool) => {
+    if (!ctrl) return;
+    if (Array.isArray(ctrl.tools)) {
+      const idx = ctrl.tools.findIndex(t => t?.name === tool.name);
+      if (idx >= 0) ctrl.tools[idx] = tool;
+      else ctrl.tools.push(tool);
+    } else if (ctrl.tools instanceof Map || typeof ctrl.tools?.set === "function") {
+      ctrl.tools.set(tool.name, tool);
+    } else if (ctrl.tools && typeof ctrl.tools === "object") {
+      ctrl.tools[tool.name] = tool;
+    }
+  };
+
+  // Add tools to sounds control group
+  if (soundsControl) {
+    insertTool(soundsControl, openSoundPadTool);
+    insertTool(soundsControl, panicToolData);
   }
 
-  // Also register a dedicated top-level GM Utilities control group
+  // Add tool to scenes control group
+  if (scenesControl) {
+    insertTool(scenesControl, openSceneSwitcherTool);
+  }
+
+  // Dedicated top-level GM Utilities control group
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
     icon: "fa-solid fa-wand-magic-sparkles",
     layer: "controls",
     visible: true,
-    tools: Array.isArray(controls) ? [openToolData, panicToolData] : {
-      [openToolData.name]: openToolData,
+    tools: Array.isArray(controls) ? gmTools : {
+      [openSoundPadTool.name]: openSoundPadTool,
+      [openSceneSwitcherTool.name]: openSceneSwitcherTool,
       [panicToolData.name]: panicToolData
     }
   };
@@ -243,6 +321,30 @@ function registerSidebarHeaderButton(app, html) {
   }
 }
 
+function registerSceneSidebarHeaderButton(app, html) {
+  if (!game.user.isGM) return;
+
+  const root = html instanceof HTMLElement
+    ? html
+    : (html?.[0] instanceof HTMLElement ? html[0] : (typeof $ !== "undefined" ? $(html)[0] : null));
+  if (!root) return;
+
+  const headerActions = root.querySelector?.(".header-actions");
+  if (headerActions && !headerActions.querySelector(".pf2e-scene-switcher-btn")) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pf2e-scene-switcher-btn";
+    btn.title = "Open Session Scene Switcher";
+    btn.innerHTML = `<i class="fa-solid fa-map-location-dot"></i> Scene Switcher`;
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const switcher = getSceneSwitcher();
+      switcher.toggle();
+    });
+    headerActions.appendChild(btn);
+  }
+}
+
 /* ------------------------------------------------------------------------- */
 /* 5. MACRO SMART SYNC                                                       */
 /* ------------------------------------------------------------------------- */
@@ -257,6 +359,11 @@ const DESIRED_MACROS = [
     name: PANIC_STOP_MACRO_NAME,
     icon: PANIC_STOP_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.soundPad.stopAll();`
+  },
+  {
+    name: SCENE_SWITCHER_MACRO_NAME,
+    icon: SCENE_SWITCHER_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.sceneSwitcher.toggle();`
   }
 ];
 
@@ -339,9 +446,15 @@ Hooks.on("renderPlaylistDirectory", (app, html) => {
   registerSidebarHeaderButton(app, html);
 });
 
+Hooks.on("renderSceneDirectory", (app, html) => {
+  registerSceneSidebarHeaderButton(app, html);
+});
+
 Hooks.once("ready", async () => {
   // Global API namespace
   game.pf2eAwesomeGmUtilities = game.pf2eAwesomeGmUtilities || {};
+  
+  // Sound Pad API
   game.pf2eAwesomeGmUtilities.soundPad = {
     get app() { return getSoundPad(); },
     render: (options = { force: true }) => getSoundPad().render(options),
@@ -354,6 +467,21 @@ Hooks.once("ready", async () => {
     seek: (seconds) => audioController.seek(seconds),
     skip: (delta) => audioController.skipOffset(delta),
     audioController: audioController
+  };
+
+  // Scene Switcher API
+  game.pf2eAwesomeGmUtilities.sceneSwitcher = {
+    get app() { return getSceneSwitcher(); },
+    render: (options = { force: true }) => getSceneSwitcher().render(options),
+    toggle: () => getSceneSwitcher().toggle(),
+    view: (id) => getSceneSwitcher().viewScene(id),
+    activate: (id) => getSceneSwitcher().activateScene(id),
+    pull: (id) => getSceneSwitcher().pullPlayers(id),
+    activateAndPull: (id) => getSceneSwitcher().activateAndPull(id),
+    addScene: (id) => getSceneSwitcher().addScene(id),
+    removeScene: (id) => getSceneSwitcher().removeScene(id),
+    addNavigatedScenes: () => getSceneSwitcher().addNavigatedScenes(),
+    clearSession: () => getSceneSwitcher().confirmClearSession()
   };
 
   // Run macro sync
@@ -371,5 +499,5 @@ Hooks.once("ready", async () => {
     }
   }
 
-  console.log("PF2e Awesome GM Utilities | Ready! Sound Pad ready at game.pf2eAwesomeGmUtilities.soundPad");
+  console.log("PF2e Awesome GM Utilities | Ready! Sound Pad and Scene Switcher initialized.");
 });

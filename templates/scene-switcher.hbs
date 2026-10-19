@@ -1,0 +1,206 @@
+<div class="pf2e-scene-switcher-container {{#if isCompact}}compact-mode{{/if}}">
+
+  <!-- Active Scene Quick Banner -->
+  <header class="scene-switcher-header">
+    <div class="active-scene-banner {{#if activeScene}}has-active{{else}}no-active{{/if}}">
+      {{#if activeScene}}
+        <div class="active-banner-media">
+          <img src="{{activeScene.thumb}}" alt="{{activeScene.name}}" class="active-banner-thumb" onerror="this.onerror=null; this.src='icons/svg/map.svg';" />
+          <span class="active-pulse-badge"><i class="fa-solid fa-globe"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}</span>
+        </div>
+        <div class="active-banner-info">
+          <span class="banner-subtitle">{{localize "PF2E_AWESOME_GM.SceneSwitcher.ActiveScene"}}</span>
+          <h3 class="banner-scene-title" title="{{activeScene.name}}">{{activeScene.name}}</h3>
+          <div class="banner-badges">
+            {{#if activeScene.isViewing}}
+              <span class="status-pill viewing"><i class="fa-solid fa-eye"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeViewing"}}</span>
+            {{/if}}
+            <span class="status-pill"><i class="fa-solid fa-users"></i> {{activeScene.tokenCount}} {{localize "PF2E_AWESOME_GM.SceneSwitcher.TokensCount"}}</span>
+          </div>
+        </div>
+        <div class="active-banner-actions">
+          <button type="button" class="btn-banner-pull" data-action="pull" data-scene-id="{{activeScene.id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.PullPlayersTooltip"}}">
+            <i class="fa-solid fa-magnet"></i>
+            <span>{{localize "PF2E_AWESOME_GM.SceneSwitcher.PullAllHere"}}</span>
+          </button>
+        </div>
+      {{else}}
+        <div class="no-active-info">
+          <i class="fa-solid fa-map-location-dot"></i>
+          <span>{{localize "PF2E_AWESOME_GM.SceneSwitcher.NoActiveScene"}}</span>
+        </div>
+      {{/if}}
+    </div>
+
+    <!-- Quick Tool Ribbon -->
+    <div class="scene-toolbar">
+      <div class="toolbar-left">
+        {{#if canAddCurrent}}
+          <button type="button" class="btn-tool btn-add-current" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.AddCurrentSceneTooltip"}}">
+            <i class="fa-solid fa-plus-circle"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.AddCurrentScene"}}
+          </button>
+        {{/if}}
+        <button type="button" class="btn-tool btn-add-navigated" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.AddNavigatedTooltip"}}">
+          <i class="fa-solid fa-compass"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.AddNavigated"}}
+        </button>
+      </div>
+
+      <div class="toolbar-right">
+        <button type="button" class="btn-tool btn-toggle-compact" data-action="toggle-compact" title="{{localize "PF2E_AWESOME_GM.SoundPad.ToggleCompact"}}">
+          <i class="fa-solid {{#if isCompact}}fa-table-cells{{else}}fa-list{{/if}}"></i>
+        </button>
+        {{#if hasScenes}}
+          <button type="button" class="btn-tool btn-clear-session" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ClearAllTooltip"}}">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        {{/if}}
+      </div>
+    </div>
+  </header>
+
+  <!-- Session Scenes List Container -->
+  <main class="session-scenes-list">
+    {{#if hasScenes}}
+      {{#each sessionScenes}}
+        <article class="scene-card {{#if isActive}}is-active{{/if}} {{#if isViewing}}is-viewing{{/if}}" data-scene-id="{{id}}">
+          
+          <!-- Top Row: Thumbnail + Title & Status + Controls -->
+          <div class="card-top-row">
+            <div class="card-media" data-action="view" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ViewSceneTooltip"}}">
+              <img src="{{thumb}}" alt="{{name}}" class="card-thumb" onerror="this.onerror=null; this.src='icons/svg/map.svg';" />
+              <div class="media-overlay">
+                <i class="fa-solid fa-eye overlay-eye"></i>
+              </div>
+            </div>
+
+            <div class="card-title-block">
+              <div class="title-line">
+                <h4 class="scene-title" data-action="view" data-scene-id="{{id}}" title="{{name}}">
+                  {{name}}
+                </h4>
+              </div>
+              <div class="badges-row">
+                {{#if isActive}}
+                  <span class="status-pill active-pill" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}">
+                    <i class="fa-solid fa-globe"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}
+                  </span>
+                {{/if}}
+                {{#if isViewing}}
+                  <span class="status-pill viewing-pill" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeViewing"}}">
+                    <i class="fa-solid fa-eye"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeViewing"}}
+                  </span>
+                {{/if}}
+                {{#if inNavigation}}
+                  <span class="status-pill nav-pill" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeNav"}}">
+                    <i class="fa-solid fa-compass"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeNav"}}
+                  </span>
+                {{/if}}
+              </div>
+            </div>
+
+            <div class="card-top-controls">
+              {{#if canMoveUp}}
+                <button type="button" class="btn-icon-subtle" data-action="move-up" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.MoveUp"}}">
+                  <i class="fa-solid fa-chevron-up"></i>
+                </button>
+              {{/if}}
+              {{#if canMoveDown}}
+                <button type="button" class="btn-icon-subtle" data-action="move-down" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.MoveDown"}}">
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+              {{/if}}
+              <button type="button" class="btn-icon-subtle btn-remove-scene" data-action="remove" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.RemoveTooltip"}}">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Bottom Row: Metadata Tags + Primary Action Buttons -->
+          <div class="card-bottom-row">
+            <div class="card-meta-tags">
+              <!-- Day / Night Toggle Tag -->
+              <button type="button" class="meta-tag tag-lighting {{#if isDark}}is-dark{{else}}is-day{{/if}}" data-action="toggle-lighting" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ToggleLightingTooltip"}}">
+                <i class="fa-solid {{#if isDark}}fa-moon{{else}}fa-sun{{/if}}"></i>
+                <span>{{#if isDark}}{{darknessPct}}% ({{localize "PF2E_AWESOME_GM.SceneSwitcher.Night"}}){{else}}{{localize "PF2E_AWESOME_GM.SceneSwitcher.Day"}}{{/if}}</span>
+              </button>
+
+              <!-- Tokens Count -->
+              <span class="meta-tag tag-tokens" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.TokensCount"}}">
+                <i class="fa-solid fa-users"></i> {{tokenCount}}
+              </span>
+
+              <!-- Combat Active Badge -->
+              {{#if hasCombat}}
+                <span class="meta-tag tag-combat" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.CombatActive"}}">
+                  <i class="fa-solid fa-swords"></i>
+                </span>
+              {{/if}}
+
+              <!-- Grid Size -->
+              <span class="meta-tag tag-grid" title="{{gridDistance}}{{gridUnits}} grid">
+                <i class="fa-solid fa-border-all"></i> {{gridDistance}}{{gridUnits}}
+              </span>
+            </div>
+
+            <div class="card-actions">
+              <!-- View Locally (GM Only) -->
+              <button type="button" class="btn-card-action btn-view {{#if isViewing}}active-state{{/if}}" data-action="view" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ViewSceneTooltip"}}">
+                <i class="fa-solid fa-eye"></i>
+                <span class="btn-label">{{localize "PF2E_AWESOME_GM.SceneSwitcher.ViewScene"}}</span>
+              </button>
+
+              <!-- Activate World (Pulls all players) -->
+              <button type="button" class="btn-card-action btn-activate {{#if isActive}}active-state{{/if}}" data-action="activate" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ActivateSceneTooltip"}}">
+                <i class="fa-solid fa-play"></i>
+                <span class="btn-label">{{localize "PF2E_AWESOME_GM.SceneSwitcher.ActivateScene"}}</span>
+              </button>
+
+              <!-- Pull Players (Re-pull players to this scene) -->
+              <button type="button" class="btn-card-action btn-pull" data-action="pull" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.PullPlayersTooltip"}}">
+                <i class="fa-solid fa-magnet"></i>
+                <span class="btn-label">{{localize "PF2E_AWESOME_GM.SceneSwitcher.PullPlayers"}}</span>
+              </button>
+
+              <!-- Configure Scene -->
+              <button type="button" class="btn-card-action btn-config" data-action="configure" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ConfigureTooltip"}}">
+                <i class="fa-solid fa-gear"></i>
+              </button>
+            </div>
+          </div>
+
+        </article>
+      {{/each}}
+    {{else}}
+      <!-- Empty State -->
+      <div class="empty-scenes-dropzone">
+        <div class="dropzone-icon">
+          <i class="fa-solid fa-map-location-dot"></i>
+        </div>
+        <h4 class="dropzone-title">{{localize "PF2E_AWESOME_GM.SceneSwitcher.NoScenesTitle"}}</h4>
+        <p class="dropzone-hint">{{localize "PF2E_AWESOME_GM.SceneSwitcher.NoScenesHint"}}</p>
+        <div class="dropzone-indicator">
+          <i class="fa-solid fa-arrow-down"></i>
+          <span>{{localize "PF2E_AWESOME_GM.SceneSwitcher.DropZoneText"}}</span>
+        </div>
+      </div>
+    {{/if}}
+  </main>
+
+  <!-- Footer Quick Add Bar -->
+  <footer class="scene-switcher-footer">
+    {{#if hasAvailableScenes}}
+      <div class="quick-add-group">
+        <select class="scene-select-dropdown">
+          <option value="" disabled selected>{{localize "PF2E_AWESOME_GM.SceneSwitcher.SelectScenePlaceholder"}}</option>
+          {{#each availableScenes}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+        <button type="button" class="btn-add-selected">
+          <i class="fa-solid fa-plus"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.AddSelected"}}
+        </button>
+      </div>
+    {{/if}}
+  </footer>
+
+</div>
