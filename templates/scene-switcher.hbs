@@ -121,10 +121,16 @@
           <!-- Bottom Row: Metadata Tags + Primary Action Buttons -->
           <div class="card-bottom-row">
             <div class="card-meta-tags">
-              <!-- Day / Night Toggle Tag -->
-              <button type="button" class="meta-tag tag-lighting {{#if isDark}}is-dark{{else}}is-day{{/if}}" data-action="toggle-lighting" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ToggleLightingTooltip"}}">
-                <i class="fa-solid {{#if isDark}}fa-moon{{else}}fa-sun{{/if}}"></i>
-                <span>{{#if isDark}}{{darknessPct}}% ({{localize "PF2E_AWESOME_GM.SceneSwitcher.Night"}}){{else}}{{localize "PF2E_AWESOME_GM.SceneSwitcher.Day"}}{{/if}}</span>
+              <!-- Day / Dusk / Night Lighting Tag -->
+              <button type="button" class="meta-tag tag-lighting is-{{lightState}}" data-action="cycle-lighting" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.CycleLightingTooltip"}} ({{darknessPct}}%)">
+                <i class="fa-solid {{lightIcon}}"></i>
+                <span>{{lightLabel}}</span>
+              </button>
+
+              <!-- Weather Effect Tag -->
+              <button type="button" class="meta-tag tag-weather {{#if weather.hasWeather}}has-weather weather-{{weather.id}}{{else}}is-clear{{/if}}" data-action="cycle-weather" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.CycleWeatherTooltip"}}">
+                <i class="fa-solid {{weather.icon}}"></i>
+                <span>{{weather.label}}</span>
               </button>
 
               <!-- Tokens Count -->

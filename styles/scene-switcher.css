@@ -145,9 +145,9 @@
 }
 
 .status-pill.viewing {
-  background: rgba(139, 92, 246, 0.25);
-  color: #c4b5fd;
-  border-color: #8b5cf6;
+  background: rgba(30, 41, 59, 0.75);
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.4);
 }
 
 .status-pill.active-pill {
@@ -158,9 +158,9 @@
 }
 
 .status-pill.viewing-pill {
-  background: rgba(139, 92, 246, 0.22);
-  color: #c4b5fd;
-  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(30, 41, 59, 0.7);
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.4);
   font-weight: 600;
 }
 
@@ -181,9 +181,9 @@
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  background: linear-gradient(180deg, #92400e 0%, #78350f 100%);
-  color: #ffffff;
-  border: 1px solid #d97706;
+  background: linear-gradient(180deg, #2b1717 0%, #170d0d 100%);
+  color: #f8fafc;
+  border: 1px solid rgba(200, 60, 60, 0.45);
   border-radius: 5px;
   font-size: 0.8em;
   font-weight: 600;
@@ -193,11 +193,16 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
+.btn-banner-pull i {
+  color: #f87171;
+}
+
 .btn-banner-pull:hover {
-  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
-  border-color: #f59e0b;
+  background: linear-gradient(180deg, #3a1c1c 0%, #220f0f 100%);
+  border-color: #ef4444;
+  color: #ffffff;
   transform: translateY(-1px);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
 }
 
 .no-active-info {
@@ -307,8 +312,8 @@
 }
 
 .scene-card.is-viewing:not(.is-active) {
-  border-left-color: #8b5cf6;
-  border-color: rgba(139, 92, 246, 0.4);
+  border-left-color: #64748b;
+  border-color: rgba(147, 197, 253, 0.35);
 }
 
 /* Card Top Row */
@@ -481,12 +486,58 @@
 
 .meta-tag.tag-lighting.is-day {
   color: #facc15;
-  border-color: rgba(250, 204, 21, 0.3);
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(234, 179, 8, 0.1);
 }
 
+.meta-tag.tag-lighting.is-dusk {
+  color: #fb923c;
+  border-color: rgba(251, 146, 60, 0.35);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.meta-tag.tag-lighting.is-night,
 .meta-tag.tag-lighting.is-dark {
   color: #93c5fd;
   border-color: rgba(147, 197, 253, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Weather Effect Meta Tag */
+.meta-tag.tag-weather {
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.meta-tag.tag-weather:hover {
+  border-color: #7dd3fc;
+  color: #ffffff;
+  background: rgba(125, 211, 252, 0.15);
+}
+
+.meta-tag.tag-weather.is-clear {
+  color: #94a3b8;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(35, 39, 52, 0.8);
+}
+
+.meta-tag.tag-weather.has-weather {
+  color: #7dd3fc;
+  border-color: rgba(125, 211, 252, 0.35);
+  background: rgba(14, 165, 233, 0.12);
+  font-weight: 500;
+}
+
+.meta-tag.tag-weather.weather-snow {
+  color: #e0f2fe;
+  border-color: rgba(224, 242, 254, 0.35);
+  background: rgba(186, 230, 253, 0.12);
+}
+
+.meta-tag.tag-weather.weather-cinder {
+  color: #fdba74;
+  border-color: rgba(251, 146, 60, 0.35);
+  background: rgba(234, 88, 12, 0.12);
 }
 
 .meta-tag.tag-combat {
@@ -523,53 +574,70 @@
   display: inline-block;
 }
 
-/* View (Eye) */
+/* View (Eye) - Toned-down Steel Blue */
 .btn-card-action.btn-view {
-  background: linear-gradient(180deg, #1e3a8a 0%, #172554 100%);
-  color: #bfdbfe;
-  border-color: #3b82f6;
+  background: linear-gradient(180deg, #1e2638 0%, #131926 100%);
+  color: #e2e8f0;
+  border-color: rgba(100, 116, 139, 0.45);
+}
+
+.btn-card-action.btn-view i {
+  color: #93c5fd;
 }
 
 .btn-card-action.btn-view:hover {
-  background: linear-gradient(180deg, #2563eb 0%, #1e3a8a 100%);
+  background: linear-gradient(180deg, #28334a 0%, #182030 100%);
   color: #ffffff;
-  border-color: #60a5fa;
+  border-color: rgba(147, 197, 253, 0.65);
+  box-shadow: 0 0 6px rgba(147, 197, 253, 0.25);
 }
 
 .btn-card-action.btn-view.active-state {
-  box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 6px rgba(147, 197, 253, 0.35);
   border-color: #93c5fd;
+  background: linear-gradient(180deg, #243047 0%, #161f2e 100%);
 }
 
-/* Activate (Play) */
+/* Activate (Play) - Foundry Dark Obsidian & Warm Gold */
 .btn-card-action.btn-activate {
-  background: linear-gradient(180deg, #065f46 0%, #022c22 100%);
-  color: #a7f3d0;
-  border-color: #10b981;
+  background: linear-gradient(180deg, #242016 0%, #15130d 100%);
+  color: #fdf4dc;
+  border-color: rgba(212, 175, 55, 0.45);
+}
+
+.btn-card-action.btn-activate i {
+  color: #e6c55d;
 }
 
 .btn-card-action.btn-activate:hover {
-  background: linear-gradient(180deg, #047857 0%, #065f46 100%);
+  background: linear-gradient(180deg, #332c1e 0%, #1c1810 100%);
   color: #ffffff;
-  border-color: #34d399;
+  border-color: #d4af37;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.35);
 }
 
 .btn-card-action.btn-activate.active-state {
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-  border-color: #6ee7b7;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.5);
+  border-color: #e6c55d;
+  background: linear-gradient(180deg, #3a3220 0%, #221c12 100%);
 }
 
-/* Pull Players (Magnet) */
+/* Pull Players (Magnet / Diamond Turn Right) - Foundry Dark Crimson */
 .btn-card-action.btn-pull {
-  background: linear-gradient(180deg, #92400e 0%, #78350f 100%);
-  color: #fde68a;
-  border-color: #d97706;
+  background: linear-gradient(180deg, #2b1717 0%, #170d0d 100%);
+  color: #f8fafc;
+  border-color: rgba(200, 60, 60, 0.45);
+}
+
+.btn-card-action.btn-pull i {
+  color: #f87171;
 }
 
 .btn-card-action.btn-pull:hover {
-  background: linear-gradient(180deg, #b45309 0%, #92400e 100%);
+  background: linear-gradient(180deg, #3a1c1c 0%, #220f0f 100%);
   color: #ffffff;
-  border-color: #f59e0b;
+  border-color: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.35);
 }
 
 /* Config (Gear) */
@@ -677,9 +745,9 @@
 }
 
 .btn-add-selected {
-  background: linear-gradient(180deg, #1e5239 0%, #153e2b 100%);
-  color: #ffffff;
-  border: 1px solid #2d6a4f;
+  background: linear-gradient(180deg, #242016 0%, #15130d 100%);
+  color: #fdf4dc;
+  border: 1px solid rgba(212, 175, 55, 0.45);
   border-radius: 4px;
   padding: 6px 12px;
   font-size: 0.85em;
@@ -690,9 +758,15 @@
   transition: all 0.15s ease;
 }
 
+.btn-add-selected i {
+  color: #e6c55d;
+}
+
 .btn-add-selected:hover {
-  background: linear-gradient(180deg, #2d6a4f 0%, #1e5239 100%);
-  border-color: #52b788;
+  background: linear-gradient(180deg, #332c1e 0%, #1c1810 100%);
+  border-color: #d4af37;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.35);
 }
 
 /* ------------------------------------------------------------------------- */

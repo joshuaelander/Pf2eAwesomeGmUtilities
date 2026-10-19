@@ -62,9 +62,20 @@ export function getSceneThumbnail(scene) {
     }
   }
 
-  // 8. Fallback default map icon
   return "icons/svg/castle.svg";
 }
+
+/**
+ * Standard Foundry weather presets for quick scene switching.
+ */
+export const WEATHER_PRESETS = [
+  { id: "", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherClear", defaultLabel: "Clear", icon: "fa-sun" },
+  { id: "rain", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherRain", defaultLabel: "Rain", icon: "fa-cloud-showers-heavy" },
+  { id: "snow", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherSnow", defaultLabel: "Snow", icon: "fa-snowflake" },
+  { id: "fog", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherFog", defaultLabel: "Fog", icon: "fa-smog" },
+  { id: "clouds", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherClouds", defaultLabel: "Clouds", icon: "fa-cloud" },
+  { id: "cinder", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherCinder", defaultLabel: "Cinders", icon: "fa-fire-flame-curved" }
+];
 
 export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
@@ -181,6 +192,25 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
       const isDark = darkness >= 0.5;
       const darknessPct = Math.round(darkness * 100);
 
+      // 3-Level lighting state (Day 0%, Dusk 50%, Night 85%)
+      let lightState = "day";
+      let lightLabel = game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.Day");
+      let lightIcon = "fa-sun";
+
+      if (darkness >= 0.70) {
+        lightState = "night";
+        lightLabel = game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.Night");
+        lightIcon = "fa-moon";
+      } else if (darkness >= 0.25) {
+        lightState = "dusk";
+        lightLabel = game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.Dusk");
+        lightIcon = "fa-cloud-sun";
+      }
+
+      // Weather effect state
+      const weatherId = scene.environment?.base?.weather ?? scene.weather ?? "";
+      const weather = this.getWeatherInfo(weatherId);
+
       // Check if combat is currently active on this scene
       const hasCombat = game.combats ? game.combats.some(c => c.scene?.id === scene.id) : false;
 
@@ -209,6 +239,10 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         darkness: darkness,
         darknessPct: darknessPct,
         isDark: isDark,
+        lightState: lightState,
+        lightLabel: lightLabel,
+        lightIcon: lightIcon,
+        weather: weather,
         gridDistance: scene.grid?.distance ?? 5,
         gridUnits: scene.grid?.units || "ft",
         canMoveUp: index > 0,
@@ -285,6 +319,31 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const container = root.querySelector(".pf2e-scene-switcher-container") || root;
     container.querySelectorAll("[data-action]").forEach(el => {
       el.addEventListener("click", this._handleActionClick.bind(this));
+    });
+
+    // Right-click support: Weather resets to Clear; Lighting cycles in reverse
+    container.querySelectorAll('[data-action="cycle-weather"]').forEach(el => {
+      el.addEventListener("contextmenu", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sceneId = el.dataset.sceneId;
+        const scene = game.scenes.get(sceneId);
+        if (!scene) return;
+        await scene.update({
+          "environment.base.weather": "",
+          weather: ""
+        });
+        this.render({ force: false });
+      });
+    });
+
+    container.querySelectorAll('[data-action="cycle-lighting"], [data-action="toggle-lighting"]').forEach(el => {
+      el.addEventListener("contextmenu", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sceneId = el.dataset.sceneId;
+        await this.cycleLighting(sceneId, true);
+      });
     });
 
     // 3. Dropdown Add Button
@@ -366,7 +425,12 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         break;
 
       case "toggle-lighting":
-        await this.toggleLighting(sceneId);
+      case "cycle-lighting":
+        await this.cycleLighting(sceneId);
+        break;
+
+      case "cycle-weather":
+        await this.cycleWeather(sceneId);
         break;
 
       case "place-party":
@@ -521,19 +585,111 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   /**
-   * Toggle scene darkness between day (0.0) and darkness (0.85).
-   * @param {string} sceneId
+   * Resolve weather display info for a given weather id.
+   * @param {string} weatherId
+   * @returns {{ id: string, label: string, icon: string, hasWeather: boolean }}
    */
-  async toggleLighting(sceneId) {
+  getWeatherInfo(weatherId) {
+    const rawId = (weatherId || "").trim();
+    const normId = rawId.toLowerCase();
+    const preset = WEATHER_PRESETS.find(p => p.id === normId);
+    if (preset) {
+      return {
+        id: preset.id,
+        label: game.i18n.localize(preset.labelKey) || preset.defaultLabel,
+        icon: preset.icon,
+        hasWeather: Boolean(preset.id)
+      };
+    }
+
+    // Check CONFIG.weatherEffects for custom effects registered by other modules
+    let customLabel = rawId;
+    if (CONFIG.weatherEffects && CONFIG.weatherEffects[rawId]) {
+      const entry = CONFIG.weatherEffects[rawId];
+      customLabel = typeof entry === "string" ? game.i18n.localize(entry) : (entry.label ? game.i18n.localize(entry.label) : rawId);
+    }
+
+    return {
+      id: rawId,
+      label: customLabel || game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.WeatherClear"),
+      icon: "fa-cloud-bolt",
+      hasWeather: Boolean(rawId)
+    };
+  }
+
+  /**
+   * Cycle scene darkness between Day (0.0), Dusk (0.5), and Night (0.85).
+   * @param {string} sceneId
+   * @param {boolean} [reverse=false]
+   */
+  async cycleLighting(sceneId, reverse = false) {
     const scene = game.scenes.get(sceneId);
     if (!scene) return;
 
     const curDarkness = scene.environment?.darknessLevel ?? scene.darkness ?? 0;
-    const newDarkness = curDarkness >= 0.5 ? 0.0 : 0.85;
+    let newDarkness;
+
+    if (reverse) {
+      if (curDarkness < 0.25) {
+        newDarkness = 0.85; // Day -> Night
+      } else if (curDarkness < 0.70) {
+        newDarkness = 0.0;  // Dusk -> Day
+      } else {
+        newDarkness = 0.5;  // Night -> Dusk
+      }
+    } else {
+      if (curDarkness < 0.25) {
+        newDarkness = 0.5;  // Day -> Dusk
+      } else if (curDarkness < 0.70) {
+        newDarkness = 0.85; // Dusk -> Night
+      } else {
+        newDarkness = 0.0;  // Night -> Day
+      }
+    }
 
     await scene.update({
       "environment.darknessLevel": newDarkness,
       darkness: newDarkness
+    });
+
+    this.render({ force: false });
+  }
+
+  /**
+   * Backwards-compatible alias for cycleLighting.
+   * @param {string} sceneId
+   */
+  async toggleLighting(sceneId) {
+    return this.cycleLighting(sceneId);
+  }
+
+  /**
+   * Cycle weather effect across Clear, Rain, Snow, Fog, Clouds, Cinders.
+   * @param {string} sceneId
+   * @param {boolean} [reverse=false]
+   */
+  async cycleWeather(sceneId, reverse = false) {
+    const scene = game.scenes.get(sceneId);
+    if (!scene) return;
+
+    const curWeather = (scene.environment?.base?.weather ?? scene.weather ?? "").trim().toLowerCase();
+    const currentIndex = WEATHER_PRESETS.findIndex(p => p.id === curWeather);
+
+    let nextIndex;
+    if (currentIndex === -1) {
+      nextIndex = 0;
+    } else if (reverse) {
+      nextIndex = (currentIndex - 1 + WEATHER_PRESETS.length) % WEATHER_PRESETS.length;
+    } else {
+      nextIndex = (currentIndex + 1) % WEATHER_PRESETS.length;
+    }
+
+    const nextPreset = WEATHER_PRESETS[nextIndex];
+    const newWeatherId = nextPreset.id;
+
+    await scene.update({
+      "environment.base.weather": newWeatherId,
+      weather: newWeatherId
     });
 
     this.render({ force: false });
