@@ -326,7 +326,6 @@ function registerSceneControls(controls) {
     return null;
   };
 
-  const soundsControl = findControl("sounds");
   const scenesControl = findControl("scenes");
 
   const openSoundPadTool = {
@@ -404,12 +403,6 @@ function registerSceneControls(controls) {
       ctrl.tools[tool.name] = tool;
     }
   };
-
-  // Add tools to sounds control group
-  if (soundsControl) {
-    insertTool(soundsControl, openSoundPadTool);
-    insertTool(soundsControl, panicToolData);
-  }
 
   // Add tool to scenes control group
   if (scenesControl) {
