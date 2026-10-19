@@ -83,10 +83,18 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     tag: "div",
     classes: ["pf2e-gm-utility", "pf2e-scene-switcher-window"],
     window: {
+      frame: true,
       title: "PF2E_AWESOME_GM.SceneSwitcher.Title",
       icon: "fa-solid fa-map-location-dot",
       resizable: true,
-      controls: []
+      minimizable: true,
+      controls: [
+        {
+          icon: "fa-solid fa-table-cells",
+          label: "PF2E_AWESOME_GM.SoundPad.ToggleCompact",
+          action: "toggleCompact"
+        }
+      ]
     },
     position: {
       width: 490,
@@ -135,6 +143,10 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   _onClose(options) {
+    if (this._onKeyDownBound) {
+      window.removeEventListener("keydown", this._onKeyDownBound);
+      this._onKeyDownBound = null;
+    }
     // Unhook when window is closed to save cycles
     Hooks.off("canvasReady", this._boundOnHookUpdate);
     Hooks.off("updateScene", this._boundOnHookUpdate);
@@ -255,11 +267,23 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const opacity = game.settings.get(MODULE_ID, "sceneSwitcherOpacity") || 100;
     root.style.opacity = `${opacity / 100}`;
 
+    // Listen for Escape key to close the window
+    if (!this._onKeyDownBound) {
+      this._onKeyDownBound = (e) => {
+        if (e.key === "Escape" && this.rendered) {
+          e.preventDefault();
+          this.close();
+        }
+      };
+      window.addEventListener("keydown", this._onKeyDownBound);
+    }
+
     // 1. Drag and Drop Mapping on the list container
     this._setupDragAndDrop(root);
 
-    // 2. Action Buttons on each Scene Card
-    root.querySelectorAll("[data-action]").forEach(el => {
+    // 2. Action Buttons on each Scene Card inside the container ONLY (never hijack window header controls)
+    const container = root.querySelector(".pf2e-scene-switcher-container") || root;
+    container.querySelectorAll("[data-action]").forEach(el => {
       el.addEventListener("click", this._handleActionClick.bind(this));
     });
 
@@ -308,11 +332,17 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
    * Handles user clicks on interactive data-action elements.
    */
   async _handleActionClick(event) {
-    event.preventDefault();
-    event.stopPropagation();
     const actionEl = event.currentTarget;
     const action = actionEl.dataset.action;
     const sceneId = actionEl.dataset.sceneId;
+
+    if (action === "close") {
+      event.preventDefault();
+      return this.close();
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
 
     switch (action) {
       case "view":
@@ -435,42 +465,33 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const scene = game.scenes.get(sceneId);
     if (!scene) return;
 
-    await scene.activate();
-
-    // Pull all connected users to ensure no client desync
-    const targetUsers = game.users.filter(u => u.active && u.id !== game.user.id);
-    for (const u of targetUsers) {
-      game.socket.emit("pullToScene", scene.id, u.id);
-    }
-    game.socket.emit("pullToScene", scene.id);
+    await scene.activate({ pullUsers: true });
 
     ui.notifications.info(game.i18n.format("PF2E_AWESOME_GM.SceneSwitcher.NotificationActivated", { name: scene.name }));
     this.render({ force: false });
   }
 
   /**
-   * Force-pull all connected players to the specified scene.
-   * If the scene is inactive, activates it first so players have permissions to view it.
-   * Emits pullToScene with target userId for every connected user.
+   * Pull all connected players to the specified scene.
+   * Utilizes the native Foundry v14 Scene#pullUsers method (same as Scene Navigation's "Pull Everyone").
+   * This pulls all active users to view the scene without changing which scene is active.
    * @param {string} sceneId
    */
   async pullPlayers(sceneId) {
     const scene = game.scenes.get(sceneId);
     if (!scene) return;
 
-    // In Foundry VTT, players cannot view inactive scenes.
-    // Ensure scene is active before pulling.
-    if (!scene.active) {
-      await scene.activate();
+    // Use native Foundry v14 Scene#pullUsers to pull all connected users without activating
+    if (typeof scene.pullUsers === "function") {
+      scene.pullUsers(game.users);
+    } else {
+      // Fallback for older versions
+      for (const u of game.users) {
+        if (!u.active || u.id === game.user.id) continue;
+        game.socket.emit("pullToScene", scene.id, u.id);
+      }
+      game.socket.emit("pullToScene", scene.id);
     }
-
-    // Emit pullToScene with (sceneId, userId) for each active connected user
-    const targetUsers = game.users.filter(u => u.active && u.id !== game.user.id);
-    for (const u of targetUsers) {
-      game.socket.emit("pullToScene", scene.id, u.id);
-    }
-    // Also emit broadcast pull
-    game.socket.emit("pullToScene", scene.id);
 
     ui.notifications.info(game.i18n.format("PF2E_AWESOME_GM.SceneSwitcher.NotificationPulled", { name: scene.name }));
     this.render({ force: false });
