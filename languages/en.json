@@ -219,6 +219,8 @@
       "Title": "Trackers HUD",
       "Collapse": "Collapse HUD",
       "Expand": "Expand HUD",
+      "CollapseHint": "Double-click to collapse HUD (or drag to move)",
+      "ExpandHint": "Double-click to expand HUD (or drag to move)",
       "Close": "Hide HUD",
       "ResetPosition": "Reset HUD Position (Under Left Menu)",
       "OpenManagerTooltip": "Open Full Resource Tracker",

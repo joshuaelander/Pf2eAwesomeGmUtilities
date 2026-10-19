@@ -1,7 +1,7 @@
 <div class="pf2e-resource-widget-container {{#if isCollapsed}}collapsed{{/if}}">
   
   <!-- Slim Draggable HUD Header -->
-  <header class="widget-header" data-drag-handle title="Drag to move. Double-click to reset under left menu.">
+  <header class="widget-header" data-drag-handle title="{{#if isCollapsed}}{{localize "PF2E_AWESOME_GM.ResourceWidget.ExpandHint"}}{{else}}{{localize "PF2E_AWESOME_GM.ResourceWidget.CollapseHint"}}{{/if}}">
     <div class="widget-header-title">
       <i class="fa-solid fa-layer-group widget-title-icon"></i>
       <span class="widget-title-text">{{localize "PF2E_AWESOME_GM.ResourceWidget.Title"}}</span>
@@ -20,7 +20,7 @@
       </button>
 
       <button type="button" class="widget-ctrl-btn btn-collapse" data-action="toggle-collapse" title="{{#if isCollapsed}}{{localize "PF2E_AWESOME_GM.ResourceWidget.Expand"}}{{else}}{{localize "PF2E_AWESOME_GM.ResourceWidget.Collapse"}}{{/if}}">
-        <i class="fa-solid {{#if isCollapsed}}fa-chevron-down{{else}}fa-minus{{/if}}"></i>
+        <i class="fa-solid {{#if isCollapsed}}fa-window-maximize{{else}}fa-minus{{/if}}"></i>
       </button>
 
       <button type="button" class="widget-ctrl-btn btn-close" data-action="close-widget" title="{{localize "PF2E_AWESOME_GM.ResourceWidget.Close"}}">

@@ -17,6 +17,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     super(options);
 
     this._isCollapsed = Boolean(game.settings.get(MODULE_ID, "resourceWidgetCollapsed"));
+    this._currentPosition = { left: 18, top: 320 };
     this._isDragging = false;
     this._dragStartX = 0;
     this._dragStartY = 0;
@@ -37,7 +38,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       minimizable: false
     },
     position: {
-      width: 230,
+      width: "auto",
       height: "auto",
       left: 18,
       top: 320
@@ -89,16 +90,16 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       // Sanity check: Ensure not stuck off-screen or far right past chat
       const maxLeft = typeof window !== "undefined" ? (window.innerWidth - 300) : 1000;
       if (saved && typeof saved.left === "number" && typeof saved.top === "number" && saved.left >= 0 && saved.left < maxLeft) {
-        this.position.left = saved.left;
-        this.position.top = saved.top;
+        this._currentPosition.left = saved.left;
+        this._currentPosition.top = saved.top;
       } else {
-        this.position.left = 18;
-        this.position.top = 320;
+        this._currentPosition.left = 18;
+        this._currentPosition.top = 320;
       }
     } catch (e) {
       // Setting may not be registered yet during early init
-      this.position.left = 18;
-      this.position.top = 320;
+      this._currentPosition.left = 18;
+      this._currentPosition.top = 320;
     }
 
     return super.render(options, _legacyOptions);
@@ -263,15 +264,16 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     }
 
     // Force fixed viewport positioning so it floats freely under the left tools menu
-    const targetLeft = typeof this.position.left === "number" ? this.position.left : 18;
-    const targetTop = typeof this.position.top === "number" ? this.position.top : 320;
+    const targetLeft = typeof this._currentPosition?.left === "number" ? this._currentPosition.left : 18;
+    const targetTop = typeof this._currentPosition?.top === "number" ? this._currentPosition.top : 320;
 
     root.style.setProperty("position", "fixed", "important");
     root.style.setProperty("left", `${targetLeft}px`, "important");
     root.style.setProperty("top", `${targetTop}px`, "important");
     root.style.setProperty("right", "auto", "important");
     root.style.setProperty("bottom", "auto", "important");
-    root.style.setProperty("width", `${this.position.width || 230}px`, "important");
+    root.style.setProperty("width", "auto", "important");
+    root.style.setProperty("height", "auto", "important");
     root.style.setProperty("z-index", "70", "important");
 
     // Custom Draggable Header handling
@@ -286,12 +288,12 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         this._startDrag(e);
       });
 
-      // Double-click header to snap position back under the left tools menu
+      // Double-click header to toggle collapse / expand (standard Foundry minimize behavior)
       dragHandle.addEventListener("dblclick", async (e) => {
         if (e.target.closest("button") || e.target.closest("a") || e.target.closest("input")) return;
         e.preventDefault();
         e.stopPropagation();
-        await this.resetPosition();
+        await this.toggleCollapse();
       });
     }
 
@@ -302,12 +304,24 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   /**
+   * Toggle between minimized (header bar only) and maximized (full tracker list).
+   */
+  async toggleCollapse() {
+    this._isCollapsed = !this._isCollapsed;
+    try {
+      await game.settings.set(MODULE_ID, "resourceWidgetCollapsed", this._isCollapsed);
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed to save collapsed state:", err);
+    }
+    this.render({ force: true });
+  }
+
+  /**
    * Reset widget coordinates directly below the left tools menu (x: 18, y: 320).
    */
   async resetPosition() {
     const defaultPos = { left: 18, top: 320 };
-    this.position.left = defaultPos.left;
-    this.position.top = defaultPos.top;
+    this._currentPosition = { ...defaultPos };
 
     if (this.element) {
       if (this.element.parentElement !== document.body) {
@@ -318,7 +332,8 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       this.element.style.setProperty("top", `${defaultPos.top}px`, "important");
       this.element.style.setProperty("right", "auto", "important");
       this.element.style.setProperty("bottom", "auto", "important");
-      this.element.style.setProperty("width", `${this.position.width || 230}px`, "important");
+      this.element.style.setProperty("width", "auto", "important");
+      this.element.style.setProperty("height", "auto", "important");
     }
 
     try {
@@ -353,8 +368,8 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       const newLeft = Math.max(0, Math.min(window.innerWidth - 60, this._dragStartLeft + deltaX));
       const newTop = Math.max(0, Math.min(window.innerHeight - 40, this._dragStartTop + deltaY));
 
-      this.position.left = newLeft;
-      this.position.top = newTop;
+      this._currentPosition.left = newLeft;
+      this._currentPosition.top = newTop;
 
       if (this.element) {
         this.element.style.setProperty("left", `${newLeft}px`, "important");
@@ -416,9 +431,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
 
     switch (action) {
       case "toggle-collapse": {
-        this._isCollapsed = !this._isCollapsed;
-        await game.settings.set(MODULE_ID, "resourceWidgetCollapsed", this._isCollapsed);
-        this.render({ force: false });
+        await this.toggleCollapse();
         break;
       }
 

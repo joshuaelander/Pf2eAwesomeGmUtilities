@@ -1452,6 +1452,8 @@
   justify-content: space-between;
   cursor: grab;
   user-select: none;
+  white-space: nowrap;
+  gap: 4px;
 }
 
 .widget-header:active {
@@ -1877,12 +1879,19 @@
 
 /* Collapsed Mode */
 .pf2e-resource-widget-container.collapsed {
-  width: 130px;
+  width: 175px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
 .pf2e-resource-widget-container.collapsed .widget-header {
   border-bottom: none;
+}
+
+.pf2e-resource-widget-container.collapsed .widget-header-title .widget-title-text {
+  max-width: 65px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 
