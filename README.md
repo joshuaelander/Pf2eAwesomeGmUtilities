@@ -11,36 +11,25 @@ The first utility in this suite is the **Music & SFX Sound Pad** — an MPC / St
 ### Key Features
 
 1. **Detachable, Floating Soundboard (v14 Standard)**
-   - Fully detachable and movable to any part of your screen or secondary monitor.
-   - **Compact / Live Mode**: Strip away configuration clutter during game time into a tight, responsive soundboard grid that sits neatly next to your GM screen or encounter tracker.
-   - **Window Opacity Setting**: Adjust transparency from 40% to 100% so you can see map tokens and active initiative underneath.
 
 2. **Instant One-Click Playback & Stop**
-   - Click any pad to trigger or stop a song/sound.
-   - Real-time animated audio equalizer bars and color-coded pulsing aura indicate which track is currently playing.
-   - Built-in **Panic Button**: Instantly stops/fades all currently playing sounds with a single click.
 
-3. **Seek & Skip Ahead (Timeline Scrubber)**
-   - Includes an interactive timeline scrubber (`01:24 / 03:45`) on the active track dock!
-   - Drag the slider or use the `+10s` / `-10s` buttons to skip ahead directly to the intense part of a combat theme or audition tracks.
-   - Works with Foundry's audio streaming containers and restarts smoothly at target offsets.
+3. **Seek & Skip Ahead**
 
 4. **Private GM Audition / Sampling Mode (Headphone Icon)**
    - Need to preview songs before your players enter a room or test sound balance before a session without alerting players?
-   - Click the **Headphone icon** on any slot: the audio plays **privately on your client only**.
-   - Features zero-latency instant scrubbing through any part of the track.
    - Ready to drop the beat on your party? Hit the **"Go Live!"** button on the player dock to instantly broadcast that auditioned song to everyone in the world!
 
 5. **Drag-and-Drop Mapping**
    - Simply drag any `PlaylistSound` or whole `Playlist` from Foundry's Playlists sidebar and drop it onto any slot!
    - Automatically imports the track name, playlist ID, sound ID, and audio path.
 
-6. **Multi-Bank Organization & Customization**
-   - Comes preloaded with 4 ready-to-use banks:
-     - **Combat & Boss**
-     - **Ambience & Nature**
+6. **Multi-Tab Organization & Customization**
+   - Comes preloaded with 4 ready-to-use sections:
+     - **Combat**
+     - **Ambience**
      - **Tavern & Town**
-     - **SFX & Stingers**
+     - **SFX**
    - Add, rename, reorder, or delete custom banks for specific campaigns or adventures.
    - Customize slot color themes (Crimson, Gold, Amber, Forest Nature, Ocean Blue, Arcane Violet, Shadow Slate, Inferno Fire).
    - Configure playback mode: **Looping Music (BGM)**, **Toggle (Play/Stop)**, **One-Shot (SFX)**, or **Restart on Press**.
@@ -58,26 +47,6 @@ The first utility in this suite is the **Music & SFX Sound Pad** — an MPC / St
 
 ---
 
-## API & Macro Usage
-
-Developers and GMs can control the soundboard directly via macros or chat:
-
-```javascript
-// Open or toggle the Sound Pad
-game.pf2eAwesomeGmUtilities.soundPad.toggle();
-
-// Stop all playing sounds (Panic)
-game.pf2eAwesomeGmUtilities.soundPad.stopAll();
-
-// Seek active song to 45 seconds
-game.pf2eAwesomeGmUtilities.soundPad.seek(45);
-
-// Skip forward 15 seconds
-game.pf2eAwesomeGmUtilities.soundPad.skip(15);
-```
-
----
-
 ## Session Scene Switcher
 
 The second utility in this suite is the **Session Scene Switcher** — a dedicated prep & play dock for Game Masters to curate, navigate, and manage the scenes planned for the current game session.
@@ -87,13 +56,11 @@ The second utility in this suite is the **Session Scene Switcher** — a dedicat
 1. **Curated Session Scenes List**
    - Save only the scenes you expect to use during the session, eliminating constant scrolling through massive world scene folders.
    - Preserved in persistent world settings so your session plan is ready whenever you log in.
-   - **Compact / Live Mode**: Condense cards into a tight, low-profile row with icon actions to save screen space.
 
 2. **One-Click Scene Transitions**
-   - **View Scene (`Eye` icon)**: Instantly switches the GM's canvas to inspect the scene, tokens, notes, or fog privately without moving or disturbing players.
-   - **Activate Scene (`Power` icon)**: Activates the scene globally in Foundry for all players.
-   - **Pull Players (`Magnet` icon)**: Emits a socket signal to force-pull all connected player clients to the scene immediately.
-   - **Activate & Pull (`Bolt` icon)**: One-click combo to activate the world scene and pull all players in a single action.
+   - **View Scene**: Instantly switches the GM's canvas to inspect the scene, tokens, notes, or fog privately without moving or disturbing players.
+   - **Activate Scene**: Activates the scene globally in Foundry for all players.
+   - **Pull Players**: Emits a socket signal to force-pull all connected player clients to the scene immediately.
 
 3. **Active Scene Quick Banner**
    - High-contrast banner at the top showing the world's currently active scene, active combat/token indicators, and a one-click **"Pull All Players Here"** button.
@@ -196,13 +163,6 @@ game.pf2eAwesomeGmUtilities.resourceTracker.postToChat("tracker-alert");
 game.pf2eAwesomeGmUtilities.resourceWidget.toggle();
 game.pf2eAwesomeGmUtilities.resourceWidget.sync();
 ```
-
----
-
-## Developer Reference
-
-For technical details on developing modules for Foundry VTT v14 and PF2e, see our comprehensive guide:
-- [Foundry v14 & PF2e Development Reference](FOUNDRY_V14_PF2E_DEVELOPMENT_REFERENCE.md) (covers ApplicationV2 lifecycle, hook signature changes, audio seeking, volume power curves, and UI styling standards).
 
 ---
 
