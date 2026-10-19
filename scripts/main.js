@@ -15,6 +15,8 @@ import {
   RESOURCE_TRACKER_MACRO_ICON,
   RESOURCE_WIDGET_MACRO_NAME,
   RESOURCE_WIDGET_MACRO_ICON,
+  PLACE_PARTY_MACRO_NAME,
+  PLACE_PARTY_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   DEFAULT_BANKS,
@@ -26,6 +28,7 @@ import { SoundPadApp } from "./sound-pad-app.js";
 import { SceneSwitcherApp } from "./scene-switcher.js";
 import { ResourceTrackerApp } from "./resource-tracker-app.js";
 import { ResourceWidgetApp } from "./resource-widget-app.js";
+import { PartyPlacement } from "./party-placement.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -391,6 +394,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const placePartyTool = {
+    name: "pf2e-place-party",
+    title: "Place Party on Scene",
+    icon: "fa-solid fa-users",
+    visible: true,
+    button: true,
+    onClick: () => {
+      PartyPlacement.startPlacement();
+    }
+  };
+
   const insertTool = (ctrl, tool) => {
     if (!ctrl) return;
     if (Array.isArray(ctrl.tools)) {
@@ -410,7 +424,7 @@ function registerSceneControls(controls) {
   }
 
   // Dedicated top-level GM Utilities control group
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
@@ -420,6 +434,7 @@ function registerSceneControls(controls) {
     tools: Array.isArray(controls) ? gmTools : {
       [openSoundPadTool.name]: openSoundPadTool,
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
+      [placePartyTool.name]: placePartyTool,
       [openResourceTrackerTool.name]: openResourceTrackerTool,
       [openResourceWidgetTool.name]: openResourceWidgetTool,
       [panicToolData.name]: panicToolData
@@ -520,6 +535,11 @@ const DESIRED_MACROS = [
     name: RESOURCE_WIDGET_MACRO_NAME,
     icon: RESOURCE_WIDGET_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.resourceWidget.toggle();`
+  },
+  {
+    name: PLACE_PARTY_MACRO_NAME,
+    icon: PLACE_PARTY_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.placeParty();`
   }
 ];
 
@@ -680,6 +700,10 @@ Hooks.once("ready", async () => {
       await app.resetPosition();
     }
   };
+
+  // Party Placement API
+  game.pf2eAwesomeGmUtilities.placeParty = () => PartyPlacement.startPlacement();
+  game.pf2eAwesomeGmUtilities.partyPlacement = PartyPlacement;
 
   // Helper function to re-sync or recreate macros on demand
   game.pf2eAwesomeGmUtilities.syncMacros = async () => await syncMacros();

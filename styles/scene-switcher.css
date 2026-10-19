@@ -729,3 +729,60 @@
   width: 36px;
   height: 36px;
 }
+
+/* ==========================================================================
+   Place Party Floating Banner & Cursor
+   ========================================================================== */
+
+body.pf2e-placement-mode,
+body.pf2e-placement-mode #board,
+body.pf2e-placement-mode canvas {
+  cursor: crosshair !important;
+}
+
+.pf2e-placement-banner {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(14, 18, 27, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #d4af37;
+  color: #f1f5f9;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-family: var(--font-primary, "Signika", sans-serif);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 0 12px rgba(212, 175, 55, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  animation: pf2e-banner-drop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.pf2e-placement-banner i {
+  color: #d4af37;
+  font-size: 14px;
+}
+
+.pf2e-placement-banner .cancel-hint {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+@keyframes pf2e-banner-drop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -15px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}

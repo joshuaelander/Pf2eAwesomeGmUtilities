@@ -20,6 +20,9 @@ export const RESOURCE_TRACKER_MACRO_ICON = "icons/svg/clockwork.svg";
 export const RESOURCE_WIDGET_MACRO_NAME = "PF2e Floating Trackers HUD";
 export const RESOURCE_WIDGET_MACRO_ICON = "icons/svg/eye.svg";
 
+export const PLACE_PARTY_MACRO_NAME = "Place Party on Scene";
+export const PLACE_PARTY_MACRO_ICON = "icons/svg/target.svg";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
 

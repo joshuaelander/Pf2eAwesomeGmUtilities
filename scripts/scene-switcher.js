@@ -369,6 +369,10 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         await this.toggleLighting(sceneId);
         break;
 
+      case "place-party":
+        game.pf2eAwesomeGmUtilities?.placeParty();
+        break;
+
       case "remove":
         await this.removeScene(sceneId);
         break;

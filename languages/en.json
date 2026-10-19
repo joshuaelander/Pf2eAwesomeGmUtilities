@@ -103,6 +103,18 @@
       "NotificationActivated": "Activated scene: {name}",
       "NotificationViewing": "Now viewing scene: {name}"
     },
+    "PartyPlacement": {
+      "Title": "Place Party on Scene",
+      "MacroName": "Place Party on Scene",
+      "Button": "Place Party",
+      "Tooltip": "Click on the scene to muster all party tokens clustered together",
+      "Banner": "Click anywhere on the map to place the party ({count} PCs)",
+      "BannerHint": "(Right-click or ESC to cancel)",
+      "Success": "Placed party ({count} members): {names}",
+      "Canceled": "Party placement canceled.",
+      "NoActors": "No party members found to place. Ensure you have PCs in your Party actor or player-owned characters.",
+      "NoScene": "No active scene canvas to place tokens on."
+    },
     "ResourceTracker": {
       "Title": "Resource & Subsystem Tracker",
       "MacroName": "PF2e Resource Tracker",
