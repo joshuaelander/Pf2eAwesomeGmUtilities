@@ -10,17 +10,22 @@ import {
   PANIC_STOP_MACRO_ICON,
   SCENE_SWITCHER_MACRO_NAME,
   SCENE_SWITCHER_MACRO_ICON,
+  RESOURCE_TRACKER_MACRO_NAME,
+  RESOURCE_TRACKER_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   DEFAULT_BANKS,
-  DEFAULT_SESSION_SCENES
+  DEFAULT_SESSION_SCENES,
+  DEFAULT_RESOURCE_TRACKERS
 } from "./constants.js";
 import { audioController } from "./audio-controller.js";
 import { SoundPadApp } from "./sound-pad-app.js";
 import { SceneSwitcherApp } from "./scene-switcher.js";
+import { ResourceTrackerApp } from "./resource-tracker-app.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
+let resourceTrackerInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -34,6 +39,13 @@ function getSceneSwitcher() {
     sceneSwitcherInstance = new SceneSwitcherApp();
   }
   return sceneSwitcherInstance;
+}
+
+function getResourceTracker() {
+  if (!resourceTrackerInstance) {
+    resourceTrackerInstance = new ResourceTrackerApp();
+  }
+  return resourceTrackerInstance;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -122,6 +134,36 @@ function registerSettings() {
     }
   });
 
+  // Resource Trackers Data (World)
+  game.settings.register(MODULE_ID, "resourceTrackers", {
+    name: "Resource Trackers",
+    hint: "Custom resource, clock, and affliction trackers.",
+    scope: "world",
+    config: false,
+    type: Array,
+    default: DEFAULT_RESOURCE_TRACKERS,
+    onChange: () => {
+      if (resourceTrackerInstance?.rendered) {
+        resourceTrackerInstance.render({ force: false });
+      }
+    }
+  });
+
+  // Resource Tracker Window Opacity (Client)
+  game.settings.register(MODULE_ID, "resourceTrackerOpacity", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.ResourceTrackerOpacity.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.ResourceTrackerOpacity.Hint"),
+    scope: "client",
+    config: true,
+    type: Number,
+    range: { min: 40, max: 100, step: 5 },
+    default: 100,
+    onChange: (val) => {
+      const el = document.querySelector("#pf2e-resource-tracker");
+      if (el) el.style.opacity = `${val / 100}`;
+    }
+  });
+
   // Master Volume (Client-side)
   game.settings.register(MODULE_ID, "soundPadMasterVolume", {
     name: "Sound Pad Master Volume",
@@ -177,6 +219,22 @@ function registerKeybindings() {
       if (!game.user.isGM) return;
       const switcher = getSceneSwitcher();
       switcher.toggle();
+      return true;
+    },
+    restricted: true,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
+
+  game.keybindings.register(MODULE_ID, "toggleResourceTracker", {
+    name: "Toggle Resource Tracker",
+    hint: "Quickly open or close the Resource & Subsystem Tracker window.",
+    editable: [
+      { key: "KeyR", modifiers: ["Shift"] }
+    ],
+    onDown: () => {
+      if (!game.user.isGM) return;
+      const tracker = getResourceTracker();
+      tracker.toggle();
       return true;
     },
     restricted: true,
@@ -241,6 +299,18 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openResourceTrackerTool = {
+    name: "pf2e-resource-tracker-open",
+    title: "PF2e Resource Tracker",
+    icon: "fa-solid fa-cubes-stacked",
+    visible: true,
+    button: true,
+    onClick: () => {
+      const tracker = getResourceTracker();
+      tracker.toggle();
+    }
+  };
+
   const insertTool = (ctrl, tool) => {
     if (!ctrl) return;
     if (Array.isArray(ctrl.tools)) {
@@ -266,7 +336,7 @@ function registerSceneControls(controls) {
   }
 
   // Dedicated top-level GM Utilities control group
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, panicToolData];
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, openResourceTrackerTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
@@ -276,6 +346,7 @@ function registerSceneControls(controls) {
     tools: Array.isArray(controls) ? gmTools : {
       [openSoundPadTool.name]: openSoundPadTool,
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
+      [openResourceTrackerTool.name]: openResourceTrackerTool,
       [panicToolData.name]: panicToolData
     }
   };
@@ -364,6 +435,11 @@ const DESIRED_MACROS = [
     name: SCENE_SWITCHER_MACRO_NAME,
     icon: SCENE_SWITCHER_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.sceneSwitcher.toggle();`
+  },
+  {
+    name: RESOURCE_TRACKER_MACRO_NAME,
+    icon: RESOURCE_TRACKER_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.resourceTracker.toggle();`
   }
 ];
 
@@ -484,6 +560,20 @@ Hooks.once("ready", async () => {
     clearSession: () => getSceneSwitcher().confirmClearSession()
   };
 
+  // Resource Tracker API
+  game.pf2eAwesomeGmUtilities.resourceTracker = {
+    get app() { return getResourceTracker(); },
+    render: (options = { force: true }) => getResourceTracker().render(options),
+    toggle: () => getResourceTracker().toggle(),
+    adjust: (id, delta) => getResourceTracker().adjustValue(id, delta),
+    setValue: (id, val) => getResourceTracker().setValue(id, val),
+    reset: (id) => getResourceTracker().resetValue(id),
+    postToChat: (id) => getResourceTracker().postToChat(id),
+    addTracker: (presetId) => getResourceTracker().openCreateDialog(presetId),
+    editTracker: (id) => getResourceTracker().openEditDialog(id),
+    deleteTracker: (id) => getResourceTracker().deleteTracker(id)
+  };
+
   // Run macro sync
   if (game.user.isGM) {
     const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";
@@ -499,5 +589,5 @@ Hooks.once("ready", async () => {
     }
   }
 
-  console.log("PF2e Awesome GM Utilities | Ready! Sound Pad and Scene Switcher initialized.");
+  console.log("PF2e Awesome GM Utilities | Ready! Sound Pad, Scene Switcher, and Resource Tracker initialized.");
 });

@@ -14,10 +14,175 @@ export const PANIC_STOP_MACRO_ICON = "icons/magic/control/debuff-energy-hold-lev
 export const SCENE_SWITCHER_MACRO_NAME = "PF2e Scene Switcher";
 export const SCENE_SWITCHER_MACRO_ICON = "icons/svg/map.svg";
 
+export const RESOURCE_TRACKER_MACRO_NAME = "PF2e Resource Tracker";
+export const RESOURCE_TRACKER_MACRO_ICON = "icons/commodities/biological/organ-heart-red.webp";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
 
 export const DEFAULT_SESSION_SCENES = [];
+
+export const DEFAULT_RESOURCE_PRESETS = [
+  {
+    presetId: "rations",
+    name: "Rations / Food",
+    category: "party",
+    type: "counter",
+    value: 14,
+    min: 0,
+    max: 30,
+    color: "nature",
+    icon: "icons/consumables/food/rations-wrapped-cloth-bread.webp",
+    notes: "Daily party food supplies. 1 used per PC each day."
+  },
+  {
+    presetId: "water",
+    name: "Clean Water",
+    category: "party",
+    type: "counter",
+    value: 12,
+    min: 0,
+    max: 30,
+    color: "ocean",
+    icon: "icons/consumables/potions/bottle-conical-water.webp",
+    notes: "Potable water in skins/casks."
+  },
+  {
+    presetId: "supplies",
+    name: "Camp & Travel Supplies",
+    category: "party",
+    type: "counter",
+    value: 10,
+    min: 0,
+    max: 20,
+    color: "amber",
+    icon: "icons/commodities/treasure/token-runic-grey.webp",
+    notes: "Firewood, bandages, lantern oil, and campsite gear."
+  },
+  {
+    presetId: "victory-points",
+    name: "Victory Points (VP)",
+    category: "subsystem",
+    type: "progress",
+    value: 6,
+    min: 0,
+    max: 20,
+    color: "gold",
+    icon: "icons/commodities/treasure/trophy-cup-gold.webp",
+    notes: "Track progress in Chases, Research, Infiltration, or Heists."
+  },
+  {
+    presetId: "alert-clock",
+    name: "Alarm / Alert Level",
+    category: "subsystem",
+    type: "clock",
+    clockSegments: 6,
+    value: 2,
+    min: 0,
+    max: 6,
+    color: "crimson",
+    icon: "icons/skills/melee/strike-axe-blood-red.webp",
+    notes: "Guards raise the alarm when filled! Triggers combat on 6."
+  },
+  {
+    presetId: "doom-clock",
+    name: "Ritual Countdown Clock",
+    category: "subsystem",
+    type: "clock",
+    clockSegments: 4,
+    value: 3,
+    min: 0,
+    max: 4,
+    color: "arcane",
+    direction: "countdown",
+    icon: "icons/magic/time/hourglass-tilted-gray.webp",
+    notes: "Rounds or turns remaining before the cult's ritual completes."
+  },
+  {
+    presetId: "sanity",
+    name: "Sanity / Stress",
+    category: "actor",
+    type: "progress",
+    value: 15,
+    min: 0,
+    max: 20,
+    color: "shadow",
+    icon: "icons/magic/unholy/silhouette-evil-horned-giant.webp",
+    notes: "Mental fortitude against cosmic horror and maddening sights."
+  },
+  {
+    presetId: "disease-stage",
+    name: "Ghoul Fever",
+    category: "actor",
+    type: "stage",
+    value: 1,
+    min: 1,
+    max: 5,
+    color: "fire",
+    icon: "icons/skills/wounds/injury-face-impact-blood.webp",
+    stages: [
+      { stage: 1, name: "Stage 1", effect: "Carrier; no active symptoms yet." },
+      { stage: 2, name: "Stage 2", effect: "Clumsy 1; fever chills set in." },
+      { stage: 3, name: "Stage 3", effect: "Clumsy 2 and Drained 1." },
+      { stage: 4, name: "Stage 4", effect: "Clumsy 2, Drained 2, and Confused." },
+      { stage: 5, name: "Stage 5", effect: "Death, rising as a ghoul at next midnight." }
+    ],
+    notes: "Affliction save DC 15 at every morning rest."
+  }
+];
+
+export const DEFAULT_RESOURCE_TRACKERS = [
+  {
+    id: "tracker-food",
+    name: "Party Rations",
+    category: "party",
+    type: "counter",
+    value: 16,
+    min: 0,
+    max: 30,
+    color: "nature",
+    icon: "icons/consumables/food/rations-wrapped-cloth-bread.webp",
+    notes: "1 ration per PC per day of wilderness travel."
+  },
+  {
+    id: "tracker-water",
+    name: "Clean Water",
+    category: "party",
+    type: "counter",
+    value: 12,
+    min: 0,
+    max: 24,
+    color: "ocean",
+    icon: "icons/consumables/potions/bottle-conical-water.webp",
+    notes: "Fresh water stored in canteens and barrels."
+  },
+  {
+    id: "tracker-vp",
+    name: "Infiltration Progress (VP)",
+    category: "subsystem",
+    type: "progress",
+    value: 8,
+    min: 0,
+    max: 20,
+    color: "gold",
+    icon: "icons/commodities/treasure/trophy-cup-gold.webp",
+    notes: "Accumulate 20 Victory Points to breach the inner sanctum."
+  },
+  {
+    id: "tracker-alert",
+    name: "Castle Alert Clock",
+    category: "subsystem",
+    type: "clock",
+    clockSegments: 6,
+    value: 3,
+    min: 0,
+    max: 6,
+    color: "crimson",
+    icon: "icons/skills/melee/strike-axe-blood-red.webp",
+    notes: "Fills when guards notice suspicious noise or missing patrols."
+  }
+];
+
 
 
 export const COLOR_THEMES = {

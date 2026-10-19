@@ -1,7 +1,7 @@
 {
   "id": "pf2e-awesome-gm-utilities",
   "title": "PF2e Awesome GM Utilities",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -14,7 +14,8 @@
   ],
   "styles": [
     "styles/sound-pad.css",
-    "styles/scene-switcher.css"
+    "styles/scene-switcher.css",
+    "styles/resource-tracker.css"
   ],
   "languages": [
     {
@@ -29,7 +30,7 @@
       "name": "Aeneas"
     }
   ],
-  "description": "Essential widgets, utilities, and UI improvements for Pathfinder 2e Game Masters. Features a fast, detachable Music & SFX Sound Pad with seek/sampling scrubbers, multi-bank presets, drag-and-drop playlist mapping, and live volume controls.",
+  "description": "Essential widgets, utilities, and UI improvements for Pathfinder 2e Game Masters. Features a fast Music Sound Pad with sampling scrubbers, a Session Scene Switcher with player pull tools, and a customizable Resource & Subsystem Tracker for party supplies, clocks, and affliction stages.",
   "relationships": {
     "systems": [
       {

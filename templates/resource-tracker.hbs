@@ -1,0 +1,285 @@
+<div class="pf2e-resource-tracker-container">
+
+  <!-- Header Controls Ribbon -->
+  <header class="tracker-header-ribbon">
+    <!-- Category Tabs -->
+    <nav class="tracker-category-tabs">
+      <button type="button" class="tracker-category-tab {{#if (eq activeCategory 'all')}}active{{/if}}" data-category="all">
+        <i class="fa-solid fa-border-all"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Tabs.All"}}</span>
+        <span class="tab-badge">{{allCount}}</span>
+      </button>
+
+      <button type="button" class="tracker-category-tab {{#if (eq activeCategory 'party')}}active{{/if}}" data-category="party">
+        <i class="fa-solid fa-campground"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Tabs.Party"}}</span>
+        <span class="tab-badge">{{partyCount}}</span>
+      </button>
+
+      <button type="button" class="tracker-category-tab {{#if (eq activeCategory 'subsystem')}}active{{/if}}" data-category="subsystem">
+        <i class="fa-solid fa-clock"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Tabs.Subsystems"}}</span>
+        <span class="tab-badge">{{subsystemCount}}</span>
+      </button>
+
+      <button type="button" class="tracker-category-tab {{#if (eq activeCategory 'actor')}}active{{/if}}" data-category="actor">
+        <i class="fa-solid fa-user-shield"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Tabs.Characters"}}</span>
+        <span class="tab-badge">{{actorCount}}</span>
+      </button>
+    </nav>
+
+    <!-- Toolbar: Search, Preset Dropdown, and Add Tracker -->
+    <div class="tracker-toolbar">
+      <div class="tracker-search-box">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input type="text" class="tracker-search-input" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.SearchPlaceholder"}}" value="{{filterQuery}}" />
+      </div>
+
+      <div class="tracker-quick-presets">
+        <select class="quick-preset-select">
+          <option value="" disabled selected>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.SelectPresetPlaceholder"}}</option>
+          {{#each presets}}
+            <option value="{{id}}">{{name}}</option>
+          {{/each}}
+        </select>
+        <button type="button" class="btn-add-preset" title="Add from selected preset">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+        </button>
+      </div>
+
+      <button type="button" class="btn-primary-action btn-add-tracker" data-action="add-tracker">
+        <i class="fa-solid fa-plus"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.AddTracker"}}</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Trackers List -->
+  <main class="trackers-scroll-area">
+    {{#if hasTrackers}}
+      <div class="trackers-grid">
+        {{#each trackers}}
+          <article class="resource-tracker-card theme-{{color}}" data-id="{{id}}" data-name="{{name}}" data-notes="{{notes}}" style="--theme-accent: {{theme.border}}; --theme-glow: {{theme.glow}};">
+            
+            <!-- Card Header -->
+            <header class="tracker-card-header">
+              <div class="tracker-identity">
+                <!-- Icon or Image -->
+                <div class="tracker-icon-box" style="border-color: {{theme.border}};">
+                  {{#if isImageIcon}}
+                    <img src="{{icon}}" alt="{{name}}" class="tracker-img-icon" />
+                  {{else}}
+                    <i class="{{icon}} tracker-fa-icon" style="color: {{theme.border}};"></i>
+                  {{/if}}
+                </div>
+
+                <div class="tracker-title-meta">
+                  <h3 class="tracker-name" title="{{name}}">{{name}}</h3>
+                  <div class="tracker-tags">
+                    <span class="type-tag">{{type}}</span>
+                    {{#if isCountdown}}
+                      <span class="countdown-tag" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.CountDown"}}">
+                        <i class="fa-solid fa-arrow-down"></i>
+                      </span>
+                    {{/if}}
+
+                    {{#if linkedActor}}
+                      <span class="actor-link-badge" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.LinkedTo"}} {{linkedActor.name}}">
+                        <img src="{{linkedActor.img}}" class="actor-mini-avatar" alt="{{linkedActor.name}}" />
+                        <span>{{linkedActor.name}}</span>
+                      </span>
+                    {{/if}}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Header Card Action Buttons -->
+              <div class="tracker-header-actions">
+                <button type="button" class="card-btn btn-chat" data-action="post-chat" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.PostToChatTooltip"}}">
+                  <i class="fa-solid fa-comment"></i>
+                </button>
+                <button type="button" class="card-btn btn-reset" data-action="reset-tracker" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.ResetTracker"}}">
+                  <i class="fa-solid fa-rotate-left"></i>
+                </button>
+                <button type="button" class="card-btn btn-move" data-action="move-up" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.MoveUp"}}">
+                  <i class="fa-solid fa-chevron-up"></i>
+                </button>
+                <button type="button" class="card-btn btn-move" data-action="move-down" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.MoveDown"}}">
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <button type="button" class="card-btn btn-edit" data-action="edit-tracker" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.EditTracker"}}">
+                  <i class="fa-solid fa-gear"></i>
+                </button>
+                <button type="button" class="card-btn btn-delete" data-action="delete-tracker" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.DeleteTracker"}}">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </div>
+            </header>
+
+            <!-- Card Body Based on Type -->
+            <div class="tracker-card-body">
+
+              <!-- 1. NUMERIC COUNTER -->
+              {{#if isCounter}}
+                <div class="counter-layout">
+                  <div class="counter-metric">
+                    <span class="counter-current-number" style="color: {{theme.border}};">{{value}}</span>
+                    <span class="counter-range-limits">/ {{max}} (min: {{min}})</span>
+                  </div>
+
+                  <div class="counter-steppers">
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-5" title="-5">-5</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="5" title="+5">+5</button>
+                  </div>
+                </div>
+              {{/if}}
+
+              <!-- 2. PROGRESS BAR -->
+              {{#if isProgress}}
+                <div class="progress-layout">
+                  <div class="progress-bar-container" style="border-color: {{theme.border}};">
+                    <div class="progress-bar-fill" style="width: {{progressPercent}}%; background: {{theme.border}}; box-shadow: 0 0 10px {{theme.glow}};"></div>
+                    <div class="progress-bar-overlay-text">
+                      <strong>{{value}}</strong> / {{max}} ({{progressPercent}}%)
+                    </div>
+                  </div>
+
+                  <div class="progress-steppers">
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-5" title="-5">-5</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="5" title="+5">+5</button>
+                  </div>
+                </div>
+              {{/if}}
+
+              <!-- 3. RADIAL SEGMENTED CLOCK -->
+              {{#if isClock}}
+                <div class="clock-layout">
+                  <!-- SVG Radial Clock Wheel -->
+                  <div class="clock-wheel-wrapper">
+                    <svg viewBox="0 0 100 100" class="clock-svg {{#if isClockFull}}clock-completed{{/if}}">
+                      <!-- Outer rim -->
+                      <circle cx="50" cy="50" r="43" fill="none" stroke="{{theme.border}}" stroke-width="1.8" />
+                      
+                      <!-- Slices -->
+                      {{#each clockSlices}}
+                        <path d="{{path}}"
+                              fill="{{fillColor}}"
+                              stroke="{{strokeColor}}"
+                              stroke-width="1.2"
+                              class="clock-slice-path {{#if isFilled}}filled{{/if}}"
+                              data-action="set-clock-segment"
+                              data-id="{{../id}}"
+                              data-segment="{{segment}}"
+                              title="Segment {{segment}}" />
+                      {{/each}}
+
+                      <!-- Center Hub Hole -->
+                      <circle cx="50" cy="50" r="9" fill="#181b24" stroke="{{theme.border}}" stroke-width="1.5" />
+                    </svg>
+
+                    <!-- Center Dial Value Text -->
+                    <div class="clock-center-counter">
+                      <span class="clock-cur-val">{{value}}</span>
+                      <span class="clock-sep">/</span>
+                      <span class="clock-max-val">{{clockSegments}}</span>
+                    </div>
+                  </div>
+
+                  <!-- Quick Controls & Pips -->
+                  <div class="clock-controls-col">
+                    <div class="clock-pips-row">
+                      {{#each clockPips}}
+                        <button type="button"
+                                class="clock-pip-btn {{#if isFilled}}filled{{/if}} {{#if active}}active-head{{/if}}"
+                                data-action="set-clock-segment"
+                                data-id="{{../id}}"
+                                data-segment="{{segment}}"
+                                style="{{#if isFilled}}background: {{../theme.border}}; box-shadow: 0 0 6px {{../theme.glow}};{{/if}}"
+                                title="Set to {{segment}}">
+                          {{segment}}
+                        </button>
+                      {{/each}}
+                    </div>
+
+                    <div class="clock-steppers">
+                      <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-1</button>
+                      <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+1</button>
+                    </div>
+                  </div>
+                </div>
+              {{/if}}
+
+              <!-- 4. AFFLICTION STAGES -->
+              {{#if isStage}}
+                <div class="stage-layout">
+                  <!-- Stage Selector Pills -->
+                  <div class="stages-pills-row">
+                    {{#each stages}}
+                      <button type="button"
+                              class="stage-pill-btn {{#if isCurrent}}active-current{{/if}} {{#if isCompleted}}stage-passed{{/if}}"
+                              data-action="set-stage"
+                              data-id="{{../id}}"
+                              data-stage="{{stage}}"
+                              style="{{#if isCurrent}}background: {{../theme.color}}; border-color: {{../theme.border}}; box-shadow: 0 0 8px {{../theme.glow}};{{/if}}"
+                              title="{{name}}{{#if effect}}: {{effect}}{{/if}}">
+                        <span class="stage-badge-number">Stage {{stage}}</span>
+                        <span class="stage-badge-title">{{name}}</span>
+                      </button>
+                    {{/each}}
+                  </div>
+
+                  <!-- Active Stage Effect Card -->
+                  <div class="active-stage-banner" style="border-left-color: {{theme.border}};">
+                    <div class="stage-banner-header">
+                      <i class="fa-solid fa-biohazard stage-icon-indicator" style="color: {{theme.border}};"></i>
+                      <strong class="stage-banner-title">{{currentStageName}}</strong>
+                    </div>
+                    {{#if currentStageEffect}}
+                      <div class="stage-banner-effect">{{currentStageEffect}}</div>
+                    {{/if}}
+                  </div>
+
+                  <!-- Quick Stage Incrementor -->
+                  <div class="stage-steppers">
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="Previous Stage">
+                      <i class="fa-solid fa-arrow-left"></i> Prev Stage
+                    </button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="Next Stage">
+                      Next Stage <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                  </div>
+                </div>
+              {{/if}}
+
+            </div>
+
+            <!-- Notes Section (if populated) -->
+            {{#if notes}}
+              <footer class="tracker-card-footer">
+                <i class="fa-solid fa-circle-info notes-icon"></i>
+                <span class="notes-text">{{notes}}</span>
+              </footer>
+            {{/if}}
+
+          </article>
+        {{/each}}
+      </div>
+    {{else}}
+      <!-- Empty State -->
+      <div class="trackers-empty-state">
+        <i class="fa-solid fa-cubes-stacked empty-icon"></i>
+        <h3>{{localize "PF2E_AWESOME_GM.ResourceTracker.NoTrackers"}}</h3>
+        <p>{{localize "PF2E_AWESOME_GM.ResourceTracker.NoTrackersHint"}}</p>
+        <button type="button" class="btn-primary-action" data-action="add-tracker">
+          <i class="fa-solid fa-plus"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.AddTracker"}}
+        </button>
+      </div>
+    {{/if}}
+  </main>
+
+</div>

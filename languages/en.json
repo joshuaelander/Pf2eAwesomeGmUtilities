@@ -103,6 +103,94 @@
       "NotificationActivated": "Activated scene: {name}",
       "NotificationViewing": "Now viewing scene: {name}"
     },
+    "ResourceTracker": {
+      "Title": "Resource & Subsystem Tracker",
+      "MacroName": "PF2e Resource Tracker",
+      "AddTracker": "Add Tracker",
+      "AddTrackerTooltip": "Create a new resource, clock, or affliction tracker",
+      "QuickPresets": "Presets",
+      "QuickPresetsTooltip": "Instantly create common PF2e resources and subsystem clocks",
+      "SearchPlaceholder": "Search resources, clocks...",
+      "NoTrackers": "No Trackers Created Yet",
+      "NoTrackersTitle": "No Trackers Created Yet",
+      "NoTrackersHint": "Click 'Add Tracker' or select a preset from the ribbon to begin tracking party supplies, clocks, or diseases.",
+      "Tabs": {
+        "All": "All",
+        "Party": "Party",
+        "Subsystems": "Subsystems",
+        "Characters": "Characters"
+      },
+      "TabAll": "All Trackers",
+      "TabParty": "Party Resources",
+      "TabSubsystems": "Clocks & Subsystems",
+      "TabActors": "PC Afflictions & Stats",
+      "ResetConfirm": "Reset this tracker back to its default starting value?",
+      "DeleteConfirm": "Are you sure you want to delete this tracker?",
+      "PostToChat": "Post Status to Chat",
+      "PostToChatTooltip": "Send a formatted summary card of this tracker to game chat",
+      "Stage": "Stage",
+      "EditTracker": "Configure Tracker",
+      "ResetTracker": "Reset to Default",
+      "DeleteTracker": "Delete Tracker",
+      "MoveUp": "Move Up",
+      "MoveDown": "Move Down",
+      "LinkedTo": "Linked to",
+      "Unlinked": "Party / Global",
+      "CountDown": "Countdown Timer",
+      "CountUp": "Progress Meter",
+      "Notifications": {
+        "Saved": "Saved tracker: {name}",
+        "Deleted": "Deleted tracker: {name}",
+        "PostedToChat": "Posted {name} status card to chat."
+      },
+      "Chat": {
+        "CardTitle": "Resource Update",
+        "StageLabel": "Current Stage",
+        "Remaining": "Remaining",
+        "Completed": "Filled / Completed"
+      },
+      "Config": {
+        "CreateTitle": "Create Resource Tracker",
+        "EditTitle": "Configure Resource Tracker",
+        "PresetLabel": "Quick Preset (Auto-fill)",
+        "SelectPresetPlaceholder": "-- Choose a Preset Template --",
+        "Name": "Tracker Name",
+        "NamePlaceholder": "e.g., Food Supplies, Alert Level, Ghoul Fever",
+        "Category": "Category",
+        "CategoryParty": "Party / Campaign Resource",
+        "CategorySubsystem": "Subsystem (VP / Clock / Heist)",
+        "CategoryActor": "Player Character (Disease / Sanity / Curse)",
+        "Type": "Tracker Type",
+        "TypeCounter": "Numeric Counter (Simple +/- buttons)",
+        "TypeProgress": "Progress Bar (Percentage / Milestone)",
+        "TypeClock": "Segmented Clock (Subsystem / Doom Clock)",
+        "TypeStage": "Affliction Stages (Disease / Poison / Curse)",
+        "LinkedActor": "Linked Player Character",
+        "NoneParty": "[ None - Global / Party ]",
+        "CurrentValue": "Current Value",
+        "MinValue": "Minimum Value",
+        "MaxValue": "Maximum Value / Target",
+        "ClockSegments": "Clock Segments / Slices",
+        "Direction": "Count Direction",
+        "DirectionUp": "Count Up (0 -> Target, e.g. Victory Points, Alert)",
+        "DirectionDown": "Count Down (Target -> 0, e.g. Rations, Doom Timer)",
+        "IconOrImage": "Icon or Image Path",
+        "IconHint": "FontAwesome class (e.g. fa-solid fa-droplet) or Foundry image file path",
+        "Browse": "Browse",
+        "QuickIcons": "Quick Icons",
+        "ColorTheme": "Color Theme",
+        "Notes": "Notes / Rules / Failure Conditions",
+        "NotesPlaceholder": "Additional notes, cure DC, or rules triggered on completion...",
+        "Stage1Notes": "Stage 1 Effect",
+        "Stage2Notes": "Stage 2 Effect",
+        "Stage3Notes": "Stage 3 Effect",
+        "Stage4Notes": "Stage 4 Effect",
+        "Stage5Notes": "Stage 5 Effect",
+        "Save": "Save Tracker",
+        "Cancel": "Cancel",
+        "Delete": "Delete Tracker"
+      }
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -120,11 +208,16 @@
         "Name": "Scene Switcher Opacity",
         "Hint": "Set window opacity percentage for the Scene Switcher so you can see the game canvas underneath."
       },
+      "ResourceTrackerOpacity": {
+        "Name": "Resource Tracker Opacity",
+        "Hint": "Set window opacity percentage for the Resource Tracker."
+      },
       "SoundPadHotbarMacro": {
         "Name": "Auto-Sync GM Utilities Macros",
-        "Hint": "Automatically creates handy Sound Pad and Scene Switcher macros in the Macro Directory."
+        "Hint": "Automatically creates handy Sound Pad, Scene Switcher, and Resource Tracker macros in the Macro Directory."
       }
     }
   }
 }
+
 

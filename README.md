@@ -119,9 +119,47 @@ The second utility in this suite is the **Session Scene Switcher** — a dedicat
 
 ---
 
+## Resource & Subsystem Tracker
+
+The third utility in this suite is the **Resource & Subsystem Tracker** — a versatile, floating ApplicationV2 control panel for tracking party supplies, complex subsystem clocks, and character afflictions.
+
+### Key Features
+
+1. **Party & Campaign Resources**
+   - Track party consumables such as **Food / Rations**, **Potable Water**, **Camp Supplies**, torches, and ammunition.
+   - Increment or decrement with quick `+1`, `-1`, `+5`, `-5` tactile buttons.
+   - Configurable minimums and maximum capacity limits.
+
+2. **PF2e Subsystems & Radial Clocks**
+   - **Victory Points (VP)**: Progress bars for Heists, Infiltration, Research, and Chases.
+   - **Segmented Clocks**: Authentic radial circular clocks (4, 6, 8, 10, or 12 slices) inspired by Blades in the Dark and PF2e subsystem rules.
+   - **Interactive Slice Clicking**: Click directly on any clock slice or pip to set the clock value instantly, or click the current slice to toggle it back down.
+   - **Count Up vs Count Down**: Switch between progress meters (0 &rarr; Target) and countdown clocks (Target &rarr; 0, e.g. ritual countdowns, doom timers).
+
+3. **Per-PC Tracking & Affliction Stages**
+   - **Linked Characters**: Link any tracker directly to a player character actor, displaying their portrait avatar and name badge.
+   - **Sanity / Stress Meters**: Track mental fortitude against cosmic horror and eldritch hazards.
+   - **Disease, Poison & Curse Stages**: Dedicated 5-stage affliction layout with custom effect descriptions for each stage (e.g. *Stage 2: Clumsy 1; Stage 3: Clumsy 2 and Drained 1*).
+   - Banner displaying the current stage's rules and symptoms at a glance.
+
+4. **Rich Customization & Foundry Icon Picker**
+   - Use any **FontAwesome** icon class or select native **Foundry VTT icons** (`icons/consumables/...`, `icons/magic/...`) via Foundry's native image `FilePicker`.
+   - 8 curated color themes (Pathfinder Gold, Crimson, Amber, Forest Nature, Ocean Blue, Arcane Violet, Shadow Slate, Inferno Fire).
+   - Built-in quick presets: Rations, Water, Camp Supplies, Victory Points, Alert Clock, Ritual Doom Clock, Sanity, and Ghoul Fever.
+
+5. **Post Status to Chat**
+   - Click the chat bubble on any tracker card to immediately broadcast a beautifully formatted PF2e chat card to all players, displaying the current value, clock pips, or active affliction stage!
+
+6. **Convenient GM Access**
+   - **Scene Controls**: Dedicated button inside the `PF2e GM Utilities` control bar.
+   - **Keybinding**: Press `Shift + R` to toggle the Resource Tracker window.
+   - **Smart Macro Sync**: Automatically creates a "PF2e Resource Tracker" macro in your macro folder.
+
+---
+
 ## API & Macro Usage
 
-Developers and GMs can control both utilities directly via macros or chat:
+Developers and GMs can control all utilities directly via macros or chat:
 
 ```javascript
 // --- SOUND PAD ---
@@ -136,7 +174,12 @@ game.pf2eAwesomeGmUtilities.sceneSwitcher.view("sceneId123");
 game.pf2eAwesomeGmUtilities.sceneSwitcher.activate("sceneId123");
 game.pf2eAwesomeGmUtilities.sceneSwitcher.pull("sceneId123");
 game.pf2eAwesomeGmUtilities.sceneSwitcher.activateAndPull("sceneId123");
-game.pf2eAwesomeGmUtilities.sceneSwitcher.addScene("sceneId123");
+
+// --- RESOURCE TRACKER ---
+game.pf2eAwesomeGmUtilities.resourceTracker.toggle();
+game.pf2eAwesomeGmUtilities.resourceTracker.adjust("tracker-food", -1);
+game.pf2eAwesomeGmUtilities.resourceTracker.setValue("tracker-alert", 4);
+game.pf2eAwesomeGmUtilities.resourceTracker.postToChat("tracker-alert");
 ```
 
 ---
@@ -152,7 +195,9 @@ For technical details on developing modules for Foundry VTT v14 and PF2e, see ou
 
 - [x] **Music & SFX Sound Pad with Seeking and Sampling**
 - [x] **Session Scene Switcher with Quick View, Activate, and Pull**
-- [ ] **Unified GM Master Control Panel** (condensed tabbed / docked panel embedding Sound Pad, Scene Switcher, and upcoming widgets)
+- [x] **Resource & Subsystem Tracker for Supplies, Clocks, and Afflictions**
+- [ ] **Unified GM Master Control Panel** (condensed tabbed / docked panel embedding Sound Pad, Scene Switcher, and Resource Tracker)
 - [ ] **Scene Transition & Environment Switcher**: Quick atmosphere shifts combining lighting, weather, and sound presets.
 - [ ] **Enhanced GM Shop & Merchant UI**: Streamlined buying/selling interface for PF2e settlements.
 - [ ] **Encounter Reward & Loot Distributor**: One-click distribution of XP and loot cards.
+
