@@ -16,7 +16,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
  * @returns {string} Image path
  */
 export function getSceneThumbnail(scene) {
-  if (!scene) return "icons/svg/map.svg";
+  if (!scene) return "icons/svg/castle.svg";
 
   // 1. Scene client getter (Foundry v12-v14 resolves generated or default thumbnail)
   if (scene.thumbnail && typeof scene.thumbnail === "string" && scene.thumbnail.trim() !== "") {
@@ -63,7 +63,7 @@ export function getSceneThumbnail(scene) {
   }
 
   // 8. Fallback default map icon
-  return "icons/svg/map.svg";
+  return "icons/svg/castle.svg";
 }
 
 export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) {

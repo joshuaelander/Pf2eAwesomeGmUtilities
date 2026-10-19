@@ -53,6 +53,11 @@
         <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.ImportAffliction"}}</span>
       </button>
 
+      <button type="button" class="btn-toggle-widget" data-action="toggle-widget" title="{{localize "PF2E_AWESOME_GM.ResourceWidget.Title"}}">
+        <i class="fa-solid fa-layer-group"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceWidget.Title"}}</span>
+      </button>
+
       <button type="button" class="btn-primary-action btn-add-tracker" data-action="add-tracker">
         <i class="fa-solid fa-plus"></i>
         <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.AddTracker"}}</span>
@@ -89,6 +94,20 @@
                       </span>
                     {{/if}}
 
+                    {{#if isPinned}}
+                      <span class="pin-badge" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.PinnedBadge"}}">
+                        <i class="fa-solid fa-thumbtack"></i>
+                        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.PinnedBadge"}}</span>
+                      </span>
+                    {{/if}}
+
+                    {{#if visibleToPlayers}}
+                      <span class="shared-badge" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.SharedBadge"}}">
+                        <i class="fa-solid fa-users"></i>
+                        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.SharedBadge"}}</span>
+                      </span>
+                    {{/if}}
+
                     {{#if linkedActor}}
                       <span class="actor-link-badge" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.LinkedTo"}} {{linkedActor.name}}">
                         <img src="{{linkedActor.img}}" class="actor-mini-avatar" alt="{{linkedActor.name}}" />
@@ -101,6 +120,12 @@
 
               <!-- Header Card Action Buttons -->
               <div class="tracker-header-actions">
+                <button type="button" class="card-btn btn-pin {{#if isPinned}}active{{/if}}" data-action="toggle-pin" data-id="{{id}}" title="{{#if isPinned}}{{localize "PF2E_AWESOME_GM.ResourceTracker.UnpinWidget"}}{{else}}{{localize "PF2E_AWESOME_GM.ResourceTracker.PinWidget"}}{{/if}}">
+                  <i class="fa-solid fa-thumbtack"></i>
+                </button>
+                <button type="button" class="card-btn btn-visibility {{#if visibleToPlayers}}active{{/if}}" data-action="toggle-visibility" data-id="{{id}}" title="{{#if visibleToPlayers}}{{localize "PF2E_AWESOME_GM.ResourceTracker.HideFromPlayers"}}{{else}}{{localize "PF2E_AWESOME_GM.ResourceTracker.ShowToPlayers"}}{{/if}}">
+                  <i class="fa-solid {{#if visibleToPlayers}}fa-eye{{else}}fa-eye-slash{{/if}}"></i>
+                </button>
                 <button type="button" class="card-btn btn-chat" data-action="post-chat" data-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.PostToChatTooltip"}}">
                   <i class="fa-solid fa-comment"></i>
                 </button>

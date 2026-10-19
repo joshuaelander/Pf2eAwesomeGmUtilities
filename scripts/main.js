@@ -4,6 +4,7 @@
 
 import {
   MODULE_ID,
+  SOCKET_EVENT,
   SOUND_PAD_MACRO_NAME,
   SOUND_PAD_MACRO_ICON,
   PANIC_STOP_MACRO_NAME,
@@ -12,6 +13,8 @@ import {
   SCENE_SWITCHER_MACRO_ICON,
   RESOURCE_TRACKER_MACRO_NAME,
   RESOURCE_TRACKER_MACRO_ICON,
+  RESOURCE_WIDGET_MACRO_NAME,
+  RESOURCE_WIDGET_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   DEFAULT_BANKS,
@@ -22,10 +25,12 @@ import { audioController } from "./audio-controller.js";
 import { SoundPadApp } from "./sound-pad-app.js";
 import { SceneSwitcherApp } from "./scene-switcher.js";
 import { ResourceTrackerApp } from "./resource-tracker-app.js";
+import { ResourceWidgetApp } from "./resource-widget-app.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
 let resourceTrackerInstance = null;
+let resourceWidgetInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -46,6 +51,13 @@ function getResourceTracker() {
     resourceTrackerInstance = new ResourceTrackerApp();
   }
   return resourceTrackerInstance;
+}
+
+function getResourceWidget() {
+  if (!resourceWidgetInstance) {
+    resourceWidgetInstance = new ResourceWidgetApp();
+  }
+  return resourceWidgetInstance;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -146,7 +158,26 @@ function registerSettings() {
       if (resourceTrackerInstance?.rendered) {
         resourceTrackerInstance.render({ force: false });
       }
+      syncWidgetApp();
     }
+  });
+
+  // Resource Widget Position (Client)
+  game.settings.register(MODULE_ID, "resourceWidgetPosition", {
+    name: "Resource Widget Position",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: { left: 18, top: 320 }
+  });
+
+  // Resource Widget Collapsed State (Client)
+  game.settings.register(MODULE_ID, "resourceWidgetCollapsed", {
+    name: "Resource Widget Collapsed",
+    scope: "client",
+    config: false,
+    type: Boolean,
+    default: false
   });
 
   // Resource Tracker Window Opacity (Client)
@@ -240,6 +271,44 @@ function registerKeybindings() {
     restricted: true,
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
+
+  game.keybindings.register(MODULE_ID, "toggleResourceWidget", {
+    name: "Toggle Trackers HUD Widget",
+    hint: "Quickly show or hide the floating Resource & Subsystem HUD.",
+    editable: [
+      { key: "KeyH", modifiers: ["Shift"] }
+    ],
+    onDown: () => {
+      const widget = getResourceWidget();
+      widget.toggle();
+      return true;
+    },
+    restricted: false,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
+}
+
+/**
+ * Automatically synchronizes the floating HUD widget across GM and connected players.
+ */
+function syncWidgetApp() {
+  const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+  const isGM = game.user.isGM;
+  const visibleCount = trackers.filter(t => isGM ? (t.isPinned || t.visibleToPlayers) : t.visibleToPlayers).length;
+
+  const widget = getResourceWidget();
+  if (widget.rendered) {
+    if (!isGM && visibleCount === 0) {
+      widget.close();
+    } else {
+      widget.render({ force: false });
+    }
+  } else {
+    // If player has visible shared trackers, automatically display HUD
+    if (!isGM && visibleCount > 0) {
+      widget.render({ force: true });
+    }
+  }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -311,6 +380,18 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openResourceWidgetTool = {
+    name: "pf2e-resource-widget-open",
+    title: "PF2e Trackers HUD",
+    icon: "fa-solid fa-layer-group",
+    visible: true,
+    button: true,
+    onClick: () => {
+      const widget = getResourceWidget();
+      widget.toggle();
+    }
+  };
+
   const insertTool = (ctrl, tool) => {
     if (!ctrl) return;
     if (Array.isArray(ctrl.tools)) {
@@ -336,7 +417,7 @@ function registerSceneControls(controls) {
   }
 
   // Dedicated top-level GM Utilities control group
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, openResourceTrackerTool, panicToolData];
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
@@ -347,6 +428,7 @@ function registerSceneControls(controls) {
       [openSoundPadTool.name]: openSoundPadTool,
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
       [openResourceTrackerTool.name]: openResourceTrackerTool,
+      [openResourceWidgetTool.name]: openResourceWidgetTool,
       [panicToolData.name]: panicToolData
     }
   };
@@ -440,22 +522,34 @@ const DESIRED_MACROS = [
     name: RESOURCE_TRACKER_MACRO_NAME,
     icon: RESOURCE_TRACKER_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.resourceTracker.toggle();`
+  },
+  {
+    name: RESOURCE_WIDGET_MACRO_NAME,
+    icon: RESOURCE_WIDGET_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.resourceWidget.toggle();`
   }
 ];
 
 async function getOrCreateFolder(name, type) {
   let folder = game.folders.getName(name);
+  const gmOnlyOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
   if (!folder) {
     try {
       folder = await Folder.create({
         name: name,
         type: type,
         parent: null,
-        color: MACRO_FOLDER_COLOR
+        color: MACRO_FOLDER_COLOR,
+        ownership: gmOnlyOwnership
       });
     } catch (err) {
       console.error(`PF2e Awesome GM Utilities | Failed to create folder: ${name}`, err);
       return null;
+    }
+  } else {
+    const currentDef = folder.ownership?.default ?? folder.ownership?.["default"];
+    if (currentDef !== CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE) {
+      await folder.update({ ownership: gmOnlyOwnership });
     }
   }
   return folder;
@@ -469,24 +563,31 @@ async function syncMacros() {
   const folder = await getOrCreateFolder(MACRO_FOLDER_NAME, "Macro");
   if (!folder) return;
 
-  const existingMacros = game.macros.filter(m => m.flags?.[MODULE_ID]?.isModuleMacro);
-  const desiredNames = DESIRED_MACROS.map(m => m.name);
-  const observerOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
+  const gmOnlyOwnership = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
 
   for (const desired of DESIRED_MACROS) {
-    const existing = existingMacros.find(m => m.name === desired.name);
+    const existing = game.macros.find(m =>
+      m.flags?.[MODULE_ID]?.isModuleMacro
+        ? m.name === desired.name
+        : (m.name === desired.name && m.folder?.id === folder.id)
+    );
 
     if (existing) {
-      if (
+      const currentDefault = existing.ownership?.default ?? existing.ownership?.["default"];
+      const needsUpdate =
         existing.command !== desired.command ||
         existing.img !== desired.icon ||
-        existing.folder?.id !== folder.id
-      ) {
+        existing.folder?.id !== folder.id ||
+        currentDefault !== CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE ||
+        !existing.flags?.[MODULE_ID]?.isModuleMacro;
+
+      if (needsUpdate) {
         await existing.update({
           command: desired.command,
           img: desired.icon,
           folder: folder.id,
-          ownership: observerOwnership
+          ownership: gmOnlyOwnership,
+          [`flags.${MODULE_ID}.isModuleMacro`]: true
         });
       }
     } else {
@@ -496,7 +597,7 @@ async function syncMacros() {
         img: desired.icon,
         command: desired.command,
         folder: folder.id,
-        ownership: observerOwnership,
+        ownership: gmOnlyOwnership,
         flags: { [MODULE_ID]: { isModuleMacro: true } }
       };
       await Macro.create(macroData, { renderSheet: false });
@@ -574,18 +675,53 @@ Hooks.once("ready", async () => {
     deleteTracker: (id) => getResourceTracker().deleteTracker(id)
   };
 
-  // Run macro sync
-  if (game.user.isGM) {
-    const currentVersion = game.modules.get(MODULE_ID)?.version || "1.0.0";
-    let folder = game.folders.getName(MACRO_FOLDER_NAME);
-    const storedVersion = folder ? folder.getFlag(MODULE_ID, "moduleVersion") : null;
+  // Floating Resource Widget HUD API
+  game.pf2eAwesomeGmUtilities.resourceWidget = {
+    get app() { return getResourceWidget(); },
+    render: (options = { force: true }) => getResourceWidget().render(options),
+    toggle: () => getResourceWidget().toggle(),
+    close: () => getResourceWidget().close(),
+    sync: () => syncWidgetApp(),
+    resetPosition: async () => {
+      const app = getResourceWidget();
+      await app.resetPosition();
+    }
+  };
 
-    if (currentVersion !== storedVersion) {
+  // Helper function to re-sync or recreate macros on demand
+  game.pf2eAwesomeGmUtilities.syncMacros = async () => await syncMacros();
+
+  // Auto-render floating widget if there are visible trackers for this user
+  try {
+    const initialTrackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+    const initialVisible = initialTrackers.filter(t => game.user.isGM ? (t.isPinned || t.visibleToPlayers) : t.visibleToPlayers).length;
+    if (initialVisible > 0) {
+      getResourceWidget().render({ force: true });
+    }
+  } catch (err) {
+    console.warn("PF2e Awesome GM Utilities | Failed to auto-render resource widget:", err);
+  }
+
+  // Socket listener for live widget synchronization across clients
+  if (game.socket) {
+    try {
+      const socketChannel = typeof SOCKET_EVENT !== "undefined" ? SOCKET_EVENT : `module.${MODULE_ID}`;
+      game.socket.on(socketChannel, (payload) => {
+        if (payload?.action === "syncWidget") {
+          syncWidgetApp();
+        }
+      });
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed to attach socket listener:", err);
+    }
+  }
+
+  // Run macro sync for GM (ensures icons and GM-only ownership are up to date)
+  if (game.user.isGM) {
+    try {
       await syncMacros();
-      folder = game.folders.getName(MACRO_FOLDER_NAME);
-      if (folder) {
-        await folder.setFlag(MODULE_ID, "moduleVersion", currentVersion);
-      }
+    } catch (err) {
+      console.error("PF2e Awesome GM Utilities | Failed to sync macros:", err);
     }
   }
 

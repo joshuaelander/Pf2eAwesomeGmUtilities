@@ -191,11 +191,21 @@
         "QuickPasteLabel": "Paste Monster Ability / Affliction Text",
         "QuickPastePlaceholder": "Paste text from monster stat blocks, chat, or PDF (e.g. Ghast Fever; Saving Throw DC 16 Fortitude; Stage 1 carrier... Stage 2 3d8 void...)",
         "ParseTextBtn": "Parse & Auto-Fill",
+        "PinToWidget": "Pin to Floating HUD Widget",
+        "PinToWidgetHint": "Displays this tracker in a floating overlay on screen for instant access.",
+        "VisibleToPlayers": "Visible to Players",
+        "VisibleToPlayersHint": "When pinned to HUD, allows connected players to see this tracker live on their screen.",
         "Save": "Save Tracker",
         "Cancel": "Cancel",
         "Delete": "Delete Tracker"
       },
       "ImportAffliction": "Import Affliction",
+      "PinWidget": "Pin to Floating HUD",
+      "UnpinWidget": "Unpin from Floating HUD",
+      "ShowToPlayers": "Make Visible to Players",
+      "HideFromPlayers": "Hide from Players",
+      "PinnedBadge": "HUD",
+      "SharedBadge": "Shared",
       "ImportModal": {
         "Title": "Import Affliction from Monster / Chat Text",
         "Hint": "Paste any disease, poison, or curse text from a monster stat block, chat message, or PDF. All stages, Save DC, and notes will be extracted automatically.",
@@ -204,6 +214,15 @@
         "ImportBtn": "Import Affliction Tracker",
         "Success": "Successfully imported \"{name}\" with {count} stages!"
       }
+    },
+    "ResourceWidget": {
+      "Title": "Trackers HUD",
+      "Collapse": "Collapse HUD",
+      "Expand": "Expand HUD",
+      "Close": "Hide HUD",
+      "ResetPosition": "Reset HUD Position (Under Left Menu)",
+      "OpenManagerTooltip": "Open Full Resource Tracker",
+      "NoPinned": "No trackers currently pinned to HUD."
     },
     "Settings": {
       "AutoStopOtherMusic": {

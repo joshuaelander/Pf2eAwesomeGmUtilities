@@ -324,6 +324,8 @@ export class ResourceConfigDialog {
       color: "gold",
       icon: "fa-solid fa-box",
       notes: "",
+      isPinned: false,
+      visibleToPlayers: true,
       stages: [
         { stage: 1, name: "Stage 1", effect: "" },
         { stage: 2, name: "Stage 2", effect: "" },
@@ -831,6 +833,12 @@ export class ResourceConfigDialog {
     if (colorSelect && trackerData.color) colorSelect.value = trackerData.color;
     if (notesInput && trackerData.notes) notesInput.value = trackerData.notes;
 
+    const pinInput = root.querySelector('[name="isPinned"]');
+    if (pinInput && typeof trackerData.isPinned === "boolean") pinInput.checked = trackerData.isPinned;
+
+    const visInput = root.querySelector('[name="visibleToPlayers"]');
+    if (visInput && typeof trackerData.visibleToPlayers === "boolean") visInput.checked = trackerData.visibleToPlayers;
+
     if (trackerData.type === "stage" && trackerData.stages && trackerData.stages.length > 0) {
       ResourceConfigDialog.renderStageRows(root, trackerData.stages);
     }
@@ -980,6 +988,9 @@ export class ResourceConfigDialog {
         ? Math.max(0, Math.min(clockSegments, rawVal))
         : Math.max(min, Math.min(max, rawVal));
 
+    const isPinned = Boolean(root.querySelector('[name="isPinned"]')?.checked);
+    const visibleToPlayers = Boolean(root.querySelector('[name="visibleToPlayers"]')?.checked);
+
     return {
       id: id || `tracker-${foundry.utils.randomID(8)}`,
       name: rawName || "Resource Tracker",
@@ -994,7 +1005,9 @@ export class ResourceConfigDialog {
       color: getVal("color") || "gold",
       icon: getVal("icon").trim() || "fa-solid fa-box",
       notes: getVal("notes").trim(),
-      stages: stages
+      stages: stages,
+      isPinned: isPinned,
+      visibleToPlayers: visibleToPlayers
     };
   }
 }

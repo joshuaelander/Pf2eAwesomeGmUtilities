@@ -5,7 +5,7 @@
     <div class="active-scene-banner {{#if activeScene}}has-active{{else}}no-active{{/if}}">
       {{#if activeScene}}
         <div class="active-banner-media">
-          <img src="{{activeScene.thumb}}" alt="{{activeScene.name}}" class="active-banner-thumb" onerror="this.onerror=null; this.src='icons/svg/map.svg';" />
+          <img src="{{activeScene.thumb}}" alt="{{activeScene.name}}" class="active-banner-thumb" onerror="this.onerror=null; this.src='icons/svg/castle.svg';" />
           <span class="active-pulse-badge"><i class="fa-solid fa-globe"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}</span>
         </div>
         <div class="active-banner-info">
@@ -67,7 +67,7 @@
           <!-- Top Row: Thumbnail + Title & Status + Controls -->
           <div class="card-top-row">
             <div class="card-media" data-action="view" data-scene-id="{{id}}" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.ViewSceneTooltip"}}">
-              <img src="{{thumb}}" alt="{{name}}" class="card-thumb" onerror="this.onerror=null; this.src='icons/svg/map.svg';" />
+              <img src="{{thumb}}" alt="{{name}}" class="card-thumb" onerror="this.onerror=null; this.src='icons/svg/castle.svg';" />
               <div class="media-overlay">
                 <i class="fa-solid fa-eye overlay-eye"></i>
               </div>

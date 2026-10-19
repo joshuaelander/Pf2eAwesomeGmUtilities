@@ -7,6 +7,7 @@
 
 import {
   MODULE_ID,
+  SOCKET_EVENT,
   COLOR_THEMES,
   DEFAULT_RESOURCE_PRESETS,
   DEFAULT_RESOURCE_TRACKERS
@@ -463,6 +464,10 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     event.stopPropagation();
 
     switch (action) {
+      case "toggle-widget":
+        game.pf2eAwesomeGmUtilities?.resourceWidget?.toggle();
+        break;
+
       case "add-tracker":
         await this.openCreateDialog();
         break;
@@ -505,6 +510,14 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         await this.deleteTracker(trackerId);
         break;
 
+      case "toggle-pin":
+        await this.togglePin(trackerId);
+        break;
+
+      case "toggle-visibility":
+        await this.togglePlayerVisibility(trackerId);
+        break;
+
       case "move-up":
         await this.reorderTracker(trackerId, -1);
         break;
@@ -518,6 +531,43 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
   /* ------------------------------------------------------------------------- */
   /* Tracker CRUD & Persistence Operations                                     */
   /* ------------------------------------------------------------------------- */
+
+  /**
+   * Toggles whether a tracker is pinned to the floating HUD widget.
+   * @param {string} id Tracker ID
+   */
+  async togglePin(id) {
+    const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+    const tracker = trackers.find(t => t.id === id);
+    if (!tracker) return;
+
+    tracker.isPinned = !tracker.isPinned;
+    await this.saveTrackers(trackers);
+
+    ui.notifications.info(tracker.isPinned ? `Pinned "${tracker.name}" to HUD.` : `Unpinned "${tracker.name}" from HUD.`);
+  }
+
+  /**
+   * Toggles whether a pinned tracker is visible to players on the HUD.
+   * @param {string} id Tracker ID
+   */
+  async togglePlayerVisibility(id) {
+    const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+    const tracker = trackers.find(t => t.id === id);
+    if (!tracker) return;
+
+    tracker.visibleToPlayers = !tracker.visibleToPlayers;
+    if (tracker.visibleToPlayers) {
+      tracker.isPinned = true;
+    }
+    await this.saveTrackers(trackers);
+
+    if (tracker.visibleToPlayers) {
+      ui.notifications.info(`"${tracker.name}" is now visible to players on their HUD.`);
+    } else {
+      ui.notifications.info(`"${tracker.name}" is now hidden from players.`);
+    }
+  }
 
   /**
    * Adjusts the tracker's current value by delta (+1, -1, +5, -5).
@@ -850,6 +900,15 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
   async saveTrackers(trackers) {
     await game.settings.set(MODULE_ID, "resourceTrackers", trackers);
     this.render({ force: false });
+
+    // Emit socket event to all connected player clients for instant live HUD sync
+    if (game.socket) {
+      game.socket.emit(SOCKET_EVENT, { action: "syncWidget" });
+    }
+
+    if (game.pf2eAwesomeGmUtilities?.resourceWidget?.sync) {
+      game.pf2eAwesomeGmUtilities.resourceWidget.sync();
+    }
   }
 
   /* ------------------------------------------------------------------------- */

@@ -56,6 +56,27 @@
     </div>
   </div>
 
+  <!-- Floating Widget HUD & Player Visibility Row -->
+  <div class="form-row two-col widget-visibility-row">
+    <div class="form-group checkbox-group">
+      <label class="checkbox-label">
+        <input type="checkbox" name="isPinned" {{#if tracker.isPinned}}checked{{/if}} />
+        <i class="fa-solid fa-thumbtack"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.PinToWidget"}}</span>
+      </label>
+      <div class="field-hint">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.PinToWidgetHint"}}</div>
+    </div>
+
+    <div class="form-group checkbox-group">
+      <label class="checkbox-label">
+        <input type="checkbox" name="visibleToPlayers" {{#if tracker.visibleToPlayers}}checked{{/if}} />
+        <i class="fa-solid fa-eye"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.VisibleToPlayers"}}</span>
+      </label>
+      <div class="field-hint">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.VisibleToPlayersHint"}}</div>
+    </div>
+  </div>
+
   <!-- Linked Actor (Player Character) & Direction Row -->
   <div class="form-row two-col">
     <div class="form-group">

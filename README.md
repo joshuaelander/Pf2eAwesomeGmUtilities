@@ -149,13 +149,22 @@ The third utility in this suite is the **Resource & Subsystem Tracker** — a ve
    - 8 curated color themes (Pathfinder Gold, Crimson, Amber, Forest Nature, Ocean Blue, Arcane Violet, Shadow Slate, Inferno Fire).
    - Built-in quick presets: Rations, Water, Camp Supplies, Victory Points, Alert Clock, Ritual Doom Clock, Sanity, and Generic Affliction.
 
-5. **Post Status to Chat**
+5. **Floating Trackers HUD Widget (Player-Visible Live Overlay)**
+   - Pin any tracker to a compact, non-intrusive floating overlay that sits on your game screen.
+   - **Player Visibility Option**: Toggle the eye icon on any tracker to make it visible to connected players! Perfect for countdown timers, doom clocks, party sanity, infiltration VP meters, or castle alert levels that you want the whole table to watch in suspense.
+   - **Live Real-Time Synchronization**: Any GM value adjustment immediately re-renders the HUD on all player screens with zero latency.
+   - **Sleek HUD Aesthetics**: Features glowing borders, mini SVG donut clocks, progress bars, and collapsible header mode.
+   - **Draggable & Persistent**: Freely drag the widget anywhere on screen; position and collapsed state are remembered per user.
+
+6. **Post Status to Chat**
    - Click the chat bubble on any tracker card to immediately broadcast a beautifully formatted PF2e chat card to all players, displaying the current value, clock pips, or active affliction stage!
 
-6. **Convenient GM Access**
-   - **Scene Controls**: Dedicated button inside the `PF2e GM Utilities` control bar.
-   - **Keybinding**: Press `Shift + R` to toggle the Resource Tracker window.
-   - **Smart Macro Sync**: Automatically creates a "PF2e Resource Tracker" macro in your macro folder.
+7. **Convenient GM & Player Access**
+   - **Scene Controls**: Dedicated buttons for the Resource Tracker and Floating Trackers HUD in the `PF2e GM Utilities` control bar.
+   - **Keybindings**:
+     - Press `Shift + R` to toggle the full Resource Tracker window.
+     - Press `Shift + H` to toggle the Floating Trackers HUD widget.
+   - **Smart Macro Sync**: Automatically creates macros for both the Resource Tracker and Floating HUD in your macro folder.
 
 ---
 
@@ -177,11 +186,15 @@ game.pf2eAwesomeGmUtilities.sceneSwitcher.activate("sceneId123");
 game.pf2eAwesomeGmUtilities.sceneSwitcher.pull("sceneId123");
 game.pf2eAwesomeGmUtilities.sceneSwitcher.activateAndPull("sceneId123");
 
-// --- RESOURCE TRACKER ---
+// --- RESOURCE TRACKER & FLOATING HUD ---
 game.pf2eAwesomeGmUtilities.resourceTracker.toggle();
 game.pf2eAwesomeGmUtilities.resourceTracker.adjust("tracker-food", -1);
 game.pf2eAwesomeGmUtilities.resourceTracker.setValue("tracker-alert", 4);
 game.pf2eAwesomeGmUtilities.resourceTracker.postToChat("tracker-alert");
+
+// Toggle or sync the Floating HUD Widget
+game.pf2eAwesomeGmUtilities.resourceWidget.toggle();
+game.pf2eAwesomeGmUtilities.resourceWidget.sync();
 ```
 
 ---

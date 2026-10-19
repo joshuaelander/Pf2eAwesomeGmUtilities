@@ -1,0 +1,196 @@
+<div class="pf2e-resource-widget-container {{#if isCollapsed}}collapsed{{/if}}">
+  
+  <!-- Slim Draggable HUD Header -->
+  <header class="widget-header" data-drag-handle title="Drag to move. Double-click to reset under left menu.">
+    <div class="widget-header-title">
+      <i class="fa-solid fa-layer-group widget-title-icon"></i>
+      <span class="widget-title-text">{{localize "PF2E_AWESOME_GM.ResourceWidget.Title"}}</span>
+      <span class="widget-count-badge">{{trackers.length}}</span>
+    </div>
+
+    <div class="widget-header-controls">
+      {{#if isGM}}
+        <button type="button" class="widget-ctrl-btn btn-open-manager" data-action="open-manager" title="{{localize "PF2E_AWESOME_GM.ResourceWidget.OpenManagerTooltip"}}">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      {{/if}}
+
+      <button type="button" class="widget-ctrl-btn btn-reset-pos" data-action="reset-position" title="{{localize "PF2E_AWESOME_GM.ResourceWidget.ResetPosition"}}">
+        <i class="fa-solid fa-arrows-to-dot"></i>
+      </button>
+
+      <button type="button" class="widget-ctrl-btn btn-collapse" data-action="toggle-collapse" title="{{#if isCollapsed}}{{localize "PF2E_AWESOME_GM.ResourceWidget.Expand"}}{{else}}{{localize "PF2E_AWESOME_GM.ResourceWidget.Collapse"}}{{/if}}">
+        <i class="fa-solid {{#if isCollapsed}}fa-chevron-down{{else}}fa-minus{{/if}}"></i>
+      </button>
+
+      <button type="button" class="widget-ctrl-btn btn-close" data-action="close-widget" title="{{localize "PF2E_AWESOME_GM.ResourceWidget.Close"}}">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Slim Widget Body -->
+  {{#unless isCollapsed}}
+    <main class="widget-body">
+      {{#if hasTrackers}}
+        <div class="widget-trackers-list">
+          {{#each trackers}}
+            <article class="widget-tracker-item theme-{{color}}" data-id="{{id}}" style="--theme-accent: {{theme.border}}; --theme-glow: {{theme.glow}};">
+              
+              <!-- Item Row 1: Identity & Value/Steppers -->
+              <div class="widget-item-top-row">
+                <div class="widget-item-info">
+                  <div class="widget-item-icon-box" style="border-color: {{theme.border}};">
+                    {{#if isImageIcon}}
+                      <img src="{{icon}}" alt="{{name}}" class="widget-img-icon" />
+                    {{else}}
+                      <i class="{{icon}} widget-fa-icon" style="color: {{theme.border}};"></i>
+                    {{/if}}
+                  </div>
+
+                  <div class="widget-item-name-group">
+                    <div class="widget-item-title-line">
+                      <span class="widget-item-name" title="{{name}}">{{name}}</span>
+                      {{#if isCountdown}}
+                        <i class="fa-solid fa-arrow-down widget-countdown-icon" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.CountDown"}}"></i>
+                      {{/if}}
+                    </div>
+                    
+                    {{#if linkedActor}}
+                      <span class="widget-actor-badge" title="{{linkedActor.name}}">
+                        <img src="{{linkedActor.img}}" class="widget-actor-thumb" alt="{{linkedActor.name}}" />
+                        <span>{{linkedActor.name}}</span>
+                      </span>
+                    {{/if}}
+                  </div>
+                </div>
+
+                <!-- Right-side Metric Value & GM Stepper Controls -->
+                <div class="widget-item-ctrl-side">
+                  <!-- 1. COUNTER TYPE -->
+                  {{#if isCounter}}
+                    <div class="widget-counter-metric">
+                      <span class="widget-metric-val" style="color: {{theme.border}};">{{value}}</span>
+                      <span class="widget-metric-max">/{{max}}</span>
+                    </div>
+                    {{#if @root.isGM}}
+                      <div class="widget-mini-steppers">
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-</button>
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+</button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
+
+                  <!-- 2. PROGRESS BAR TYPE (Top line value) -->
+                  {{#if isProgress}}
+                    <div class="widget-progress-metric">
+                      <span class="widget-metric-val" style="color: {{theme.border}};">{{value}}</span>
+                      <span class="widget-metric-max">/{{max}}</span>
+                    </div>
+                    {{#if @root.isGM}}
+                      <div class="widget-mini-steppers">
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-</button>
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+</button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
+
+                  <!-- 3. CLOCK TYPE (Top line value) -->
+                  {{#if isClock}}
+                    <div class="widget-clock-metric">
+                      <span class="widget-metric-val" style="color: {{theme.border}};">{{value}}</span>
+                      <span class="widget-metric-max">/{{clockSegments}}</span>
+                    </div>
+                    {{#if @root.isGM}}
+                      <div class="widget-mini-steppers">
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-</button>
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+</button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
+
+                  <!-- 4. AFFLICTION STAGE (Top line value) -->
+                  {{#if isStage}}
+                    <span class="widget-stage-indicator" style="color: {{theme.border}};">{{currentStageName}}</span>
+                  {{/if}}
+                </div>
+              </div>
+
+              <!-- Item Row 2: Secondary Visual Bars/Pips -->
+              <!-- Progress Bar Bar -->
+              {{#if isProgress}}
+                <div class="widget-slim-progress-track" style="border-color: rgba(255,255,255,0.1);">
+                  <div class="widget-slim-progress-fill" style="width: {{progressPercent}}%; background: {{theme.border}}; box-shadow: 0 0 6px {{theme.glow}};"></div>
+                </div>
+              {{/if}}
+
+              <!-- Clock Segment Donut & Slices -->
+              {{#if isClock}}
+                <div class="widget-slim-clock-row">
+                  <div class="widget-slim-clock-wrap">
+                    <svg class="widget-slim-clock-svg" viewBox="0 0 100 100">
+                      {{#each clockSlices}}
+                        <path
+                          d="{{path}}"
+                          class="widget-clock-slice {{#if isFilled}}filled{{/if}} {{#if @root.isGM}}clickable{{/if}}"
+                          style="{{#if isFilled}}fill: {{color}}; filter: drop-shadow(0 0 2px {{color}});{{else}}fill: rgba(255, 255, 255, 0.08);{{/if}}"
+                          data-action="set-clock-segment"
+                          data-id="{{../id}}"
+                          data-segment="{{segment}}"
+                          title="Segment {{segment}}"
+                        />
+                      {{/each}}
+                      <circle cx="50" cy="50" r="10" class="widget-clock-hub" />
+                    </svg>
+                  </div>
+                  <div class="widget-slim-clock-pips">
+                    {{#each clockSlices}}
+                      <span class="clock-pip-dot {{#if isFilled}}filled{{/if}}" style="{{#if isFilled}}background: {{color}}; box-shadow: 0 0 4px {{color}};{{/if}}"></span>
+                    {{/each}}
+                  </div>
+                </div>
+              {{/if}}
+
+              <!-- Affliction Stage Pips -->
+              {{#if isStage}}
+                <div class="widget-slim-stage-row">
+                  <div class="widget-stage-pips-compact">
+                    {{#each stages}}
+                      <button
+                        type="button"
+                        class="stage-pip-compact {{#if isCurrent}}active{{/if}} {{#if isCompleted}}passed{{/if}} {{#unless @root.isGM}}disabled{{/unless}}"
+                        style="{{#if isCurrent}}border-color: {{../theme.border}}; background: {{../theme.glow}}; color: {{../theme.border}};{{else if isCompleted}}background: {{../theme.border}}; color: #000;{{/if}}"
+                        data-action="set-stage"
+                        data-id="{{../id}}"
+                        data-stage="{{stage}}"
+                        title="{{name}}{{#if effect}}: {{effect}}{{/if}}"
+                        {{#unless @root.isGM}}disabled{{/unless}}
+                      >
+                        {{stage}}
+                      </button>
+                    {{/each}}
+                  </div>
+                  {{#if currentStageEffect}}
+                    <span class="widget-stage-effect-text" title="{{currentStageEffect}}">{{currentStageEffect}}</span>
+                  {{/if}}
+                </div>
+              {{/if}}
+
+            </article>
+          {{/each}}
+        </div>
+      {{else}}
+        <div class="widget-empty-state">
+          <p>{{localize "PF2E_AWESOME_GM.ResourceWidget.NoPinned"}}</p>
+          {{#if isGM}}
+            <button type="button" class="btn-widget-open-manager" data-action="open-manager">
+              <i class="fa-solid fa-gear"></i>
+              <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Title"}}</span>
+            </button>
+          {{/if}}
+        </div>
+      {{/if}}
+    </main>
+  {{/unless}}
+
+</div>

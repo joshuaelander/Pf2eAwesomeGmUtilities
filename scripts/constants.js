@@ -6,16 +6,19 @@ export const MODULE_ID = "pf2e-awesome-gm-utilities";
 export const SOCKET_EVENT = `module.${MODULE_ID}`;
 
 export const SOUND_PAD_MACRO_NAME = "PF2e Music Sound Pad";
-export const SOUND_PAD_MACRO_ICON = "icons/tools/instruments/drum-leather-brown.webp";
+export const SOUND_PAD_MACRO_ICON = "icons/svg/sound.svg";
 
 export const PANIC_STOP_MACRO_NAME = "Stop All Music (Panic)";
-export const PANIC_STOP_MACRO_ICON = "icons/magic/control/debuff-energy-hold-levitate-yellow.webp";
+export const PANIC_STOP_MACRO_ICON = "icons/svg/sound-off.svg";
 
 export const SCENE_SWITCHER_MACRO_NAME = "PF2e Scene Switcher";
-export const SCENE_SWITCHER_MACRO_ICON = "icons/svg/map.svg";
+export const SCENE_SWITCHER_MACRO_ICON = "icons/svg/castle.svg";
 
 export const RESOURCE_TRACKER_MACRO_NAME = "PF2e Resource Tracker";
-export const RESOURCE_TRACKER_MACRO_ICON = "icons/svg/clock.svg";
+export const RESOURCE_TRACKER_MACRO_ICON = "icons/svg/clockwork.svg";
+
+export const RESOURCE_WIDGET_MACRO_NAME = "PF2e Floating Trackers HUD";
+export const RESOURCE_WIDGET_MACRO_ICON = "icons/svg/eye.svg";
 
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
@@ -166,7 +169,9 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     max: 20,
     color: "gold",
     icon: "fa-solid fa-trophy",
-    notes: "Accumulate 20 Victory Points to breach the inner sanctum."
+    notes: "Accumulate 20 Victory Points to breach the inner sanctum.",
+    isPinned: true,
+    visibleToPlayers: true
   },
   {
     id: "tracker-alert",
@@ -179,7 +184,9 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     max: 6,
     color: "crimson",
     icon: "fa-solid fa-bell",
-    notes: "Fills when guards notice suspicious noise or missing patrols."
+    notes: "Fills when guards notice suspicious noise or missing patrols.",
+    isPinned: true,
+    visibleToPlayers: true
   }
 ];
 

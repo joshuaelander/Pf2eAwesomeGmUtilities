@@ -1311,4 +1311,579 @@
   box-shadow: 0 0 6px rgba(212, 175, 55, 0.4) !important;
 }
 
+/* ==========================================================================
+   Toolbar Toggle HUD Button & Tracker Badges
+   ========================================================================== */
+
+.btn-toggle-widget {
+  background: #1e2536 !important;
+  border: 1px solid #3b4766 !important;
+  color: #38bdf8 !important;
+  padding: 6px 10px !important;
+  border-radius: 5px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-toggle-widget:hover {
+  background: #2a344d !important;
+  border-color: #38bdf8 !important;
+  color: #7dd3fc !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.35) !important;
+}
+
+.tracker-tags .pin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tracker-tags .shared-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tracker-header-actions .btn-pin.active {
+  color: #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.2) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4) !important;
+}
+
+.tracker-header-actions .btn-visibility.active {
+  color: #4ade80 !important;
+  background: rgba(34, 197, 94, 0.2) !important;
+  border-color: #4ade80 !important;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4) !important;
+}
+
+.widget-visibility-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 12px !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  padding: 10px 12px !important;
+  border-radius: 6px !important;
+  border: 1px solid #2b3245 !important;
+}
+
+.widget-checkbox-group label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  color: #f1f5f9 !important;
+}
+
+/* ==========================================================================
+   Floating Trackers HUD Widget (Slim & Minimalist)
+   ========================================================================== */
+
+.pf2e-resource-widget-window,
+#pf2e-resource-widget {
+  position: fixed !important;
+  right: auto !important;
+  bottom: auto !important;
+  inset: auto !important;
+  z-index: 70 !important;
+  pointer-events: auto !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.pf2e-resource-widget-container {
+  width: 230px;
+  background: rgba(14, 18, 27, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(212, 175, 55, 0.1);
+  color: #e5e7eb;
+  font-family: var(--font-primary, "Signika", sans-serif);
+  overflow: hidden;
+  transition: width 0.15s ease, border-color 0.15s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.pf2e-resource-widget-container.dragging {
+  border-color: #d4af37 !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.8), 0 0 16px rgba(212, 175, 55, 0.25) !important;
+  cursor: grabbing !important;
+}
+
+/* Header */
+.widget-header {
+  background: linear-gradient(90deg, #1b2132 0%, #131722 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+  user-select: none;
+}
+
+.widget-header:active {
+  cursor: grabbing;
+}
+
+.widget-header-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.widget-title-icon {
+  color: #d4af37;
+  font-size: 10px;
+}
+
+.widget-count-badge {
+  background: rgba(212, 175, 55, 0.2);
+  color: #d4af37;
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 4px;
+  line-height: 1.2;
+}
+
+.widget-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.widget-ctrl-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  padding: 0;
+  transition: all 0.1s ease;
+}
+
+.widget-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.widget-ctrl-btn.btn-reset-pos:hover {
+  background: rgba(212, 175, 55, 0.25);
+  color: #d4af37;
+}
+
+.widget-ctrl-btn.btn-close:hover {
+  background: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+/* Body & Trackers List */
+.widget-body {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.widget-body::-webkit-scrollbar {
+  width: 3px;
+}
+
+.widget-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.widget-trackers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Minimalist Item Strip */
+.widget-tracker-item {
+  background: rgba(10, 14, 22, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid var(--theme-accent, #d4af37);
+  border-radius: 4px;
+  padding: 4px 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.12s ease;
+}
+
+.widget-tracker-item:hover {
+  background: rgba(15, 20, 32, 0.85);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 6px var(--theme-glow, rgba(212, 175, 55, 0.2));
+}
+
+.widget-item-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.widget-item-info {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.widget-item-icon-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #0f131d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.widget-img-icon {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.widget-fa-icon {
+  font-size: 9px;
+}
+
+.widget-item-name-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.widget-item-title-line {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.widget-item-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.widget-countdown-icon {
+  color: #ef4444;
+  font-size: 8px;
+  flex-shrink: 0;
+}
+
+.widget-actor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+  padding: 0 3px;
+  font-size: 8px;
+  color: #94a3b8;
+  max-width: 60px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.widget-actor-thumb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* Control Side */
+.widget-item-ctrl-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.widget-counter-metric,
+.widget-progress-metric,
+.widget-clock-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  font-size: 11px;
+}
+
+.widget-metric-val {
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.widget-metric-max {
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+.widget-stage-indicator {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.widget-mini-steppers {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.widget-mini-btn {
+  background: #1b2132;
+  border: 1px solid #2e384d;
+  color: #cbd5e1;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: all 0.1s ease;
+}
+
+.widget-mini-btn:hover {
+  background: #2a344d;
+  border-color: #64748b;
+  color: #ffffff;
+}
+
+/* Slim Secondary Visuals */
+.widget-slim-progress-track {
+  margin-top: 3px;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.widget-slim-progress-fill {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.widget-slim-clock-row {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.widget-slim-clock-wrap {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.widget-slim-clock-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.widget-clock-slice {
+  stroke: rgba(0, 0, 0, 0.85);
+  stroke-width: 1.5;
+  transition: all 0.12s ease;
+}
+
+.widget-clock-slice.clickable {
+  cursor: pointer;
+}
+
+.widget-clock-slice.clickable:hover {
+  opacity: 0.8;
+  stroke: #ffffff;
+}
+
+.widget-clock-hub {
+  fill: #10141e;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1;
+}
+
+.widget-slim-clock-pips {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+}
+
+.clock-pip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.clock-pip-dot.filled {
+  border-color: transparent;
+}
+
+.widget-slim-stage-row {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.widget-stage-pips-compact {
+  display: flex;
+  gap: 2px;
+}
+
+.stage-pip-compact {
+  width: 15px;
+  height: 15px;
+  background: #141824;
+  border: 1px solid #2e384d;
+  color: #94a3b8;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.1s ease;
+}
+
+.stage-pip-compact.disabled {
+  cursor: default !important;
+  pointer-events: none !important;
+}
+
+.stage-pip-compact.active {
+  font-weight: 800;
+}
+
+.stage-pip-compact.passed {
+  font-weight: 800;
+}
+
+.widget-stage-effect-text {
+  font-size: 9px;
+  color: #94a3b8;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 110px;
+}
+
+/* Empty State */
+.widget-empty-state {
+  padding: 10px 8px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.widget-empty-state p {
+  margin: 0 0 6px 0;
+}
+
+.btn-widget-open-manager {
+  background: #1b2132;
+  border: 1px solid #3b4766;
+  color: #d4af37;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.1s ease;
+}
+
+.btn-widget-open-manager:hover {
+  background: #252e46;
+  color: #ffffff;
+}
+
+/* Collapsed Mode */
+.pf2e-resource-widget-container.collapsed {
+  width: 130px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.pf2e-resource-widget-container.collapsed .widget-header {
+  border-bottom: none;
+}
+
+
 
