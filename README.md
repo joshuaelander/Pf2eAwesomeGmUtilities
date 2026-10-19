@@ -136,16 +136,18 @@ The third utility in this suite is the **Resource & Subsystem Tracker** — a ve
    - **Interactive Slice Clicking**: Click directly on any clock slice or pip to set the clock value instantly, or click the current slice to toggle it back down.
    - **Count Up vs Count Down**: Switch between progress meters (0 &rarr; Target) and countdown clocks (Target &rarr; 0, e.g. ritual countdowns, doom timers).
 
-3. **Per-PC Tracking & Affliction Stages**
+3. **Per-PC Tracking & Affliction Stages (1–6+)**
    - **Linked Characters**: Link any tracker directly to a player character actor, displaying their portrait avatar and name badge.
    - **Sanity / Stress Meters**: Track mental fortitude against cosmic horror and eldritch hazards.
-   - **Disease, Poison & Curse Stages**: Dedicated 5-stage affliction layout with custom effect descriptions for each stage (e.g. *Stage 2: Clumsy 1; Stage 3: Clumsy 2 and Drained 1*).
-   - Banner displaying the current stage's rules and symptoms at a glance.
+   - **Dynamic Affliction Stages (1–6+)**: Dedicated graduated stage layout supporting anywhere from 1 to 6+ stages (e.g. *Ghast Fever* with 6 stages, or simple poisons with 3 stages) with custom symptom effects, damage values, and cure DC reminders.
+   - **Monster Ability & Compendium Drag & Drop**: Drag **any** Affliction or monster ability (e.g. *Ghast Fever*, *Ghoul Fever*, *Mummy Rot*, *Arsenic*) directly from monster sheets or compendiums onto the window! The intelligent parser extracts official art, cleans unformatted tags (`@Check`, `@Damage`), extracts Save DC, Onset, and populates all stages automatically.
+   - **Quick Import / Paste Text**: Click **"Import Affliction"** or use the in-dialog paste tool to paste raw text from monster stat blocks, chat messages, or PDFs. The parser automatically extracts the name, Fortitude/Reflex DC, Onset, and all numbered stages!
 
-4. **Rich Customization & Foundry Icon Picker**
-   - Use any **FontAwesome** icon class or select native **Foundry VTT icons** (`icons/consumables/...`, `icons/magic/...`) via Foundry's native image `FilePicker`.
+4. **Rich Customization & FontAwesome / Foundry Icons**
+   - Clean, reliable **FontAwesome** vector icons by default (`fa-solid fa-bread-slice`, `fa-solid fa-droplet`, `fa-solid fa-campground`, `fa-solid fa-trophy`, `fa-solid fa-bell`, `fa-solid fa-biohazard`, etc.) that never break or fail to load.
+   - Choose custom graphics or core Foundry icons via Foundry's native image `FilePicker`.
    - 8 curated color themes (Pathfinder Gold, Crimson, Amber, Forest Nature, Ocean Blue, Arcane Violet, Shadow Slate, Inferno Fire).
-   - Built-in quick presets: Rations, Water, Camp Supplies, Victory Points, Alert Clock, Ritual Doom Clock, Sanity, and Ghoul Fever.
+   - Built-in quick presets: Rations, Water, Camp Supplies, Victory Points, Alert Clock, Ritual Doom Clock, Sanity, and Generic Affliction.
 
 5. **Post Status to Chat**
    - Click the chat bubble on any tracker card to immediately broadcast a beautifully formatted PF2e chat card to all players, displaying the current value, clock pips, or active affliction stage!

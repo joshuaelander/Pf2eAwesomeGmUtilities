@@ -155,7 +155,7 @@
         "PresetLabel": "Quick Preset (Auto-fill)",
         "SelectPresetPlaceholder": "-- Choose a Preset Template --",
         "Name": "Tracker Name",
-        "NamePlaceholder": "e.g., Food Supplies, Alert Level, Ghoul Fever",
+        "NamePlaceholder": "e.g., Food Supplies, Alert Level, Goblin Pox",
         "Category": "Category",
         "CategoryParty": "Party / Campaign Resource",
         "CategorySubsystem": "Subsystem (VP / Clock / Heist)",
@@ -186,9 +186,23 @@
         "Stage3Notes": "Stage 3 Effect",
         "Stage4Notes": "Stage 4 Effect",
         "Stage5Notes": "Stage 5 Effect",
+        "AddStage": "Add Stage",
+        "RemoveStage": "Remove",
+        "QuickPasteLabel": "Paste Monster Ability / Affliction Text",
+        "QuickPastePlaceholder": "Paste text from monster stat blocks, chat, or PDF (e.g. Ghast Fever; Saving Throw DC 16 Fortitude; Stage 1 carrier... Stage 2 3d8 void...)",
+        "ParseTextBtn": "Parse & Auto-Fill",
         "Save": "Save Tracker",
         "Cancel": "Cancel",
         "Delete": "Delete Tracker"
+      },
+      "ImportAffliction": "Import Affliction",
+      "ImportModal": {
+        "Title": "Import Affliction from Monster / Chat Text",
+        "Hint": "Paste any disease, poison, or curse text from a monster stat block, chat message, or PDF. All stages, Save DC, and notes will be extracted automatically.",
+        "TextPlaceholder": "e.g.\nGhast Fever (disease); Level 3\nSaving Throw DC 16 Fortitude; Onset 1 day;\nStage 1 carrier with no ill effect (1 day);\nStage 2 3d8 void damage and regains half as many HP from all healing (1 day);\nStage 3 as stage 2 (1 day);\nStage 4 3d8 void damage and gain no benefit from healing (1 day);\nStage 5 as stage 4 (1 day);\nStage 6 dead and immediately rises as a ghast",
+        "LinkedChar": "Link to Character (Optional)",
+        "ImportBtn": "Import Affliction Tracker",
+        "Success": "Successfully imported \"{name}\" with {count} stages!"
       }
     },
     "Settings": {

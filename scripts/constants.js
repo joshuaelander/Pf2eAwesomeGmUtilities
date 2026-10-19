@@ -15,7 +15,7 @@ export const SCENE_SWITCHER_MACRO_NAME = "PF2e Scene Switcher";
 export const SCENE_SWITCHER_MACRO_ICON = "icons/svg/map.svg";
 
 export const RESOURCE_TRACKER_MACRO_NAME = "PF2e Resource Tracker";
-export const RESOURCE_TRACKER_MACRO_ICON = "icons/commodities/biological/organ-heart-red.webp";
+export const RESOURCE_TRACKER_MACRO_ICON = "icons/svg/clock.svg";
 
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
@@ -32,7 +32,7 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 30,
     color: "nature",
-    icon: "icons/consumables/food/rations-wrapped-cloth-bread.webp",
+    icon: "fa-solid fa-bread-slice",
     notes: "Daily party food supplies. 1 used per PC each day."
   },
   {
@@ -44,7 +44,7 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 30,
     color: "ocean",
-    icon: "icons/consumables/potions/bottle-conical-water.webp",
+    icon: "fa-solid fa-droplet",
     notes: "Potable water in skins/casks."
   },
   {
@@ -56,7 +56,7 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 20,
     color: "amber",
-    icon: "icons/commodities/treasure/token-runic-grey.webp",
+    icon: "fa-solid fa-campground",
     notes: "Firewood, bandages, lantern oil, and campsite gear."
   },
   {
@@ -68,7 +68,7 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 20,
     color: "gold",
-    icon: "icons/commodities/treasure/trophy-cup-gold.webp",
+    icon: "fa-solid fa-trophy",
     notes: "Track progress in Chases, Research, Infiltration, or Heists."
   },
   {
@@ -81,7 +81,7 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 6,
     color: "crimson",
-    icon: "icons/skills/melee/strike-axe-blood-red.webp",
+    icon: "fa-solid fa-bell",
     notes: "Guards raise the alarm when filled! Triggers combat on 6."
   },
   {
@@ -95,8 +95,8 @@ export const DEFAULT_RESOURCE_PRESETS = [
     max: 4,
     color: "arcane",
     direction: "countdown",
-    icon: "icons/magic/time/hourglass-tilted-gray.webp",
-    notes: "Rounds or turns remaining before the cult's ritual completes."
+    icon: "fa-solid fa-hourglass-half",
+    notes: "Rounds or turns remaining before the ritual completes."
   },
   {
     presetId: "sanity",
@@ -107,27 +107,27 @@ export const DEFAULT_RESOURCE_PRESETS = [
     min: 0,
     max: 20,
     color: "shadow",
-    icon: "icons/magic/unholy/silhouette-evil-horned-giant.webp",
+    icon: "fa-solid fa-brain",
     notes: "Mental fortitude against cosmic horror and maddening sights."
   },
   {
-    presetId: "disease-stage",
-    name: "Ghoul Fever",
+    presetId: "generic-affliction",
+    name: "Affliction (Disease / Poison / Curse)",
     category: "actor",
     type: "stage",
     value: 1,
     min: 1,
     max: 5,
     color: "fire",
-    icon: "icons/skills/wounds/injury-face-impact-blood.webp",
+    icon: "fa-solid fa-biohazard",
     stages: [
-      { stage: 1, name: "Stage 1", effect: "Carrier; no active symptoms yet." },
-      { stage: 2, name: "Stage 2", effect: "Clumsy 1; fever chills set in." },
-      { stage: 3, name: "Stage 3", effect: "Clumsy 2 and Drained 1." },
-      { stage: 4, name: "Stage 4", effect: "Clumsy 2, Drained 2, and Confused." },
-      { stage: 5, name: "Stage 5", effect: "Death, rising as a ghoul at next midnight." }
+      { stage: 1, name: "Stage 1", effect: "Initial symptoms / Sickened 1" },
+      { stage: 2, name: "Stage 2", effect: "Clumsy 1 and Sickened 1" },
+      { stage: 3, name: "Stage 3", effect: "Clumsy 2, Drained 1" },
+      { stage: 4, name: "Stage 4", effect: "Clumsy 2, Drained 2, and Enfeebled 1" },
+      { stage: 5, name: "Stage 5", effect: "Unconscious / Lethal progression" }
     ],
-    notes: "Affliction save DC 15 at every morning rest."
+    notes: "Save DC 15 Fortitude; progression checks at end of interval."
   }
 ];
 
@@ -141,7 +141,7 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     min: 0,
     max: 30,
     color: "nature",
-    icon: "icons/consumables/food/rations-wrapped-cloth-bread.webp",
+    icon: "fa-solid fa-bread-slice",
     notes: "1 ration per PC per day of wilderness travel."
   },
   {
@@ -153,7 +153,7 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     min: 0,
     max: 24,
     color: "ocean",
-    icon: "icons/consumables/potions/bottle-conical-water.webp",
+    icon: "fa-solid fa-droplet",
     notes: "Fresh water stored in canteens and barrels."
   },
   {
@@ -165,7 +165,7 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     min: 0,
     max: 20,
     color: "gold",
-    icon: "icons/commodities/treasure/trophy-cup-gold.webp",
+    icon: "fa-solid fa-trophy",
     notes: "Accumulate 20 Victory Points to breach the inner sanctum."
   },
   {
@@ -178,7 +178,7 @@ export const DEFAULT_RESOURCE_TRACKERS = [
     min: 0,
     max: 6,
     color: "crimson",
-    icon: "icons/skills/melee/strike-axe-blood-red.webp",
+    icon: "fa-solid fa-bell",
     notes: "Fills when guards notice suspicious noise or missing patrols."
   }
 ];

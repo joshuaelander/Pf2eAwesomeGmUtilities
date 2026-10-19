@@ -1,6 +1,6 @@
-<form class="pf2e-gm-utility-dialog resource-config-form" autocomplete="off">
+<div class="pf2e-gm-utility-dialog resource-config-form" autocomplete="off">
 
-  <!-- Preset Selector Header -->
+  <!-- Preset & Compendium Drag Hint Header -->
   <div class="form-group preset-group">
     <label><i class="fa-solid fa-wand-magic-sparkles"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.PresetLabel"}}</label>
     <div class="form-fields">
@@ -13,6 +13,26 @@
     </div>
   </div>
 
+  <div class="affliction-drop-hint">
+    <i class="fa-solid fa-hand-holding-hand"></i>
+    <span><strong>Drag & Drop Support:</strong> Drag any Affliction or Monster Ability (e.g. Ghast Fever) from PF2e compendiums or character sheets here to auto-fill!</span>
+  </div>
+
+  <!-- Quick Paste Affliction / Ability Text Box -->
+  <div class="quick-paste-box">
+    <div class="quick-paste-header">
+      <i class="fa-solid fa-paste"></i>
+      <span><strong>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.QuickPasteLabel"}}:</strong></span>
+    </div>
+    <div class="quick-paste-row">
+      <textarea class="quick-paste-input" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.QuickPastePlaceholder"}}"></textarea>
+      <button type="button" class="btn-parse-text" title="Parse text into name, stages, and DC">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.ParseTextBtn"}}</span>
+      </button>
+    </div>
+  </div>
+
   <hr class="form-divider" />
 
   <!-- Basic Info Row: Name & Category -->
@@ -20,7 +40,7 @@
     <div class="form-group">
       <label><i class="fa-solid fa-tag"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Name"}} *</label>
       <div class="form-fields">
-        <input type="text" name="name" value="{{tracker.name}}" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.NamePlaceholder"}}" required />
+        <input type="text" name="name" class="tracker-name-input" value="{{tracker.name}}" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.NamePlaceholder"}}" required />
       </div>
     </div>
 
@@ -36,27 +56,15 @@
     </div>
   </div>
 
-  <!-- Linked Actor (Player Character) -->
-  <div class="form-group">
-    <label><i class="fa-solid fa-user-shield"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.LinkedActor"}}</label>
-    <div class="form-fields">
-      <select name="actorId">
-        <option value="">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.NoneParty"}}</option>
-        {{#each playerActors}}
-          <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-        {{/each}}
-      </select>
-    </div>
-  </div>
-
-  <!-- Tracker Type & Direction -->
+  <!-- Linked Actor (Player Character) & Direction Row -->
   <div class="form-row two-col">
     <div class="form-group">
-      <label><i class="fa-solid fa-chart-simple"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Type"}}</label>
+      <label><i class="fa-solid fa-user-shield"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.LinkedActor"}}</label>
       <div class="form-fields">
-        <select name="type">
-          {{#each types}}
-            <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        <select name="actorId">
+          <option value="">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.NoneParty"}}</option>
+          {{#each playerActors}}
+            <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
           {{/each}}
         </select>
       </div>
@@ -71,6 +79,18 @@
           {{/each}}
         </select>
       </div>
+    </div>
+  </div>
+
+  <!-- Tracker Type Row -->
+  <div class="form-group">
+    <label><i class="fa-solid fa-chart-simple"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Type"}}</label>
+    <div class="form-fields">
+      <select name="type">
+        {{#each types}}
+          <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
     </div>
   </div>
 
@@ -112,12 +132,23 @@
 
   <!-- Affliction Stages Options Group (when type === stage) -->
   <div class="stage-options-group" style="display: none;">
-    <label class="section-label"><i class="fa-solid fa-biohazard"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.TypeStage"}}</label>
+    <div class="stage-options-header">
+      <label class="section-label"><i class="fa-solid fa-biohazard"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.TypeStage"}}</label>
+      <div class="stage-tools-row">
+        <button type="button" class="btn-add-stage" title="Add another stage to this affliction">
+          <i class="fa-solid fa-plus"></i>
+          <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.AddStage"}}</span>
+        </button>
+      </div>
+    </div>
     <div class="stages-inputs-list">
       {{#each stages}}
-        <div class="stage-input-row">
-          <span class="stage-badge">{{name}}</span>
-          <input type="text" name="stage_effect_{{stage}}" value="{{effect}}" placeholder="e.g. Clumsy 1, Sickened 1, Death..." />
+        <div class="stage-input-row" data-stage="{{stage}}">
+          <span class="stage-badge">Stage {{stage}}</span>
+          <input type="text" name="stage_effect_{{stage}}" class="stage-effect-input" value="{{effect}}" placeholder="e.g. Carrier (1 day) / Clumsy 1, Sickened 1 / Lethal..." />
+          <button type="button" class="btn-remove-stage" data-stage="{{stage}}" title="Remove this stage">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
         </div>
       {{/each}}
     </div>
@@ -126,19 +157,32 @@
   <!-- Icon Selection with FilePicker & Quick Palette -->
   <div class="form-group icon-selection-group">
     <label><i class="fa-solid fa-icons"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.IconOrImage"}}</label>
-    <div class="form-fields icon-input-wrapper">
-      <div class="icon-preview-box">
-        <!-- Rendered dynamically -->
+    
+    <div class="icon-picker-layout">
+      <!-- Live Icon Preview Box -->
+      <div class="icon-preview-box" title="Current Icon Preview">
+        <i class="fa-solid fa-box"></i>
       </div>
-      <input type="text" name="icon" value="{{tracker.icon}}" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.IconHint"}}" />
-      <button type="button" class="btn-browse-icon" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Browse"}}">
-        <i class="fa-solid fa-folder-open"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Browse"}}
-      </button>
+
+      <!-- Icon Input and Browse Button Row -->
+      <div class="icon-input-controls">
+        <div class="icon-input-row">
+          <input type="text" name="icon" class="icon-path-input" value="{{tracker.icon}}" placeholder="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.IconHint"}}" />
+          <button type="button" class="btn-browse-icon" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Browse"}}">
+            <i class="fa-solid fa-folder-open"></i>
+            <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Browse"}}</span>
+          </button>
+        </div>
+        <div class="icon-help-text">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.IconHint"}}</div>
+      </div>
     </div>
 
     <!-- Quick Icon Suggestions -->
     <div class="quick-icons-container">
-      <span class="quick-icons-hint">{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.QuickIcons"}}:</span>
+      <div class="quick-icons-header">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.QuickIcons"}}:</span>
+      </div>
       <div class="quick-icons-palette">
         {{#each quickIcons}}
           <button type="button" class="quick-icon-pill" data-icon="{{icon}}" title="{{title}}">
@@ -150,16 +194,14 @@
   </div>
 
   <!-- Color Theme & Notes -->
-  <div class="form-row two-col">
-    <div class="form-group">
-      <label><i class="fa-solid fa-palette"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.ColorTheme"}}</label>
-      <div class="form-fields">
-        <select name="color">
-          {{#each colorThemes}}
-            <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-          {{/each}}
-        </select>
-      </div>
+  <div class="form-group">
+    <label><i class="fa-solid fa-palette"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.ColorTheme"}}</label>
+    <div class="form-fields">
+      <select name="color">
+        {{#each colorThemes}}
+          <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+        {{/each}}
+      </select>
     </div>
   </div>
 
@@ -170,4 +212,4 @@
     </div>
   </div>
 
-</form>
+</div>

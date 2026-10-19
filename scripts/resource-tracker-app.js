@@ -233,7 +233,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       let currentStageName = "";
       let currentStageEffect = "";
       if (isStage) {
-        const rawStages = t.stages && t.stages.length >= 5 ? t.stages : [
+        const rawStages = t.stages && t.stages.length > 0 ? t.stages : [
           { stage: 1, name: "Stage 1", effect: "" },
           { stage: 2, name: "Stage 2", effect: "" },
           { stage: 3, name: "Stage 3", effect: "" },
@@ -241,7 +241,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
           { stage: 5, name: "Stage 5", effect: "" }
         ];
 
-        const activeStageNum = Math.min(5, Math.max(1, currentVal));
+        const maxStage = rawStages.length;
+        const activeStageNum = Math.min(maxStage, Math.max(1, currentVal));
         stages = rawStages.map(s => ({
           stage: s.stage,
           name: s.name || `Stage ${s.stage}`,
@@ -254,6 +255,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         currentStageName = activeStage.name || `Stage ${activeStageNum}`;
         currentStageEffect = activeStage.effect || "";
       }
+
+      const effectiveMax = isStage ? (t.stages?.length || 5) : maxVal;
 
       return {
         ...t,
@@ -274,7 +277,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         currentStageName,
         currentStageEffect,
         canDecrease: currentVal > minVal,
-        canIncrease: currentVal < maxVal
+        canIncrease: currentVal < effectiveMax
       };
     });
 
@@ -364,6 +367,61 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     container.querySelectorAll("[data-action]").forEach(el => {
       el.addEventListener("click", this._handleActionClick.bind(this));
     });
+
+    // Native Drag and Drop: Drag any Item, Affliction, Monster Ability, Chat Message, or Text
+    const dropZone = container.querySelector(".trackers-scroll-area") || container;
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    });
+
+    dropZone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rawText = e.dataTransfer.getData("text/plain");
+      let dropData = null;
+      try {
+        dropData = JSON.parse(rawText);
+      } catch (err) {
+        dropData = null;
+      }
+
+      let trackerData = null;
+
+      if (dropData?.type === "Item" && dropData?.uuid) {
+        const item = await fromUuid(dropData.uuid);
+        if (item) trackerData = ResourceConfigDialog.extractItemData(item);
+      } else if (dropData?.type === "ChatMessage" && dropData?.id) {
+        const msg = game.messages.get(dropData.id);
+        if (msg) trackerData = ResourceConfigDialog.parseAfflictionFromText(msg.content, msg.flavor || "Affliction");
+      } else if (dropData?.type === "Actor" && dropData?.uuid) {
+        const actor = await fromUuid(dropData.uuid);
+        if (actor) {
+          for (const it of actor.items) {
+            const candidate = ResourceConfigDialog.extractItemData(it);
+            if (candidate && candidate.type === "stage") {
+              trackerData = candidate;
+              break;
+            }
+          }
+        }
+      } else if (rawText && typeof rawText === "string") {
+        trackerData = ResourceConfigDialog.parseAfflictionFromText(rawText);
+      }
+
+      if (!trackerData) {
+        ui.notifications.warn("Could not extract a resource or affliction from the dropped item/text.");
+        return;
+      }
+
+      trackerData.id = `tracker-${foundry.utils.randomID(8)}`;
+      const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+      trackers.push(trackerData);
+      await this.saveTrackers(trackers);
+
+      ui.notifications.info(`Added tracker for "${trackerData.name}"!`);
+    });
   }
 
   _onClose(options) {
@@ -407,6 +465,10 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     switch (action) {
       case "add-tracker":
         await this.openCreateDialog();
+        break;
+
+      case "quick-import":
+        await this.openQuickImportDialog();
         break;
 
       case "adjust-value": {
@@ -475,7 +537,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       max = tracker.clockSegments || 6;
     } else if (tracker.type === "stage") {
       min = 1;
-      max = 5;
+      max = tracker.stages?.length || 5;
     }
 
     const current = tracker.value ?? min;
@@ -503,7 +565,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       max = tracker.clockSegments || 6;
     } else if (tracker.type === "stage") {
       min = 1;
-      max = 5;
+      max = tracker.stages?.length || 5;
     }
 
     tracker.value = Math.min(max, Math.max(min, val));
@@ -575,6 +637,125 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         game.i18n.format("PF2E_AWESOME_GM.ResourceTracker.Notifications.Saved", { name: newTracker.name })
       );
     });
+  }
+
+  /**
+   * Opens a modal dialog allowing GMs to paste raw text from monster stat blocks,
+   * chat messages, or PDFs to instantly create a new affliction tracker.
+   */
+  async openQuickImportDialog() {
+    const playerActors = game.actors
+      ? game.actors.filter(a => a.type === "character").map(a => ({
+          id: a.id,
+          name: a.name
+        }))
+      : [];
+
+    let actorOptions = `<option value="">[ None - Global / Party ]</option>`;
+    playerActors.forEach(a => {
+      actorOptions += `<option value="${a.id}">${a.name}</option>`;
+    });
+
+    const content = `
+      <div class="import-affliction-form">
+        <p class="import-hint">
+          ${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Hint")}
+        </p>
+        <textarea class="import-textarea" placeholder="${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.TextPlaceholder")}"></textarea>
+        <div class="form-group" style="margin-top: 8px;">
+          <label style="font-size: 11px; font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 4px;">
+            ${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.LinkedChar")}:
+          </label>
+          <select class="import-actor-select" style="width: 100%; background: #202433; color: #fff; border: 1px solid #3b4766; border-radius: 4px; padding: 6px;">
+            ${actorOptions}
+          </select>
+        </div>
+      </div>
+    `;
+
+    const title = game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Title");
+
+    const onImport = async (dialogEl) => {
+      const textarea = dialogEl.querySelector(".import-textarea");
+      const actorSelect = dialogEl.querySelector(".import-actor-select");
+      const rawText = textarea ? textarea.value.trim() : "";
+      if (!rawText) {
+        ui.notifications.warn("Please paste affliction or ability text first.");
+        return;
+      }
+
+      const trackerData = ResourceConfigDialog.parseAfflictionFromText(rawText);
+      if (!trackerData) {
+        ui.notifications.warn("Could not find stages (e.g. Stage 1...) in the pasted text.");
+        return;
+      }
+
+      if (actorSelect && actorSelect.value) {
+        trackerData.actorId = actorSelect.value;
+      }
+
+      trackerData.id = `tracker-${foundry.utils.randomID(8)}`;
+      const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
+      trackers.push(trackerData);
+      await this.saveTrackers(trackers);
+
+      ui.notifications.info(game.i18n.format("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Success", {
+        name: trackerData.name,
+        count: trackerData.stages.length
+      }));
+    };
+
+    if (foundry?.applications?.api?.DialogV2?.wait) {
+      await foundry.applications.api.DialogV2.wait({
+        window: {
+          title,
+          icon: "fa-solid fa-file-import",
+          classes: ["pf2e-gm-utility-dialog", "pf2e-import-affliction-dialog"]
+        },
+        position: { width: 540 },
+        content,
+        buttons: [
+          {
+            action: "import",
+            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.ImportBtn"),
+            icon: "fa-solid fa-check",
+            default: true,
+            callback: (event, button, dialogEl) => {
+              const root = dialogEl || button.closest(".window-app") || button.closest(".dialog");
+              onImport(root);
+            }
+          },
+          {
+            action: "cancel",
+            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel"),
+            icon: "fa-solid fa-xmark"
+          }
+        ]
+      });
+    } else {
+      new Dialog({
+        title,
+        content,
+        buttons: {
+          import: {
+            icon: '<i class="fa-solid fa-check"></i>',
+            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.ImportBtn"),
+            callback: (html) => {
+              const root = html instanceof HTMLElement ? html : html[0];
+              onImport(root);
+            }
+          },
+          cancel: {
+            icon: '<i class="fa-solid fa-xmark"></i>',
+            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel")
+          }
+        },
+        default: "import"
+      }, {
+        classes: ["pf2e-gm-utility-dialog", "pf2e-import-affliction-dialog"],
+        width: 540
+      }).render(true);
+    }
   }
 
   /**
