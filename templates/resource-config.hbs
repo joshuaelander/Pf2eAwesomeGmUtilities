@@ -175,6 +175,29 @@
     </div>
   </div>
 
+  <!-- Reputation Options Group (when type === reputation) -->
+  <div class="form-group reputation-options-group" style="display: none;">
+    <div class="reputation-info-box">
+      <i class="fa-solid fa-scale-balanced"></i>
+      <span><strong>{{localize "PF2E_AWESOME_GM.ResourceTracker.Reputation.TiersTitle"}}:</strong> {{localize "PF2E_AWESOME_GM.ResourceTracker.Reputation.TiersDesc"}}</span>
+    </div>
+  </div>
+
+  <!-- Attitude Options Group (when type === attitude) -->
+  <div class="form-group attitude-options-group" style="display: none;">
+    <label><i class="fa-solid fa-handshake"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.StartingAttitude"}}</label>
+    <div class="form-fields">
+      <select name="attitudeSelect" class="attitude-select">
+        <option value="1">1 &mdash; {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Hostile"}}</option>
+        <option value="2">2 &mdash; {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Unfriendly"}}</option>
+        <option value="3" selected>3 &mdash; {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Indifferent"}} ({{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Default"}})</option>
+        <option value="4">4 &mdash; {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Friendly"}}</option>
+        <option value="5">5 &mdash; {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Helpful"}}</option>
+      </select>
+    </div>
+    <div class="field-hint">{{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Hint"}}</div>
+  </div>
+
   <!-- Icon Selection with FilePicker & Quick Palette -->
   <div class="form-group icon-selection-group">
     <label><i class="fa-solid fa-icons"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Config.IconOrImage"}}</label>

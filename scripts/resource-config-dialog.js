@@ -365,7 +365,9 @@ export class ResourceConfigDialog {
       { key: "counter", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeCounter"), selected: currentTracker.type === "counter" },
       { key: "progress", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeProgress"), selected: currentTracker.type === "progress" },
       { key: "clock", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeClock"), selected: currentTracker.type === "clock" },
-      { key: "stage", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeStage"), selected: currentTracker.type === "stage" }
+      { key: "stage", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeStage"), selected: currentTracker.type === "stage" },
+      { key: "reputation", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeReputation"), selected: currentTracker.type === "reputation" },
+      { key: "attitude", label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.TypeAttitude"), selected: currentTracker.type === "attitude" }
     ];
 
     // Clock Segments options
@@ -406,7 +408,12 @@ export class ResourceConfigDialog {
       { icon: "fa-solid fa-shield-halved", title: "Defense / Armor" },
       { icon: "fa-solid fa-heart", title: "Health / Vigor" },
       { icon: "fa-solid fa-fire", title: "Torches / Fire" },
-      { icon: "fa-solid fa-scroll", title: "Lore / Research" }
+      { icon: "fa-solid fa-scroll", title: "Lore / Research" },
+      { icon: "fa-solid fa-book-bookmark", title: "Research / Study" },
+      { icon: "fa-solid fa-scale-balanced", title: "Reputation / Balance" },
+      { icon: "fa-solid fa-award", title: "Reputation / Renown" },
+      { icon: "fa-solid fa-handshake", title: "Attitude / Social" },
+      { icon: "fa-solid fa-comments", title: "Conversation / Influence" }
     ];
 
     // Ensure 5 stages exist for stage type
@@ -585,17 +592,39 @@ export class ResourceConfigDialog {
     const typeSelect = root.querySelector('[name="type"]');
     const clockGroup = root.querySelector(".clock-options-group");
     const stageGroup = root.querySelector(".stage-options-group");
+    const reputationGroup = root.querySelector(".reputation-options-group");
+    const attitudeGroup = root.querySelector(".attitude-options-group");
     const minMaxGroup = root.querySelector(".min-max-group");
 
     const updateTypeVisibility = () => {
       const type = typeSelect ? typeSelect.value : "counter";
       if (clockGroup) clockGroup.style.display = type === "clock" ? "block" : "none";
       if (stageGroup) stageGroup.style.display = type === "stage" ? "block" : "none";
-      if (minMaxGroup) minMaxGroup.style.display = type === "stage" ? "none" : "";
+      if (reputationGroup) reputationGroup.style.display = type === "reputation" ? "block" : "none";
+      if (attitudeGroup) attitudeGroup.style.display = type === "attitude" ? "block" : "none";
+      if (minMaxGroup) minMaxGroup.style.display = (type === "stage" || type === "attitude") ? "none" : "";
     };
 
     if (typeSelect) {
-      typeSelect.addEventListener("change", updateTypeVisibility);
+      typeSelect.addEventListener("change", () => {
+        updateTypeVisibility();
+        // Set smart defaults when user changes type dropdown manually
+        const type = typeSelect.value;
+        const minInput = root.querySelector('[name="min"]');
+        const maxInput = root.querySelector('[name="max"]');
+        const valInput = root.querySelector('[name="value"]');
+        if (type === "reputation") {
+          if (minInput && Number(minInput.value) >= 0) minInput.value = -50;
+          if (maxInput && Number(maxInput.value) <= 20) maxInput.value = 50;
+          if (valInput && Number(valInput.value) === 10) valInput.value = 0;
+        } else if (type === "attitude") {
+          if (minInput) minInput.value = 1;
+          if (maxInput) maxInput.value = 5;
+          if (valInput) valInput.value = 3;
+          const attSelect = root.querySelector('[name="attitudeSelect"]');
+          if (attSelect) attSelect.value = "3";
+        }
+      });
       updateTypeVisibility();
     }
 
@@ -630,6 +659,8 @@ export class ResourceConfigDialog {
         if (maxInput) maxInput.value = preset.max ?? (preset.clockSegments || 20);
         if (clockInput && preset.clockSegments) clockInput.value = preset.clockSegments;
         if (dirSelect) dirSelect.value = preset.direction || "countup";
+        const attSelect = root.querySelector('[name="attitudeSelect"]');
+        if (attSelect && preset.type === "attitude") attSelect.value = String(preset.value || 3);
         if (iconInput) {
           iconInput.value = preset.icon;
           ResourceConfigDialog._updateIconPreview(root, preset.icon);
@@ -947,9 +978,14 @@ export class ResourceConfigDialog {
     };
 
     const type = getVal("type") || "counter";
-    const min = Number(getVal("min")) || 0;
-    const max = Number(getVal("max")) || 20;
-    const rawVal = Number(getVal("value")) || 0;
+    const isStage = type === "stage";
+    const isClock = type === "clock";
+    const isReputation = type === "reputation";
+    const isAttitude = type === "attitude";
+
+    const min = isReputation ? (Number(getVal("min")) || -50) : (isAttitude ? 1 : (Number(getVal("min")) || 0));
+    const max = isReputation ? (Number(getVal("max")) || 50) : (isAttitude ? 5 : (Number(getVal("max")) || 20));
+    const rawVal = isAttitude ? (Number(getVal("attitudeSelect") || getVal("value")) || 3) : (Number(getVal("value")) || 0);
     const clockSegments = Number(getVal("clockSegments")) || 6;
     const rawName = getVal("name").trim();
 
@@ -982,11 +1018,13 @@ export class ResourceConfigDialog {
 
     const maxStages = stages.length > 0 ? stages.length : 5;
 
-    const clampedVal = type === "stage"
+    const clampedVal = isStage
       ? Math.max(1, Math.min(maxStages, rawVal || 1))
-      : type === "clock"
+      : isClock
         ? Math.max(0, Math.min(clockSegments, rawVal))
-        : Math.max(min, Math.min(max, rawVal));
+        : isAttitude
+          ? Math.max(1, Math.min(5, rawVal || 3))
+          : Math.max(min, Math.min(max, rawVal));
 
     const isPinned = Boolean(root.querySelector('[name="isPinned"]')?.checked);
     const visibleToPlayers = Boolean(root.querySelector('[name="visibleToPlayers"]')?.checked);
@@ -997,8 +1035,8 @@ export class ResourceConfigDialog {
       category: getVal("category") || "party",
       type: type,
       value: clampedVal,
-      min: type === "stage" ? 1 : type === "clock" ? 0 : min,
-      max: type === "stage" ? maxStages : type === "clock" ? clockSegments : max,
+      min: isStage ? 1 : isClock ? 0 : isAttitude ? 1 : min,
+      max: isStage ? maxStages : isClock ? clockSegments : isAttitude ? 5 : max,
       clockSegments: clockSegments,
       direction: getVal("direction") || "countup",
       actorId: getVal("actorId") || "",

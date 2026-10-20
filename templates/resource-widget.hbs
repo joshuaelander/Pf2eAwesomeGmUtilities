@@ -113,6 +113,35 @@
                   {{#if isStage}}
                     <span class="widget-stage-indicator" style="color: {{theme.border}};">{{currentStageName}}</span>
                   {{/if}}
+
+                  <!-- 5. REPUTATION TYPE (Top line value) -->
+                  {{#if isReputation}}
+                    <div class="widget-reputation-metric">
+                      <span class="widget-metric-val" style="color: {{reputationTier.color}};">{{#if (gt value 0)}}+{{/if}}{{value}}</span>
+                      <span class="widget-rep-tier-label" style="color: {{reputationTier.color}};">({{reputationTier.label}})</span>
+                    </div>
+                    {{#if @root.isGM}}
+                      <div class="widget-mini-steppers">
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-</button>
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+</button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
+
+                  <!-- 6. NPC ATTITUDE TYPE (Top line value) -->
+                  {{#if isAttitude}}
+                    <div class="widget-attitude-metric">
+                      <span class="widget-attitude-label" style="color: {{attitudeInfo.color}};">
+                        <i class="{{attitudeInfo.icon}}"></i> {{attitudeInfo.label}}
+                      </span>
+                    </div>
+                    {{#if @root.isGM}}
+                      <div class="widget-mini-steppers">
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="Worse">-</button>
+                        <button type="button" class="widget-mini-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="Better">+</button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
                 </div>
               </div>
 
@@ -173,6 +202,37 @@
                   {{#if currentStageEffect}}
                     <span class="widget-stage-effect-text" title="{{currentStageEffect}}">{{currentStageEffect}}</span>
                   {{/if}}
+                </div>
+              {{/if}}
+
+              <!-- Reputation Bipolar Slim Track -->
+              {{#if isReputation}}
+                <div class="widget-slim-reputation-track" title="{{reputationTier.label}} ({{value}})">
+                  <div class="widget-rep-center-marker"></div>
+                  <div class="widget-rep-fill-neg" style="width: {{repPercentNegative}}%;"></div>
+                  <div class="widget-rep-fill-pos" style="width: {{repPercentPositive}}%; background: {{reputationTier.border}}; box-shadow: 0 0 6px {{reputationTier.color}}80;"></div>
+                </div>
+              {{/if}}
+
+              <!-- NPC Attitude 5-Step Pips -->
+              {{#if isAttitude}}
+                <div class="widget-slim-attitude-row">
+                  <div class="widget-attitude-pips-compact">
+                    {{#each attitudes}}
+                      <button
+                        type="button"
+                        class="attitude-pip-compact {{#if isCurrent}}active{{/if}} {{#unless @root.isGM}}disabled{{/unless}}"
+                        style="{{#if isCurrent}}border-color: {{border}}; background: {{color}}; color: #000; font-weight: bold; box-shadow: 0 0 6px {{color}}99;{{/if}}"
+                        data-action="set-attitude"
+                        data-id="{{../id}}"
+                        data-value="{{value}}"
+                        title="{{label}}: {{description}}"
+                        {{#unless @root.isGM}}disabled{{/unless}}
+                      >
+                        {{value}}
+                      </button>
+                    {{/each}}
+                  </div>
                 </div>
               {{/if}}
 

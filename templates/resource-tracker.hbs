@@ -286,6 +286,98 @@
                 </div>
               {{/if}}
 
+              <!-- 5. REPUTATION SUBSYSTEM (-50 to +50) -->
+              {{#if isReputation}}
+                <div class="reputation-layout">
+                  <!-- Header Tier & Score -->
+                  <div class="reputation-header-row">
+                    <div class="reputation-score-badge" style="color: {{reputationTier.color}};">
+                      <span class="rep-score-num">{{#if (gt value 0)}}+{{/if}}{{value}}</span>
+                    </div>
+                    <div class="reputation-tier-badge" style="border-color: {{reputationTier.border}}; color: {{reputationTier.color}}; box-shadow: 0 0 8px {{reputationTier.color}}33;">
+                      <i class="fa-solid fa-award"></i>
+                      <span>{{reputationTier.label}}</span>
+                    </div>
+                  </div>
+
+                  <!-- 7 Reputation Tier Selector Buttons -->
+                  <div class="reputation-tiers-row">
+                    {{#each reputationTiers}}
+                      <button type="button"
+                              class="rep-tier-btn {{class}} {{#if isCurrent}}active-tier{{/if}}"
+                              data-action="set-reputation-tier"
+                              data-id="{{../id}}"
+                              data-threshold="{{threshold}}"
+                              style="{{#if isCurrent}}border-color: {{border}}; color: #ffffff; background: {{color}}33; box-shadow: 0 0 8px {{color}}66;{{/if}}"
+                              title="{{label}} ({{threshold}}): {{description}}">
+                        <span class="tier-btn-name">{{label}}</span>
+                        <span class="tier-btn-thresh">{{#if (gt threshold 0)}}+{{/if}}{{threshold}}</span>
+                      </button>
+                    {{/each}}
+                  </div>
+
+                  <!-- Bipolar Bar Gauge (-50 to +50) -->
+                  <div class="reputation-bipolar-track">
+                    <div class="rep-track-center-marker" title="Neutral (0)"></div>
+                    <div class="rep-fill-negative" style="width: {{repPercentNegative}}%;"></div>
+                    <div class="rep-fill-positive" style="width: {{repPercentPositive}}%; background: {{reputationTier.border}}; box-shadow: 0 0 8px {{reputationTier.color}}66;"></div>
+                  </div>
+
+                  <!-- Active Tier Description Banner -->
+                  <div class="reputation-tier-desc-banner" style="border-left-color: {{reputationTier.border}};">
+                    <span class="rep-desc-text">{{reputationTier.description}}</span>
+                  </div>
+
+                  <!-- Steppers -->
+                  <div class="reputation-steppers">
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-5" title="-5">-5</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="-1">-1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="+1">+1</button>
+                    <button type="button" class="step-btn" data-action="adjust-value" data-id="{{id}}" data-delta="5" title="+5">+5</button>
+                  </div>
+                </div>
+              {{/if}}
+
+              <!-- 6. NPC SOCIAL ATTITUDES (Hostile to Helpful) -->
+              {{#if isAttitude}}
+                <div class="attitude-layout">
+                  <!-- 5 Attitude Selector Buttons -->
+                  <div class="attitude-pills-row">
+                    {{#each attitudes}}
+                      <button type="button"
+                              class="attitude-pill-btn {{class}} {{#if isCurrent}}active-attitude{{/if}}"
+                              data-action="set-attitude"
+                              data-id="{{../id}}"
+                              data-value="{{value}}"
+                              style="{{#if isCurrent}}border-color: {{border}}; color: #ffffff; background: {{color}}33; box-shadow: 0 0 8px {{color}}66;{{/if}}"
+                              title="{{label}}: {{description}}">
+                        <i class="{{icon}} attitude-btn-icon" style="color: {{color}};"></i>
+                        <span class="attitude-btn-label">{{label}}</span>
+                      </button>
+                    {{/each}}
+                  </div>
+
+                  <!-- Active Attitude Description Banner -->
+                  <div class="active-attitude-banner" style="border-left-color: {{attitudeInfo.border}};">
+                    <div class="attitude-banner-header">
+                      <i class="{{attitudeInfo.icon}} attitude-banner-icon" style="color: {{attitudeInfo.color}};"></i>
+                      <strong class="attitude-banner-title" style="color: {{attitudeInfo.color}};">{{attitudeInfo.label}}</strong>
+                    </div>
+                    <div class="attitude-banner-desc">{{attitudeInfo.description}}</div>
+                  </div>
+
+                  <!-- Quick Attitude Shift Steppers -->
+                  <div class="attitude-steppers">
+                    <button type="button" class="step-btn btn-attitude-worse" data-action="adjust-value" data-id="{{id}}" data-delta="-1" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.MakeWorse"}}">
+                      <i class="fa-solid fa-arrow-down"></i> {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Worse"}} (-1)
+                    </button>
+                    <button type="button" class="step-btn btn-attitude-better" data-action="adjust-value" data-id="{{id}}" data-delta="1" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.MakeBetter"}}">
+                      {{localize "PF2E_AWESOME_GM.ResourceTracker.Attitude.Better"}} (+1) <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                  </div>
+                </div>
+              {{/if}}
+
             </div>
 
             <!-- Notes Section (if populated) -->

@@ -134,6 +134,42 @@ export const DEFAULT_RESOURCE_PRESETS = [
       { stage: 5, name: "Stage 5", effect: "Unconscious / Lethal progression" }
     ],
     notes: "Save DC 15 Fortitude; progression checks at end of interval."
+  },
+  {
+    presetId: "research",
+    name: "Library Research (RP)",
+    category: "subsystem",
+    type: "progress",
+    value: 4,
+    min: 0,
+    max: 15,
+    color: "arcane",
+    icon: "fa-solid fa-book-bookmark",
+    notes: "Research Points (RP). Milestones: 5 RP (Basic Clue), 10 RP (Deep Lore), 15 RP (Mastery & Hidden Secret)."
+  },
+  {
+    presetId: "reputation",
+    name: "Faction Reputation",
+    category: "subsystem",
+    type: "reputation",
+    value: 0,
+    min: -50,
+    max: 50,
+    color: "gold",
+    icon: "fa-solid fa-scale-balanced",
+    notes: "Hunted (≤-30), Hated (-29 to -15), Disliked (-14 to -5), Ignored (-4 to +4), Liked (+5 to +14), Admired (+15 to +29), Revered (+30 to +50)."
+  },
+  {
+    presetId: "npc-attitude",
+    name: "NPC Attitude",
+    category: "actor",
+    type: "attitude",
+    value: 3,
+    min: 1,
+    max: 5,
+    color: "ocean",
+    icon: "fa-solid fa-handshake",
+    notes: "Hostile (1), Unfriendly (2), Indifferent (3, default), Friendly (4), Helpful (5). Modify via Make an Impression or Coerce."
   }
 ];
 
@@ -193,7 +229,92 @@ export const DEFAULT_RESOURCE_TRACKERS = [
   }
 ];
 
+/**
+ * Standard PF2e Reputation Subsystem Tiers (-50 to +50).
+ * Reference: https://2e.aonprd.com/Rules.aspx?ID=3072
+ */
+export const REPUTATION_TIERS = [
+  { key: "hunted", label: "Hunted", min: -50, max: -30, threshold: -30, color: "#c084fc", border: "#a855f7", class: "rep-hunted", description: "Actively hunted down by the faction as a mortal enemy." },
+  { key: "hated", label: "Hated", min: -29, max: -15, threshold: -15, color: "#f87171", border: "#ef4444", class: "rep-hated", description: "Ostracized, despised, and treated with active hostility." },
+  { key: "disliked", label: "Disliked", min: -14, max: -5, threshold: -5, color: "#fb923c", border: "#f97316", class: "rep-disliked", description: "Distrusted, treated with cold suspicion and reluctance." },
+  { key: "ignored", label: "Ignored", min: -4, max: 4, threshold: 0, color: "#94a3b8", border: "#64748b", class: "rep-ignored", description: "Unknown or neutral newcomer; standard baseline standing." },
+  { key: "liked", label: "Liked", min: 5, max: 14, threshold: 5, color: "#4ade80", border: "#22c55e", class: "rep-liked", description: "Well regarded; members are friendly and grant minor favors." },
+  { key: "admired", label: "Admired", min: 15, max: 29, threshold: 15, color: "#38bdf8", border: "#0ea5e9", class: "rep-admired", description: "Highly respected; access to major faction resources and allies." },
+  { key: "revered", label: "Revered", min: 30, max: 50, threshold: 30, color: "#facc15", border: "#eab308", class: "rep-revered", description: "Legendary paragon of the faction with highest authority." }
+];
 
+export function getReputationTier(value) {
+  const v = Number(value) || 0;
+  if (v >= 30) return REPUTATION_TIERS[6]; // Revered
+  if (v >= 15) return REPUTATION_TIERS[5]; // Admired
+  if (v >= 5)  return REPUTATION_TIERS[4]; // Liked
+  if (v >= -4) return REPUTATION_TIERS[3]; // Ignored
+  if (v >= -14) return REPUTATION_TIERS[2]; // Disliked
+  if (v >= -29) return REPUTATION_TIERS[1]; // Hated
+  return REPUTATION_TIERS[0]; // Hunted
+}
+
+/**
+ * Standard PF2e Social NPC Attitudes (1 to 5).
+ * Reference: Player Core / Core Rulebook (Social Encounters)
+ */
+export const NPC_ATTITUDES = [
+  {
+    value: 1,
+    key: "hostile",
+    label: "Hostile",
+    icon: "fa-solid fa-face-angry",
+    color: "#ef4444",
+    border: "#dc2626",
+    class: "att-hostile",
+    description: "Actively works against you—and might attack you just because of their dislike."
+  },
+  {
+    value: 2,
+    key: "unfriendly",
+    label: "Unfriendly",
+    icon: "fa-solid fa-face-frown",
+    color: "#f97316",
+    border: "#ea580c",
+    class: "att-unfriendly",
+    description: "Dislikes you and doesn’t want to help you."
+  },
+  {
+    value: 3,
+    key: "indifferent",
+    label: "Indifferent",
+    icon: "fa-solid fa-face-meh",
+    color: "#94a3b8",
+    border: "#64748b",
+    class: "att-indifferent",
+    description: "Doesn’t care about you either way. (Most NPCs start out indifferent.)"
+  },
+  {
+    value: 4,
+    key: "friendly",
+    label: "Friendly",
+    icon: "fa-solid fa-face-smile",
+    color: "#38bdf8",
+    border: "#0284c7",
+    class: "att-friendly",
+    description: "Has a good attitude toward you, but won’t necessarily stick their neck out to help you."
+  },
+  {
+    value: 5,
+    key: "helpful",
+    label: "Helpful",
+    icon: "fa-solid fa-face-laugh-beam",
+    color: "#22c55e",
+    border: "#16a34a",
+    class: "att-helpful",
+    description: "Willing to help you and responds favorably to your requests."
+  }
+];
+
+export function getAttitudeInfo(value) {
+  const v = Math.min(5, Math.max(1, Number(value) || 3));
+  return NPC_ATTITUDES.find(a => a.value === v) || NPC_ATTITUDES[2];
+}
 
 export const COLOR_THEMES = {
   crimson: { label: "Crimson (Combat)", color: "#8b1e1e", border: "#c93b3b", glow: "rgba(201, 59, 59, 0.45)" },

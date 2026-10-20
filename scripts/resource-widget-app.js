@@ -6,7 +6,11 @@
 
 import {
   MODULE_ID,
-  COLOR_THEMES
+  COLOR_THEMES,
+  REPUTATION_TIERS,
+  getReputationTier,
+  NPC_ATTITUDES,
+  getAttitudeInfo
 } from "./constants.js";
 import { ResourceTrackerApp } from "./resource-tracker-app.js";
 
@@ -168,6 +172,8 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       const isProgress = t.type === "progress";
       const isClock = t.type === "clock";
       const isStage = t.type === "stage";
+      const isReputation = t.type === "reputation";
+      const isAttitude = t.type === "attitude";
       const isCountdown = t.direction === "countdown";
 
       // Numerical range calculation
@@ -222,6 +228,38 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         currentStageEffect = activeStage.effect || "";
       }
 
+      // Reputation data (-50 to +50)
+      let reputationTier = null;
+      let repPercentPositive = 0;
+      let repPercentNegative = 0;
+      let reputationTiers = [];
+      if (isReputation) {
+        reputationTier = getReputationTier(currentVal);
+        const posMax = Math.max(1, maxVal);
+        const negMin = Math.abs(Math.min(-1, minVal));
+        if (currentVal >= 0) {
+          repPercentPositive = Math.min(100, Math.max(0, Math.round((currentVal / posMax) * 100)));
+        } else {
+          repPercentNegative = Math.min(100, Math.max(0, Math.round((Math.abs(currentVal) / negMin) * 100)));
+        }
+
+        reputationTiers = REPUTATION_TIERS.map(tier => ({
+          ...tier,
+          isCurrent: tier.key === reputationTier.key
+        }));
+      }
+
+      // NPC Attitude data (1 to 5)
+      let attitudeInfo = null;
+      let attitudes = [];
+      if (isAttitude) {
+        attitudeInfo = getAttitudeInfo(currentVal);
+        attitudes = NPC_ATTITUDES.map(att => ({
+          ...att,
+          isCurrent: att.value === attitudeInfo.value
+        }));
+      }
+
       return {
         ...t,
         index,
@@ -232,12 +270,20 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         isProgress,
         isClock,
         isStage,
+        isReputation,
+        isAttitude,
         isCountdown,
         progressPercent,
         clockSlices,
         stages,
         currentStageName,
-        currentStageEffect
+        currentStageEffect,
+        reputationTier,
+        repPercentPositive,
+        repPercentNegative,
+        reputationTiers,
+        attitudeInfo,
+        attitudes
       };
     });
 
@@ -470,6 +516,20 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         if (!game.user.isGM) return;
         const stageNum = parseInt(actionEl.dataset.stage, 10);
         await game.pf2eAwesomeGmUtilities?.resourceTracker?.setValue(trackerId, stageNum);
+        break;
+      }
+
+      case "set-reputation-tier": {
+        if (!game.user.isGM) return;
+        const thresh = parseInt(actionEl.dataset.threshold, 10);
+        await game.pf2eAwesomeGmUtilities?.resourceTracker?.setValue(trackerId, Number.isNaN(thresh) ? 0 : thresh);
+        break;
+      }
+
+      case "set-attitude": {
+        if (!game.user.isGM) return;
+        const attVal = parseInt(actionEl.dataset.value, 10);
+        await game.pf2eAwesomeGmUtilities?.resourceTracker?.setValue(trackerId, Number.isNaN(attVal) ? 3 : attVal);
         break;
       }
 

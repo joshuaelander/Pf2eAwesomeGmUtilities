@@ -187,6 +187,8 @@
         "TypeProgress": "Progress Bar (Percentage / Milestone)",
         "TypeClock": "Segmented Clock (Subsystem / Doom Clock)",
         "TypeStage": "Affliction Stages (Disease / Poison / Curse)",
+        "TypeReputation": "Reputation Subsystem (-50 to +50)",
+        "TypeAttitude": "NPC Social Attitude (Hostile to Helpful)",
         "LinkedActor": "Linked Player Character",
         "NoneParty": "[ None - Global / Party ]",
         "CurrentValue": "Current Value",
@@ -235,6 +237,24 @@
         "LinkedChar": "Link to Character (Optional)",
         "ImportBtn": "Import Affliction Tracker",
         "Success": "Successfully imported \"{name}\" with {count} stages!"
+      },
+      "Reputation": {
+        "TiersTitle": "PF2e Reputation Tiers",
+        "TiersDesc": "Hunted (≤-30), Hated (-29 to -15), Disliked (-14 to -5), Ignored (-4 to +4), Liked (+5 to +14), Admired (+15 to +29), Revered (+30 to +50)."
+      },
+      "Attitude": {
+        "StartingAttitude": "Starting Attitude",
+        "Hostile": "Hostile",
+        "Unfriendly": "Unfriendly",
+        "Indifferent": "Indifferent",
+        "Friendly": "Friendly",
+        "Helpful": "Helpful",
+        "Default": "Default",
+        "Hint": "Shift attitude using Diplomacy (Make an Impression) or Intimidation (Coerce).",
+        "MakeWorse": "Make attitude worse (e.g. failed diplomacy, insult, coerce failure)",
+        "MakeBetter": "Make attitude better (e.g. successful Make an Impression)",
+        "Worse": "Worse",
+        "Better": "Better"
       }
     },
     "ResourceWidget": {

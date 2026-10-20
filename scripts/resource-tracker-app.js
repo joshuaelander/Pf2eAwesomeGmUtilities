@@ -10,7 +10,11 @@ import {
   SOCKET_EVENT,
   COLOR_THEMES,
   DEFAULT_RESOURCE_PRESETS,
-  DEFAULT_RESOURCE_TRACKERS
+  DEFAULT_RESOURCE_TRACKERS,
+  REPUTATION_TIERS,
+  getReputationTier,
+  NPC_ATTITUDES,
+  getAttitudeInfo
 } from "./constants.js";
 import { ResourceConfigDialog } from "./resource-config-dialog.js";
 
@@ -196,6 +200,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       const isProgress = t.type === "progress";
       const isClock = t.type === "clock";
       const isStage = t.type === "stage";
+      const isReputation = t.type === "reputation";
+      const isAttitude = t.type === "attitude";
       const isCountdown = t.direction === "countdown";
 
       // Numerical range calculation
@@ -257,7 +263,39 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         currentStageEffect = activeStage.effect || "";
       }
 
-      const effectiveMax = isStage ? (t.stages?.length || 5) : maxVal;
+      // Reputation data (-50 to +50)
+      let reputationTier = null;
+      let repPercentPositive = 0;
+      let repPercentNegative = 0;
+      let reputationTiers = [];
+      if (isReputation) {
+        reputationTier = getReputationTier(currentVal);
+        const posMax = Math.max(1, maxVal);
+        const negMin = Math.abs(Math.min(-1, minVal));
+        if (currentVal >= 0) {
+          repPercentPositive = Math.min(100, Math.max(0, Math.round((currentVal / posMax) * 100)));
+        } else {
+          repPercentNegative = Math.min(100, Math.max(0, Math.round((Math.abs(currentVal) / negMin) * 100)));
+        }
+
+        reputationTiers = REPUTATION_TIERS.map(tier => ({
+          ...tier,
+          isCurrent: tier.key === reputationTier.key
+        }));
+      }
+
+      // NPC Attitude data (1 to 5)
+      let attitudeInfo = null;
+      let attitudes = [];
+      if (isAttitude) {
+        attitudeInfo = getAttitudeInfo(currentVal);
+        attitudes = NPC_ATTITUDES.map(att => ({
+          ...att,
+          isCurrent: att.value === attitudeInfo.value
+        }));
+      }
+
+      const effectiveMax = isStage ? (t.stages?.length || 5) : (isAttitude ? 5 : maxVal);
 
       return {
         ...t,
@@ -269,6 +307,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         isProgress,
         isClock,
         isStage,
+        isReputation,
+        isAttitude,
         isCountdown,
         progressPercent,
         clockSlices,
@@ -277,6 +317,12 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         stages,
         currentStageName,
         currentStageEffect,
+        reputationTier,
+        repPercentPositive,
+        repPercentNegative,
+        reputationTiers,
+        attitudeInfo,
+        attitudes,
         canDecrease: currentVal > minVal,
         canIncrease: currentVal < effectiveMax
       };
@@ -494,6 +540,18 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         break;
       }
 
+      case "set-reputation-tier": {
+        const threshold = parseInt(actionEl.dataset.threshold, 10);
+        await this.setValue(trackerId, Number.isNaN(threshold) ? 0 : threshold);
+        break;
+      }
+
+      case "set-attitude": {
+        const attitudeVal = parseInt(actionEl.dataset.value, 10);
+        await this.setValue(trackerId, Number.isNaN(attitudeVal) ? 3 : attitudeVal);
+        break;
+      }
+
       case "reset-tracker":
         await this.resetValue(trackerId);
         break;
@@ -588,9 +646,15 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     } else if (tracker.type === "stage") {
       min = 1;
       max = tracker.stages?.length || 5;
+    } else if (tracker.type === "attitude") {
+      min = 1;
+      max = 5;
+    } else if (tracker.type === "reputation") {
+      min = tracker.min ?? -50;
+      max = tracker.max ?? 50;
     }
 
-    const current = tracker.value ?? min;
+    const current = tracker.value ?? (tracker.type === "reputation" ? 0 : min);
     const newVal = Math.min(max, Math.max(min, current + delta));
     tracker.value = newVal;
 
@@ -616,6 +680,12 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     } else if (tracker.type === "stage") {
       min = 1;
       max = tracker.stages?.length || 5;
+    } else if (tracker.type === "attitude") {
+      min = 1;
+      max = 5;
+    } else if (tracker.type === "reputation") {
+      min = tracker.min ?? -50;
+      max = tracker.max ?? 50;
     }
 
     tracker.value = Math.min(max, Math.max(min, val));
@@ -658,6 +728,10 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       tracker.value = tracker.direction === "countdown" ? (tracker.clockSegments || 6) : 0;
     } else if (tracker.type === "stage") {
       tracker.value = 1;
+    } else if (tracker.type === "attitude") {
+      tracker.value = 3;
+    } else if (tracker.type === "reputation") {
+      tracker.value = 0;
     } else {
       tracker.value = tracker.direction === "countdown" ? (tracker.max ?? 100) : (tracker.min ?? 0);
     }
@@ -1000,6 +1074,40 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
           <div class="stage-active-box" style="background: rgba(0,0,0,0.3); border-left: 3px solid ${theme.border}; padding: 6px 8px; border-radius: 2px;">
             <div style="font-weight: bold; color: ${theme.border};">${currentStage.name}</div>
             ${currentStage.effect ? `<div style="font-size: 0.88em; color: #ddd; margin-top: 3px;">${currentStage.effect}</div>` : ""}
+          </div>
+        </div>
+      `;
+    } else if (tracker.type === "reputation") {
+      const val = Number(tracker.value) || 0;
+      const tier = getReputationTier(val);
+      const formattedVal = val > 0 ? `+${val}` : `${val}`;
+      bodyHtml = `
+        <div class="pf2e-resource-reputation-stat" style="text-align: center; margin: 6px 0;">
+          <div style="font-size: 1.35em; font-weight: 800; color: ${tier.color}; margin-bottom: 3px;">
+            ${formattedVal} &mdash; ${tier.label}
+          </div>
+          <div style="font-size: 0.82em; color: #cbd5e1; margin-bottom: 6px;">
+            ${tier.description}
+          </div>
+          <div style="display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
+            ${REPUTATION_TIERS.map(t => `
+              <span style="font-size: 0.72em; padding: 2px 6px; border-radius: 3px; ${t.key === tier.key ? `background: ${t.color}; color: #000; font-weight: bold;` : 'background: rgba(0,0,0,0.3); color: #888;'}">
+                ${t.label}
+              </span>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    } else if (tracker.type === "attitude") {
+      const val = Number(tracker.value) || 3;
+      const att = getAttitudeInfo(val);
+      bodyHtml = `
+        <div class="pf2e-resource-attitude-stat" style="margin: 6px 0;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 1.25em; font-weight: 800; color: ${att.color}; margin-bottom: 4px;">
+            <i class="${att.icon}"></i> <span>${att.label}</span>
+          </div>
+          <div style="font-size: 0.85em; color: #cbd5e1; text-align: center; background: rgba(0,0,0,0.3); border-left: 3px solid ${att.color}; padding: 6px 8px; border-radius: 3px;">
+            ${att.description}
           </div>
         </div>
       `;
