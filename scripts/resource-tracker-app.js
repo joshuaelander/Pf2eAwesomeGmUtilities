@@ -518,10 +518,6 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         await this.openCreateDialog();
         break;
 
-      case "quick-import":
-        await this.openQuickImportDialog();
-        break;
-
       case "adjust-value": {
         const delta = parseInt(actionEl.dataset.delta, 10) || 0;
         await this.adjustValue(trackerId, delta);
@@ -761,125 +757,6 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         game.i18n.format("PF2E_AWESOME_GM.ResourceTracker.Notifications.Saved", { name: newTracker.name })
       );
     });
-  }
-
-  /**
-   * Opens a modal dialog allowing GMs to paste raw text from monster stat blocks,
-   * chat messages, or PDFs to instantly create a new affliction tracker.
-   */
-  async openQuickImportDialog() {
-    const playerActors = game.actors
-      ? game.actors.filter(a => a.type === "character").map(a => ({
-          id: a.id,
-          name: a.name
-        }))
-      : [];
-
-    let actorOptions = `<option value="">[ None - Global / Party ]</option>`;
-    playerActors.forEach(a => {
-      actorOptions += `<option value="${a.id}">${a.name}</option>`;
-    });
-
-    const content = `
-      <div class="import-affliction-form">
-        <p class="import-hint">
-          ${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Hint")}
-        </p>
-        <textarea class="import-textarea" placeholder="${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.TextPlaceholder")}"></textarea>
-        <div class="form-group" style="margin-top: 8px;">
-          <label style="font-size: 11px; font-weight: 600; color: #cbd5e1; display: block; margin-bottom: 4px;">
-            ${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.LinkedChar")}:
-          </label>
-          <select class="import-actor-select" style="width: 100%; background: #202433; color: #fff; border: 1px solid #3b4766; border-radius: 4px; padding: 6px;">
-            ${actorOptions}
-          </select>
-        </div>
-      </div>
-    `;
-
-    const title = game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Title");
-
-    const onImport = async (dialogEl) => {
-      const textarea = dialogEl.querySelector(".import-textarea");
-      const actorSelect = dialogEl.querySelector(".import-actor-select");
-      const rawText = textarea ? textarea.value.trim() : "";
-      if (!rawText) {
-        ui.notifications.warn("Please paste affliction or ability text first.");
-        return;
-      }
-
-      const trackerData = ResourceConfigDialog.parseAfflictionFromText(rawText);
-      if (!trackerData) {
-        ui.notifications.warn("Could not find stages (e.g. Stage 1...) in the pasted text.");
-        return;
-      }
-
-      if (actorSelect && actorSelect.value) {
-        trackerData.actorId = actorSelect.value;
-      }
-
-      trackerData.id = `tracker-${foundry.utils.randomID(8)}`;
-      const trackers = game.settings.get(MODULE_ID, "resourceTrackers") || [];
-      trackers.push(trackerData);
-      await this.saveTrackers(trackers);
-
-      ui.notifications.info(game.i18n.format("PF2E_AWESOME_GM.ResourceTracker.ImportModal.Success", {
-        name: trackerData.name,
-        count: trackerData.stages.length
-      }));
-    };
-
-    if (foundry?.applications?.api?.DialogV2?.wait) {
-      await foundry.applications.api.DialogV2.wait({
-        window: {
-          title,
-          icon: "fa-solid fa-file-import",
-          classes: ["pf2e-gm-utility-dialog", "pf2e-import-affliction-dialog"]
-        },
-        position: { width: 540 },
-        content,
-        buttons: [
-          {
-            action: "import",
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.ImportBtn"),
-            icon: "fa-solid fa-check",
-            default: true,
-            callback: (event, button, dialogEl) => {
-              const root = dialogEl || button.closest(".window-app") || button.closest(".dialog");
-              onImport(root);
-            }
-          },
-          {
-            action: "cancel",
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel"),
-            icon: "fa-solid fa-xmark"
-          }
-        ]
-      });
-    } else {
-      new Dialog({
-        title,
-        content,
-        buttons: {
-          import: {
-            icon: '<i class="fa-solid fa-check"></i>',
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.ImportModal.ImportBtn"),
-            callback: (html) => {
-              const root = html instanceof HTMLElement ? html : html[0];
-              onImport(root);
-            }
-          },
-          cancel: {
-            icon: '<i class="fa-solid fa-xmark"></i>',
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel")
-          }
-        },
-        default: "import"
-      }, {
-        classes: ["pf2e-gm-utility-dialog", "pf2e-import-affliction-dialog"],
-        width: 540
-      }).render(true);
-    }
   }
 
   /**

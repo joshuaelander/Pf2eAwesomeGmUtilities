@@ -223,21 +223,12 @@
         "Cancel": "Cancel",
         "Delete": "Delete Tracker"
       },
-      "ImportAffliction": "Import Affliction",
       "PinWidget": "Pin to Floating HUD",
       "UnpinWidget": "Unpin from Floating HUD",
       "ShowToPlayers": "Make Visible to Players",
       "HideFromPlayers": "Hide from Players",
       "PinnedBadge": "HUD",
       "SharedBadge": "Shared",
-      "ImportModal": {
-        "Title": "Import Affliction from Monster / Chat Text",
-        "Hint": "Paste any disease, poison, or curse text from a monster stat block, chat message, or PDF. All stages, Save DC, and notes will be extracted automatically.",
-        "TextPlaceholder": "e.g.\nGhast Fever (disease); Level 3\nSaving Throw DC 16 Fortitude; Onset 1 day;\nStage 1 carrier with no ill effect (1 day);\nStage 2 3d8 void damage and regains half as many HP from all healing (1 day);\nStage 3 as stage 2 (1 day);\nStage 4 3d8 void damage and gain no benefit from healing (1 day);\nStage 5 as stage 4 (1 day);\nStage 6 dead and immediately rises as a ghast",
-        "LinkedChar": "Link to Character (Optional)",
-        "ImportBtn": "Import Affliction Tracker",
-        "Success": "Successfully imported \"{name}\" with {count} stages!"
-      },
       "Reputation": {
         "TiersTitle": "PF2e Reputation Tiers",
         "TiersDesc": "Hunted (≤-30), Hated (-29 to -15), Disliked (-14 to -5), Ignored (-4 to +4), Liked (+5 to +14), Admired (+15 to +29), Revered (+30 to +50)."
