@@ -26,6 +26,8 @@ export const PLACE_PARTY_MACRO_ICON = "icons/svg/target.svg";
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
 
+export const GM_UTILITIES_MENU_ICON = "fa-solid fa-dragon";
+
 export const DEFAULT_SESSION_SCENES = [];
 
 export const DEFAULT_RESOURCE_PRESETS = [

@@ -19,6 +19,7 @@ import {
   PLACE_PARTY_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
+  GM_UTILITIES_MENU_ICON,
   DEFAULT_BANKS,
   DEFAULT_SESSION_SCENES,
   DEFAULT_RESOURCE_TRACKERS
@@ -428,7 +429,7 @@ function registerSceneControls(controls) {
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
-    icon: "fa-solid fa-wand-magic-sparkles",
+    icon: GM_UTILITIES_MENU_ICON,
     layer: "controls",
     visible: true,
     tools: Array.isArray(controls) ? gmTools : {
