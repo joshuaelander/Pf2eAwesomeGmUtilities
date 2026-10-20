@@ -120,6 +120,18 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     }
   }
 
+  /**
+   * Safely closes the widget and ensures any active drag listeners are removed.
+   */
+  async close(options = {}) {
+    if (this._isDragging) {
+      this._isDragging = false;
+      if (this._onPointerMoveBound) window.removeEventListener("pointermove", this._onPointerMoveBound);
+      if (this._onPointerUpBound) window.removeEventListener("pointerup", this._onPointerUpBound);
+    }
+    return super.close(options);
+  }
+
   /* ------------------------------------------------------------------------- */
   /* Context Preparation                                                       */
   /* ------------------------------------------------------------------------- */
