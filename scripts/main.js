@@ -475,13 +475,28 @@ function registerSceneControls(controls) {
   }
 
   // Dedicated top-level GM Utilities control group
+  const tokenControl = Array.isArray(controls)
+    ? controls.find(c => c?.name === "token" || c?.name === "tokens")
+    : (controls.get?.("token") || controls.get?.("tokens") || controls?.token || controls?.tokens);
+  const tokenLayerName = tokenControl?.layer || "tokens";
+
   const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
     icon: GM_UTILITIES_MENU_ICON,
-    layer: "controls",
+    layer: tokenLayerName,
     visible: true,
+    onChange: (event, active) => {
+      if (active && canvas?.ready && canvas.tokens) {
+        // Clear any stuck hover highlights on tokens when entering GM Utilities
+        for (const token of canvas.tokens.placeables) {
+          if (token.hover) {
+            token._onHoverOut(event);
+          }
+        }
+      }
+    },
     tools: Array.isArray(controls) ? gmTools : {
       [openSoundPadTool.name]: openSoundPadTool,
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
@@ -502,6 +517,40 @@ function registerSceneControls(controls) {
   } else if (controls && typeof controls === "object") {
     controls["pf2e-gm-utilities"] = gmUtilitiesControls;
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* 3.1 TOKEN HOVER SAFETY ON GM UTILITIES MENU                               */
+/* ------------------------------------------------------------------------- */
+
+function isGmUtilitiesActive() {
+  return ui.controls?.control?.name === "pf2e-gm-utilities" || ui.controls?.activeControl === "pf2e-gm-utilities";
+}
+
+function patchClassHover(cls) {
+  if (!cls?.prototype || cls.prototype._gmUtilitiesHoverPatched) return;
+  cls.prototype._gmUtilitiesHoverPatched = true;
+
+  if (typeof cls.prototype._canHover === "function") {
+    const origCanHover = cls.prototype._canHover;
+    cls.prototype._canHover = function (user, event) {
+      if (isGmUtilitiesActive()) return false;
+      return origCanHover.call(this, user, event);
+    };
+  }
+
+  if (typeof cls.prototype._onHoverIn === "function") {
+    const origOnHoverIn = cls.prototype._onHoverIn;
+    cls.prototype._onHoverIn = function (event, options) {
+      if (isGmUtilitiesActive()) return false;
+      return origOnHoverIn.call(this, event, options);
+    };
+  }
+}
+
+function patchTokenHover() {
+  if (typeof Token !== "undefined") patchClassHover(Token);
+  if (CONFIG.Token?.objectClass) patchClassHover(CONFIG.Token.objectClass);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -675,15 +724,18 @@ async function syncMacros() {
   }
 }
 
-/* ------------------------------------------------------------------------- */
-/* 6. HOOKS AND LIFECYCLE                                                    */
-/* ------------------------------------------------------------------------- */
-
 Hooks.once("init", () => {
   console.log("PF2e Awesome GM Utilities | Initializing Module...");
   registerSettings();
   registerKeybindings();
   SceneLinks._patchNotePlaceables();
+  patchTokenHover();
+
+  Hooks.on("hoverToken", (token, hovered) => {
+    if (hovered && isGmUtilitiesActive()) {
+      token._onHoverOut();
+    }
+  });
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
@@ -699,6 +751,7 @@ Hooks.on("renderSceneDirectory", (app, html) => {
 });
 
 Hooks.once("ready", async () => {
+  patchTokenHover();
   // Global API namespace
   game.pf2eAwesomeGmUtilities = game.pf2eAwesomeGmUtilities || {};
   
