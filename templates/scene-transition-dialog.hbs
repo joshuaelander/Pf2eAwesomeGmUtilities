@@ -1,0 +1,110 @@
+<div class="pf2e-scene-transition-dialog">
+
+  <!-- Scene Media Header Banner -->
+  <div class="transition-header-banner" style="background-image: url('{{thumb}}');">
+    <div class="banner-overlay"></div>
+    <div class="banner-content">
+      <div class="banner-title-row">
+        <h2 class="scene-title" title="{{name}}">{{name}}</h2>
+      </div>
+      <div class="banner-pills">
+        {{#if isActive}}
+          <span class="status-pill active-pill">
+            <i class="fa-solid fa-globe"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}
+          </span>
+        {{/if}}
+        {{#if isViewing}}
+          <span class="status-pill viewing-pill">
+            <i class="fa-solid fa-eye"></i> {{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeViewing"}}
+          </span>
+        {{/if}}
+        <span class="status-pill info-pill">
+          <i class="fa-solid {{lightIcon}}"></i> {{lightLabel}} ({{darknessPct}}%)
+        </span>
+        <span class="status-pill info-pill">
+          <i class="fa-solid fa-users"></i> {{tokenCount}} {{localize "PF2E_AWESOME_GM.SceneSwitcher.TokensCount"}}
+        </span>
+        {{#if gridDistance}}
+          <span class="status-pill info-pill">
+            <i class="fa-solid fa-border-all"></i> {{gridDistance}}{{gridUnits}}
+          </span>
+        {{/if}}
+      </div>
+    </div>
+  </div>
+
+  <!-- Transition Actions List -->
+  <div class="transition-actions">
+
+    <!-- Action 1: View Privately (GM) -->
+    <button type="button" class="transition-btn btn-view {{#if isViewing}}current-state{{/if}}" data-action="view">
+      <div class="btn-icon">
+        <i class="fa-solid fa-eye"></i>
+      </div>
+      <div class="btn-text">
+        <span class="btn-heading">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionViewTitle"}}</span>
+        <span class="btn-description">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionViewDesc"}}</span>
+      </div>
+      <span class="btn-badge"><kbd>Ctrl</kbd> + Click</span>
+    </button>
+
+    <!-- Action 2: Activate Globally (World) -->
+    <button type="button" class="transition-btn btn-activate {{#if isActive}}current-state{{/if}}" data-action="activate">
+      <div class="btn-icon">
+        <i class="fa-solid fa-play"></i>
+      </div>
+      <div class="btn-text">
+        <span class="btn-heading">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionActivateTitle"}}</span>
+        <span class="btn-description">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionActivateDesc"}}</span>
+      </div>
+      <span class="btn-badge primary"><kbd>Shift</kbd> + Click</span>
+    </button>
+
+    <!-- Action 3: Activate & Place Party -->
+    <button type="button" class="transition-btn btn-party" data-action="activate-party">
+      <div class="btn-icon">
+        <i class="fa-solid fa-users"></i>
+      </div>
+      <div class="btn-text">
+        <span class="btn-heading">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionPartyTitle"}}</span>
+        <span class="btn-description">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionPartyDesc"}}</span>
+      </div>
+      <span class="btn-badge"><i class="fa-solid fa-target"></i></span>
+    </button>
+
+    <!-- Action 4: Open Associated Journal Entry (if linked) -->
+    {{#if journalEntry}}
+      <button type="button" class="transition-btn btn-journal" data-action="journal">
+        <div class="btn-icon">
+          <i class="fa-solid fa-book-open"></i>
+        </div>
+        <div class="btn-text">
+          <span class="btn-heading">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionJournalTitle"}} ({{journalEntry.name}})</span>
+          <span class="btn-description">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionJournalDesc"}}</span>
+        </div>
+      </button>
+    {{/if}}
+
+    <!-- Action 5: Scene Configuration -->
+    <button type="button" class="transition-btn btn-config" data-action="config">
+      <div class="btn-icon">
+        <i class="fa-solid fa-gear"></i>
+      </div>
+      <div class="btn-text">
+        <span class="btn-heading">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionConfigTitle"}}</span>
+        <span class="btn-description">{{localize "PF2E_AWESOME_GM.SceneLinks.ActionConfigDesc"}}</span>
+      </div>
+      <span class="btn-badge"><kbd>Alt</kbd> + Click</span>
+    </button>
+
+  </div>
+
+  <!-- Footer Tip -->
+  <footer class="transition-footer">
+    <div class="shortcut-tip">
+      <i class="fa-solid fa-lightbulb"></i>
+      <span>{{{localize "PF2E_AWESOME_GM.SceneLinks.ShortcutHint"}}}</span>
+    </div>
+  </footer>
+
+</div>

@@ -65,7 +65,7 @@
   <main class="session-scenes-list">
     {{#if hasScenes}}
       {{#each sessionScenes}}
-        <article class="scene-card {{#if isActive}}is-active{{/if}} {{#if isViewing}}is-viewing{{/if}}" data-scene-id="{{id}}">
+        <article class="scene-card {{#if isActive}}is-active{{/if}} {{#if isViewing}}is-viewing{{/if}}" data-scene-id="{{id}}" draggable="true">
           
           <!-- Top Row: Thumbnail + Title & Status + Controls -->
           <div class="card-top-row">

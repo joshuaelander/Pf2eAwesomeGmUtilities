@@ -1,0 +1,107 @@
+<div class="pf2e-scene-link-picker">
+
+  <!-- Target Scene Selector -->
+  <div class="form-section">
+    <div class="section-label">
+      <i class="fa-solid fa-map"></i>
+      <span>{{localize "PF2E_AWESOME_GM.SceneLinks.TargetScene"}}</span>
+    </div>
+
+    <!-- Scene Filter Input -->
+    <div class="filter-wrapper">
+      <i class="fa-solid fa-magnifying-glass filter-icon"></i>
+      <input type="text" class="scene-filter-input" placeholder="{{localize "PF2E_AWESOME_GM.SceneLinks.FilterScenesPlaceholder"}}" autocomplete="off" />
+    </div>
+
+    <!-- Scrollable Scene Card Selector -->
+    <div class="scene-picker-grid">
+      {{#each scenes}}
+        <div class="scene-picker-card {{#if isSelected}}selected{{/if}}" data-scene-id="{{id}}" data-scene-name="{{name}}" data-scene-thumb="{{thumb}}">
+          <img src="{{thumb}}" alt="{{name}}" class="picker-thumb" onerror="this.onerror=null; this.src='icons/svg/castle.svg';" />
+          <div class="picker-info">
+            <span class="picker-name" title="{{name}}">{{name}}</span>
+            {{#if folderName}}
+              <span class="picker-folder"><i class="fa-solid fa-folder"></i> {{folderName}}</span>
+            {{/if}}
+          </div>
+          {{#if isActive}}
+            <span class="picker-badge active" title="{{localize "PF2E_AWESOME_GM.SceneSwitcher.BadgeActive"}}"><i class="fa-solid fa-globe"></i></span>
+          {{/if}}
+        </div>
+      {{/each}}
+    </div>
+    <input type="hidden" name="selectedSceneId" value="{{selectedSceneId}}" />
+  </div>
+
+  <!-- Pin Label & Icon Section -->
+  <div class="form-section">
+    <div class="section-label">
+      <i class="fa-solid fa-tag"></i>
+      <span>{{localize "PF2E_AWESOME_GM.SceneLinks.PinAppearance"}}</span>
+    </div>
+
+    <!-- Label input -->
+    <div class="form-group-compact">
+      <label>{{localize "PF2E_AWESOME_GM.SceneLinks.PinLabel"}}</label>
+      <input type="text" name="pinLabel" value="{{pinLabel}}" placeholder="e.g. Castle Ravenloft, Hinterlands..." />
+    </div>
+
+    <!-- Pin Icon Picker -->
+    <div class="pin-icons-container">
+      <label class="sub-label">{{localize "PF2E_AWESOME_GM.SceneLinks.PinIcon"}}</label>
+      <div class="pin-icon-grid">
+        {{#each pinIcons}}
+          <button type="button" class="btn-pin-icon {{#if isSelected}}selected{{/if}}" data-icon-path="{{id}}" title="{{label}}">
+            <img src="{{icon}}" alt="{{label}}" />
+            <span>{{label}}</span>
+          </button>
+        {{/each}}
+      </div>
+    </div>
+
+    <!-- Custom Icon Path + FilePicker -->
+    <div class="form-group-compact file-group">
+      <label>{{localize "PF2E_AWESOME_GM.SceneLinks.CustomIcon"}}</label>
+      <div class="file-picker-row">
+        <input type="text" name="customIconPath" value="{{customIconPath}}" placeholder="icons/svg/castle.svg" />
+        <button type="button" class="btn-file-picker" title="{{localize "PF2E_AWESOME_GM.ResourceTracker.Config.Browse"}}">
+          <i class="fa-solid fa-file-import"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Placement Settings -->
+  <div class="form-section settings-grid">
+    <!-- Pin Size -->
+    <div class="form-group-compact">
+      <label>{{localize "PF2E_AWESOME_GM.SceneLinks.PinSize"}}</label>
+      <select name="pinSize">
+        <option value="36" {{#if (eq pinSize 36)}}selected{{/if}}>Small (36px)</option>
+        <option value="48" {{#if (eq pinSize 48)}}selected{{/if}}>Medium (48px - Standard)</option>
+        <option value="64" {{#if (eq pinSize 64)}}selected{{/if}}>Large (64px)</option>
+        <option value="80" {{#if (eq pinSize 80)}}selected{{/if}}>Huge (80px)</option>
+      </select>
+    </div>
+
+    <!-- Default Double-Click Action -->
+    <div class="form-group-compact">
+      <label>{{localize "PF2E_AWESOME_GM.SceneLinks.DefaultAction"}}</label>
+      <select name="clickAction">
+        <option value="prompt" {{#if (eq clickAction "prompt")}}selected{{/if}}>Show Transition Menu</option>
+        <option value="view" {{#if (eq clickAction "view")}}selected{{/if}}>Directly View Scene (Private)</option>
+        <option value="activate" {{#if (eq clickAction "activate")}}selected{{/if}}>Directly Activate Scene (Global)</option>
+      </select>
+    </div>
+
+    <!-- Player Visibility -->
+    <div class="form-group-compact checkbox-group">
+      <label class="checkbox-label">
+        <input type="checkbox" name="isGlobal" {{#if isGlobal}}checked{{/if}} />
+        <span>{{localize "PF2E_AWESOME_GM.SceneLinks.VisibleToPlayers"}}</span>
+      </label>
+      <span class="hint-text">{{localize "PF2E_AWESOME_GM.SceneLinks.VisibleToPlayersHint"}}</span>
+    </div>
+  </div>
+
+</div>

@@ -259,6 +259,51 @@
       "OpenManagerTooltip": "Open Full Resource Tracker",
       "NoPinned": "No trackers currently pinned to HUD."
     },
+    "SceneLinks": {
+      "Title": "Place Scene Link Pin",
+      "MacroName": "Place Scene Link Pin",
+      "ToolTitle": "Place Scene Link Pin",
+      "TransitionDialogTitle": "Scene Transition",
+      "ActionViewTitle": "View Scene (Private)",
+      "ActionViewDesc": "Switch your canvas view to this scene privately without moving players.",
+      "ActionActivateTitle": "Activate Scene (Global)",
+      "ActionActivateDesc": "Make this the active world scene and pull all connected players.",
+      "ActionPartyTitle": "Activate & Place Party",
+      "ActionPartyDesc": "Activate scene, pull players, and muster party tokens in formation.",
+      "ActionJournalTitle": "Open Journal Entry",
+      "ActionJournalDesc": "Read or edit the linked location journal entry notes.",
+      "ActionConfigTitle": "Scene Configuration",
+      "ActionConfigDesc": "Open standard Foundry scene configuration settings.",
+      "ShortcutHint": "Hold <kbd>Shift</kbd> to quick-activate, <kbd>Ctrl</kbd> to quick-view, or <kbd>Alt</kbd> for Scene Config.",
+      "TargetScene": "Target Scene",
+      "FilterScenesPlaceholder": "Search scenes by name...",
+      "PinAppearance": "Pin Appearance & Label",
+      "PinLabel": "Pin Label on Map",
+      "PinIcon": "Pin Icon Preset",
+      "CustomIcon": "Custom Icon Path",
+      "PinSize": "Pin Size",
+      "DefaultAction": "Default Double-Click Action",
+      "ActionPrompt": "Show Transition Options Menu",
+      "ActionDirectView": "Directly View Scene (Private)",
+      "ActionDirectActivate": "Directly Activate Scene (Global)",
+      "VisibleToPlayers": "Visible to Players",
+      "VisibleToPlayersHint": "When enabled, players can see this map pin on their screen.",
+      "PickerTitle": "Place Scene Link on Map",
+      "PlaceOnMapBtn": "Place Pin on Canvas",
+      "Cancel": "Cancel",
+      "SelectSceneWarn": "Please select a scene to link.",
+      "PlacementBanner": "Click anywhere on the map to place link to \"{name}\"",
+      "PlacementCanceled": "Scene link pin placement canceled.",
+      "NotificationPlaced": "Placed map pin for \"{name}\". Double-click it to transition.",
+      "NotificationViewing": "Now viewing scene: {name} (GM Only)",
+      "NotificationActivated": "Activated scene: {name}",
+      "SceneNotFound": "Linked scene could not be found.",
+      "HudJumpTooltip": "Jump to Linked Scene",
+      "ConfigLegend": "PF2e GM Utilities: Scene Link",
+      "LinkToScene": "Link to Scene",
+      "NoLinkedScene": "-- None (Normal Journal Pin) --",
+      "LinkHint": "If linked, double-clicking this map pin will open the Scene Transition menu to navigate or activate that scene."
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -283,6 +328,18 @@
       "SoundPadHotbarMacro": {
         "Name": "Auto-Sync GM Utilities Macros",
         "Hint": "Automatically creates handy Sound Pad, Scene Switcher, and Resource Tracker macros in the Macro Directory."
+      },
+      "SceneLinkDefaultAction": {
+        "Name": "Scene Link Default Action",
+        "Hint": "Choose what happens when clicking or double-clicking scene links in journals or on the map without holding modifier keys."
+      },
+      "SceneLinkDefaultIcon": {
+        "Name": "Default Map Pin Icon",
+        "Hint": "Default icon path used when dragging a scene onto the map to create a pin."
+      },
+      "SceneLinkSingleClick": {
+        "Name": "Single-Click Map Pin Transition",
+        "Hint": "When enabled, single-clicking a scene map pin transitions immediately rather than requiring a double-click."
       }
     }
   }

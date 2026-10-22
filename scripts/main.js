@@ -17,6 +17,8 @@ import {
   RESOURCE_WIDGET_MACRO_ICON,
   PLACE_PARTY_MACRO_NAME,
   PLACE_PARTY_MACRO_ICON,
+  PLACE_SCENE_LINK_MACRO_NAME,
+  PLACE_SCENE_LINK_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   GM_UTILITIES_MENU_ICON,
@@ -30,6 +32,7 @@ import { SceneSwitcherApp } from "./scene-switcher.js";
 import { ResourceTrackerApp } from "./resource-tracker-app.js";
 import { ResourceWidgetApp } from "./resource-widget-app.js";
 import { PartyPlacement } from "./party-placement.js";
+import { SceneLinks } from "./scene-links.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -216,6 +219,41 @@ function registerSettings() {
     config: true,
     type: Boolean,
     default: true
+  });
+
+  // Scene Link Default Action
+  game.settings.register(MODULE_ID, "sceneLinkDefaultAction", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkDefaultAction.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkDefaultAction.Hint"),
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      prompt: game.i18n.localize("PF2E_AWESOME_GM.SceneLinks.ActionPrompt"),
+      view: game.i18n.localize("PF2E_AWESOME_GM.SceneLinks.ActionDirectView"),
+      activate: game.i18n.localize("PF2E_AWESOME_GM.SceneLinks.ActionDirectActivate")
+    },
+    default: "prompt"
+  });
+
+  // Scene Link Default Pin Icon
+  game.settings.register(MODULE_ID, "sceneLinkDefaultIcon", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkDefaultIcon.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkDefaultIcon.Hint"),
+    scope: "world",
+    config: true,
+    type: String,
+    default: "icons/svg/castle.svg"
+  });
+
+  // Scene Link Single-Click Activation
+  game.settings.register(MODULE_ID, "sceneLinkSingleClick", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkSingleClick.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkSingleClick.Hint"),
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false
   });
 }
 
@@ -406,6 +444,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const placeSceneLinkTool = {
+    name: "pf2e-place-scene-link",
+    title: "Place Scene Link Pin",
+    icon: "fa-solid fa-location-dot",
+    visible: true,
+    button: true,
+    onClick: () => {
+      SceneLinks.openPlacementPicker();
+    }
+  };
+
   const insertTool = (ctrl, tool) => {
     if (!ctrl) return;
     if (Array.isArray(ctrl.tools)) {
@@ -422,10 +471,11 @@ function registerSceneControls(controls) {
   // Add tool to scenes control group
   if (scenesControl) {
     insertTool(scenesControl, openSceneSwitcherTool);
+    insertTool(scenesControl, placeSceneLinkTool);
   }
 
   // Dedicated top-level GM Utilities control group
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
@@ -436,6 +486,7 @@ function registerSceneControls(controls) {
       [openSoundPadTool.name]: openSoundPadTool,
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
       [placePartyTool.name]: placePartyTool,
+      [placeSceneLinkTool.name]: placeSceneLinkTool,
       [openResourceTrackerTool.name]: openResourceTrackerTool,
       [openResourceWidgetTool.name]: openResourceWidgetTool,
       [panicToolData.name]: panicToolData
@@ -541,6 +592,11 @@ const DESIRED_MACROS = [
     name: PLACE_PARTY_MACRO_NAME,
     icon: PLACE_PARTY_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.placeParty();`
+  },
+  {
+    name: PLACE_SCENE_LINK_MACRO_NAME,
+    icon: PLACE_SCENE_LINK_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.placeSceneLink();`
   }
 ];
 
@@ -627,6 +683,7 @@ Hooks.once("init", () => {
   console.log("PF2e Awesome GM Utilities | Initializing Module...");
   registerSettings();
   registerKeybindings();
+  SceneLinks._patchNotePlaceables();
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
@@ -705,6 +762,11 @@ Hooks.once("ready", async () => {
   // Party Placement API
   game.pf2eAwesomeGmUtilities.placeParty = () => PartyPlacement.startPlacement();
   game.pf2eAwesomeGmUtilities.partyPlacement = PartyPlacement;
+
+  // Scene Links API & Initialization
+  game.pf2eAwesomeGmUtilities.placeSceneLink = (options) => SceneLinks.openPlacementPicker(options);
+  game.pf2eAwesomeGmUtilities.sceneLinks = SceneLinks;
+  SceneLinks.initialize();
 
   // Helper function to re-sync or recreate macros on demand
   game.pf2eAwesomeGmUtilities.syncMacros = async () => await syncMacros();

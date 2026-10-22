@@ -504,6 +504,22 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         }
       }
     });
+
+    // Make scene cards draggable to map canvas
+    root.querySelectorAll(".scene-card").forEach(card => {
+      card.setAttribute("draggable", "true");
+      card.addEventListener("dragstart", (e) => {
+        const sceneId = card.dataset.sceneId;
+        const scene = game.scenes.get(sceneId);
+        if (!scene) return;
+        const dragData = {
+          type: "Scene",
+          uuid: scene.uuid,
+          id: scene.id
+        };
+        e.dataTransfer.setData("text/plain", JSON.stringify(dragData));
+      });
+    });
   }
 
   /* ------------------------------------------------------------------------- */

@@ -23,6 +23,9 @@ export const RESOURCE_WIDGET_MACRO_ICON = "icons/svg/eye.svg";
 export const PLACE_PARTY_MACRO_NAME = "Place Party on Scene";
 export const PLACE_PARTY_MACRO_ICON = "icons/svg/target.svg";
 
+export const PLACE_SCENE_LINK_MACRO_NAME = "Place Scene Link Pin";
+export const PLACE_SCENE_LINK_MACRO_ICON = "icons/svg/direction.svg";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
 
@@ -670,4 +673,27 @@ export const DEFAULT_BANKS = [
       }
     ]
   }
+];
+
+export const MAP_PIN_ICONS = [
+  { id: "icons/svg/castle.svg", label: "Castle / Fortress", icon: "icons/svg/castle.svg" },
+  { id: "icons/svg/village.svg", label: "Town / Settlement", icon: "icons/svg/village.svg" },
+  { id: "icons/svg/city.svg", label: "City / Metropolis", icon: "icons/svg/city.svg" },
+  { id: "icons/svg/ruins.svg", label: "Ancient Ruins", icon: "icons/svg/ruins.svg" },
+  { id: "icons/svg/cave.svg", label: "Dungeon / Cave", icon: "icons/svg/cave.svg" },
+  { id: "icons/svg/tower.svg", label: "Tower / Spire", icon: "icons/svg/tower.svg" },
+  { id: "icons/svg/temple.svg", label: "Temple / Shrine", icon: "icons/svg/temple.svg" },
+  { id: "icons/svg/mountain.svg", label: "Mountain / Pass", icon: "icons/svg/mountain.svg" },
+  { id: "icons/svg/oak.svg", label: "Forest / Woods", icon: "icons/svg/oak.svg" },
+  { id: "icons/svg/bridge.svg", label: "Bridge / Crossing", icon: "icons/svg/bridge.svg" },
+  { id: "icons/svg/direction.svg", label: "Compass / Waypoint", icon: "icons/svg/direction.svg" },
+  { id: "icons/svg/target.svg", label: "Target / Point of Interest", icon: "icons/svg/target.svg" },
+  { id: "icons/svg/portal.svg", label: "Portal / Gateway", icon: "icons/svg/portal.svg" },
+  { id: "icons/svg/combat.svg", label: "Battle / Encounter", icon: "icons/svg/combat.svg" },
+  { id: "icons/svg/skull.svg", label: "Danger / Boss Lair", icon: "icons/svg/skull.svg" },
+  { id: "icons/svg/stone-path.svg", label: "Road / Trail", icon: "icons/svg/stone-path.svg" },
+  { id: "icons/svg/statue.svg", label: "Monument / Landmark", icon: "icons/svg/statue.svg" },
+  { id: "icons/svg/eye.svg", label: "Lookout / Viewpoint", icon: "icons/svg/eye.svg" },
+  { id: "icons/svg/anchor.svg", label: "Port / Coastal", icon: "icons/svg/anchor.svg" },
+  { id: "scene-thumb", label: "Scene Thumbnail (Live Preview)", icon: "icons/svg/castle.svg" }
 ];
