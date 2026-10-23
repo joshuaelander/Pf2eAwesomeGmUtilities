@@ -63,28 +63,36 @@ export class AudioController {
 
   _initHooks() {
     Hooks.once("ready", () => {
-      this._startTimeTracker();
+      if (game.user.isGM) {
+        this._startTimeTracker();
+      }
     });
 
-    // Synchronize Sound Pad states when Foundry playlists change
+    // Synchronize Sound Pad states when Foundry playlists change (GM only)
     Hooks.on("updatePlaylistSound", (soundDoc, changes) => {
+      if (!game.user?.isGM) return;
       if ("playing" in changes || "volume" in changes || "pausedTime" in changes) {
         this._notifyListeners();
       }
     });
 
     Hooks.on("updatePlaylist", (playlistDoc, changes) => {
+      if (!game.user?.isGM) return;
       if ("playing" in changes || "sounds" in changes) {
         this._notifyListeners();
       }
     });
 
-    Hooks.on("deletePlaylistSound", () => this._notifyListeners());
-    Hooks.on("deletePlaylist", () => this._notifyListeners());
+    Hooks.on("deletePlaylistSound", () => {
+      if (game.user?.isGM) this._notifyListeners();
+    });
+    Hooks.on("deletePlaylist", () => {
+      if (game.user?.isGM) this._notifyListeners();
+    });
 
     // Listen for core Foundry playlist volume changes
     Hooks.on("globalPlaylistVolumeChanged", () => {
-      this._notifyListeners();
+      if (game.user?.isGM) this._notifyListeners();
     });
   }
 
@@ -119,13 +127,22 @@ export class AudioController {
   /* ------------------------------------------------------------------------- */
 
   _startTimeTracker() {
+    if (!game.user?.isGM) return;
     if (this.playbackPollInterval) clearInterval(this.playbackPollInterval);
     this.playbackPollInterval = setInterval(() => {
       this._pollCurrentPlaybackTime();
     }, 250);
   }
 
+  _stopTimeTracker() {
+    if (this.playbackPollInterval) {
+      clearInterval(this.playbackPollInterval);
+      this.playbackPollInterval = null;
+    }
+  }
+
   _pollCurrentPlaybackTime() {
+    if (!game.user?.isGM) return;
     if (!game?.ready || !game?.playlists) return;
 
     // While the user is actively skipping / seeking, do not overwrite currentTime

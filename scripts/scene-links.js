@@ -232,6 +232,7 @@ export class SceneLinks {
    * Refreshes all note placeables on the current canvas.
    */
   static refreshAllNotes() {
+    if (!game.user?.isGM) return;
     if (!canvas?.ready || !canvas?.notes?.placeables) return;
 
     const hasSceneLinks = canvas.notes.placeables.some(n => n.document?.getFlag(MODULE_ID, "isSceneLink"));
