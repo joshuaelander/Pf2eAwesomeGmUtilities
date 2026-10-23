@@ -61,7 +61,7 @@ A publishing and styling toolkit integrated into Foundry's ProseMirror journal e
 | Music & SFX Sound Pad | Playlists (Sounds) / GM Utilities | Playlists Directory Header | Shift + M |
 | Session Scene Switcher | Scenes (Navigation) / GM Utilities | Scenes Directory Header | Shift + S |
 | Resource & Subsystem Tracker | GM Utilities Layer | GM Utilities Palette | Shift + R |
-| Floating Trackers HUD | GM Utilities Layer | GM Utilities Palette | Shift + H |
+| Floating Trackers HUD | Token Controls / Utilities | Toolbar Button (GM & Players) | Shift + H (GM & Players) |
 | Party Placement Tool | GM Utilities Layer | None | Macro / Control Button |
 | Place Scene Link Pin | GM Utilities Layer | Canvas Drag & Drop | Macro / Control Button |
 | AP Journal Editor & Styler | GM Utilities Layer | ProseMirror Editor Toolbar | Feather Icon on Toolbar |

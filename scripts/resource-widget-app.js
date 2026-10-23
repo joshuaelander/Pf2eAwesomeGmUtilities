@@ -29,6 +29,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     this._dragStartTop = 0;
     this._onPointerMoveBound = null;
     this._onPointerUpBound = null;
+    this._userClosed = false;
   }
 
   static DEFAULT_OPTIONS = {
@@ -89,6 +90,10 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       options = { force: options };
     }
 
+    if (options?.force) {
+      this._userClosed = false;
+    }
+
     try {
       const saved = game.settings.get(MODULE_ID, "resourceWidgetPosition");
       // Sanity check: Ensure not stuck off-screen or far right past chat
@@ -114,8 +119,10 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
    */
   toggle() {
     if (this.rendered) {
+      this._userClosed = true;
       this.close();
     } else {
+      this._userClosed = false;
       this.render({ force: true });
     }
   }
@@ -124,6 +131,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
    * Safely closes the widget and ensures any active drag listeners are removed.
    */
   async close(options = {}) {
+    this._userClosed = true;
     if (this._isDragging) {
       this._isDragging = false;
       if (this._onPointerMoveBound) window.removeEventListener("pointermove", this._onPointerMoveBound);

@@ -348,7 +348,8 @@ function syncWidgetApp() {
     }
   } else {
     // If player has visible shared trackers, automatically display HUD
-    if (!isGM && visibleCount > 0) {
+    // unless they have explicitly closed it during this session
+    if (!isGM && visibleCount > 0 && !widget._userClosed) {
       widget.render({ force: true });
     }
   }
@@ -359,7 +360,7 @@ function syncWidgetApp() {
 /* ------------------------------------------------------------------------- */
 
 function registerSceneControls(controls) {
-  if (!game.user.isGM) return;
+  const isGM = Boolean(game.user?.isGM);
 
   // Support Array (v12 and earlier), Map/Collection, or Record/Object (v13/v14)
   const findControl = (name) => {
@@ -371,6 +372,23 @@ function registerSceneControls(controls) {
 
   const scenesControl = findControl("scenes");
   const notesControl = findControl("notes");
+  const tokenControl = Array.isArray(controls)
+    ? controls.find(c => c?.name === "token" || c?.name === "tokens")
+    : (controls.get?.("token") || controls.get?.("tokens") || controls?.token || controls?.tokens);
+  const tokenLayerName = tokenControl?.layer || "tokens";
+
+  const insertTool = (ctrl, tool) => {
+    if (!ctrl) return;
+    if (Array.isArray(ctrl.tools)) {
+      const idx = ctrl.tools.findIndex(t => t?.name === tool.name);
+      if (idx >= 0) ctrl.tools[idx] = tool;
+      else ctrl.tools.push(tool);
+    } else if (ctrl.tools instanceof Map || typeof ctrl.tools?.set === "function") {
+      ctrl.tools.set(tool.name, tool);
+    } else if (ctrl.tools && typeof ctrl.tools === "object") {
+      ctrl.tools[tool.name] = tool;
+    }
+  };
 
   const openSoundPadTool = {
     name: "pf2e-sound-pad-open",
@@ -468,46 +486,33 @@ function registerSceneControls(controls) {
     }
   };
 
-  const insertTool = (ctrl, tool) => {
-    if (!ctrl) return;
-    if (Array.isArray(ctrl.tools)) {
-      const idx = ctrl.tools.findIndex(t => t?.name === tool.name);
-      if (idx >= 0) ctrl.tools[idx] = tool;
-      else ctrl.tools.push(tool);
-    } else if (ctrl.tools instanceof Map || typeof ctrl.tools?.set === "function") {
-      ctrl.tools.set(tool.name, tool);
-    } else if (ctrl.tools && typeof ctrl.tools === "object") {
-      ctrl.tools[tool.name] = tool;
+  // GM-only tools added to Foundry built-in control groups
+  if (isGM) {
+    if (scenesControl) {
+      insertTool(scenesControl, openSceneSwitcherTool);
+      insertTool(scenesControl, placeSceneLinkTool);
     }
-  };
-
-  // Add tools to scenes control group
-  if (scenesControl) {
-    insertTool(scenesControl, openSceneSwitcherTool);
-    insertTool(scenesControl, placeSceneLinkTool);
   }
 
-  // Add tool to notes / journal control group
-  if (notesControl) {
-    insertTool(notesControl, openJournalStylerTool);
+  // Primary Utilities control group
+  const activeTools = isGM
+    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData]
+    : [openResourceWidgetTool];
+
+  const activeToolsObj = {};
+  for (const t of activeTools) {
+    activeToolsObj[t.name] = t;
   }
 
-  // Dedicated top-level GM Utilities control group
-  const tokenControl = Array.isArray(controls)
-    ? controls.find(c => c?.name === "token" || c?.name === "tokens")
-    : (controls.get?.("token") || controls.get?.("tokens") || controls?.token || controls?.tokens);
-  const tokenLayerName = tokenControl?.layer || "tokens";
-
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
-    title: "PF2e GM Utilities",
-    icon: GM_UTILITIES_MENU_ICON,
+    title: isGM ? "PF2e GM Utilities" : "PF2e Trackers HUD",
+    icon: isGM ? GM_UTILITIES_MENU_ICON : "fa-solid fa-layer-group",
     layer: tokenLayerName,
     visible: true,
     onChange: (event, active) => {
       if (active && canvas?.ready && canvas.tokens) {
-        // Clear any stuck hover highlights on tokens when entering GM Utilities
+        // Clear any stuck hover highlights on tokens when entering Utilities menu
         for (const token of canvas.tokens.placeables) {
           if (token.hover) {
             token._onHoverOut(event);
@@ -515,16 +520,7 @@ function registerSceneControls(controls) {
         }
       }
     },
-    tools: Array.isArray(controls) ? gmTools : {
-      [openSoundPadTool.name]: openSoundPadTool,
-      [openSceneSwitcherTool.name]: openSceneSwitcherTool,
-      [placePartyTool.name]: placePartyTool,
-      [placeSceneLinkTool.name]: placeSceneLinkTool,
-      [openJournalStylerTool.name]: openJournalStylerTool,
-      [openResourceTrackerTool.name]: openResourceTrackerTool,
-      [openResourceWidgetTool.name]: openResourceWidgetTool,
-      [panicToolData.name]: panicToolData
-    }
+    tools: Array.isArray(controls) ? activeTools : activeToolsObj
   };
 
   if (Array.isArray(controls)) {
@@ -543,7 +539,6 @@ function registerSceneControls(controls) {
 /* ------------------------------------------------------------------------- */
 
 function isGmUtilitiesActive() {
-  if (!game.user?.isGM) return false;
   return ui.controls?.control?.name === "pf2e-gm-utilities" || ui.controls?.activeControl === "pf2e-gm-utilities";
 }
 

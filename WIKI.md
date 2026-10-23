@@ -155,7 +155,11 @@ The **Floating Trackers HUD Widget** is a compact, translucent overlay designed 
 - **Mini Radial Clocks:** Displays authentic SVG donut clocks and mini progress bars.
 - **Collapsible Header:** Click the minimize icon to collapse the HUD into a sleek title tab when screen space is needed.
 - **Draggable & Persistent:** Freely drag the widget anywhere on your screen. Window position and collapsed states are saved per user.
-- **Reset Position:** If the widget is moved off-screen, use the module setting or API call `game.pf2eAwesomeGmUtilities.resourceWidget.resetPosition()` to center it.
+- **Player Access & Show/Hide Controls:** Connected players have full control over opening and closing their HUD view:
+  - **Toolbar Button:** A dedicated Trackers HUD button is available on the left sidebar controls (both in their active Token Controls rail and the dedicated PF2e Trackers group).
+  - **Quick Keybinding:** Pressing `Shift + H` toggles the HUD on or off for both GMs and players.
+  - **Persistent Session State:** If a player closes the HUD with the close (`X`) button, it stays closed during their session and will not intrusively pop back open during combat or tracker adjustments until they decide to reopen it.
+- **Reset Position:** If the widget is moved off-screen, click the reset position button in the header or use the API call `game.pf2eAwesomeGmUtilities.resourceWidget.resetPosition()` to return it under the left menu.
 
 ---
 

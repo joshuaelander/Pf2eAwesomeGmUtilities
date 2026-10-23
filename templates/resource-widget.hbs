@@ -241,12 +241,14 @@
         </div>
       {{else}}
         <div class="widget-empty-state">
-          <p>{{localize "PF2E_AWESOME_GM.ResourceWidget.NoPinned"}}</p>
           {{#if isGM}}
+            <p>{{localize "PF2E_AWESOME_GM.ResourceWidget.NoPinned"}}</p>
             <button type="button" class="btn-widget-open-manager" data-action="open-manager">
               <i class="fa-solid fa-gear"></i>
               <span>{{localize "PF2E_AWESOME_GM.ResourceTracker.Title"}}</span>
             </button>
+          {{else}}
+            <p>{{localize "PF2E_AWESOME_GM.ResourceWidget.NoPlayerTrackers"}}</p>
           {{/if}}
         </div>
       {{/if}}

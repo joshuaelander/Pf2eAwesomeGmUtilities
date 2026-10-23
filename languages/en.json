@@ -257,7 +257,8 @@
       "Close": "Hide HUD",
       "ResetPosition": "Reset HUD Position (Under Left Menu)",
       "OpenManagerTooltip": "Open Full Resource Tracker",
-      "NoPinned": "No trackers currently pinned to HUD."
+      "NoPinned": "No trackers currently pinned to HUD.",
+      "NoPlayerTrackers": "No trackers currently shared by the GM."
     },
     "SceneLinks": {
       "Title": "Place Scene Link Pin",
