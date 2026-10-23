@@ -33,6 +33,7 @@ import { ResourceTrackerApp } from "./resource-tracker-app.js";
 import { ResourceWidgetApp } from "./resource-widget-app.js";
 import { PartyPlacement } from "./party-placement.js";
 import { SceneLinks } from "./scene-links.js";
+import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -369,6 +370,7 @@ function registerSceneControls(controls) {
   };
 
   const scenesControl = findControl("scenes");
+  const notesControl = findControl("notes");
 
   const openSoundPadTool = {
     name: "pf2e-sound-pad-open",
@@ -455,6 +457,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openJournalStylerTool = {
+    name: "pf2e-journal-styler",
+    title: "AP Journal Editor & Styler",
+    icon: "fa-solid fa-feather-pointed",
+    visible: true,
+    button: true,
+    onClick: () => {
+      JournalTemplateDialog.open();
+    }
+  };
+
   const insertTool = (ctrl, tool) => {
     if (!ctrl) return;
     if (Array.isArray(ctrl.tools)) {
@@ -468,10 +481,15 @@ function registerSceneControls(controls) {
     }
   };
 
-  // Add tool to scenes control group
+  // Add tools to scenes control group
   if (scenesControl) {
     insertTool(scenesControl, openSceneSwitcherTool);
     insertTool(scenesControl, placeSceneLinkTool);
+  }
+
+  // Add tool to notes / journal control group
+  if (notesControl) {
+    insertTool(notesControl, openJournalStylerTool);
   }
 
   // Dedicated top-level GM Utilities control group
@@ -480,7 +498,7 @@ function registerSceneControls(controls) {
     : (controls.get?.("token") || controls.get?.("tokens") || controls?.token || controls?.tokens);
   const tokenLayerName = tokenControl?.layer || "tokens";
 
-  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
+  const gmTools = [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData];
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: "PF2e GM Utilities",
@@ -502,6 +520,7 @@ function registerSceneControls(controls) {
       [openSceneSwitcherTool.name]: openSceneSwitcherTool,
       [placePartyTool.name]: placePartyTool,
       [placeSceneLinkTool.name]: placeSceneLinkTool,
+      [openJournalStylerTool.name]: openJournalStylerTool,
       [openResourceTrackerTool.name]: openResourceTrackerTool,
       [openResourceWidgetTool.name]: openResourceWidgetTool,
       [panicToolData.name]: panicToolData
@@ -730,6 +749,7 @@ Hooks.once("init", () => {
   registerKeybindings();
   SceneLinks._patchNotePlaceables();
   patchTokenHover();
+  JournalEditor.initialize();
 
   Hooks.on("hoverToken", (token, hovered) => {
     if (hovered && isGmUtilitiesActive()) {
@@ -820,6 +840,11 @@ Hooks.once("ready", async () => {
   game.pf2eAwesomeGmUtilities.placeSceneLink = (options) => SceneLinks.openPlacementPicker(options);
   game.pf2eAwesomeGmUtilities.sceneLinks = SceneLinks;
   SceneLinks.initialize();
+
+  // Advanced Journal Editor API
+  game.pf2eAwesomeGmUtilities.journalEditor = {
+    open: (options) => JournalTemplateDialog.open(options)
+  };
 
   // Helper function to re-sync or recreate macros on demand
   game.pf2eAwesomeGmUtilities.syncMacros = async () => await syncMacros();

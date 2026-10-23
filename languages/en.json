@@ -304,6 +304,17 @@
       "NoLinkedScene": "-- None (Normal Journal Pin) --",
       "LinkHint": "If linked, double-clicking this map pin will open the Scene Transition menu to navigate or activate that scene."
     },
+    "JournalEditor": {
+      "Title": "PF2e AP Journal Editor & Styler",
+      "ToolbarButton": "PF2e AP Styles & Entity Linker",
+      "InsertButton": "Insert into Journal",
+      "CancelButton": "Cancel",
+      "TabTemplates": "AP Templates",
+      "TabEntities": "Entity & Scene Linker",
+      "TabChecks": "Skill Checks & DCs",
+      "DragToJournal": "Drag to Journal",
+      "FooterHint": "Drag any item/card into your journal or click Insert."
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",

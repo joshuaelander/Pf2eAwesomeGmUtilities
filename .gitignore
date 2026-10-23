@@ -426,3 +426,6 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+/FOUNDRY_V14_SUPPLEMENTARY_DEV_GUIDE.md
+/FOUNDRY_V14_PF2E_DEVELOPMENT_REFERENCE.md
+/.agents/skills/foundry-v14-pf2e-development

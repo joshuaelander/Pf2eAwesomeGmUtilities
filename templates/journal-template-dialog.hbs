@@ -1,0 +1,198 @@
+<div class="pf2e-journal-dialog-root">
+  <!-- Header Tabs -->
+  <nav class="pf2e-jd-tabs">
+    <button type="button" class="pf2e-jd-tab-btn {{#if (eq activeTab 'templates')}}active{{/if}}" data-tab="templates">
+      <i class="fa-solid fa-shapes"></i> AP Templates
+    </button>
+    <button type="button" class="pf2e-jd-tab-btn {{#if (eq activeTab 'entities')}}active{{/if}}" data-tab="entities">
+      <i class="fa-solid fa-link"></i> Entity & Scene Linker
+    </button>
+    <button type="button" class="pf2e-jd-tab-btn {{#if (eq activeTab 'checks')}}active{{/if}}" data-tab="checks">
+      <i class="fa-solid fa-dice-d20"></i> Skill Checks & DCs
+    </button>
+  </nav>
+
+  <!-- Main Content Grid -->
+  <div class="pf2e-jd-content">
+    
+    <!-- LEFT PANE -->
+    <div class="pf2e-jd-left-pane">
+      
+      <!-- TAB 1: TEMPLATES LIST -->
+      <div class="pf2e-jd-tab-view {{#if (eq activeTab 'templates')}}active{{else}}hidden{{/if}}" data-view="templates">
+        <div class="pf2e-jd-filter-bar">
+          <div class="pf2e-jd-pill-group">
+            <button type="button" class="pf2e-jd-pill {{#if (eq templateCategory 'all')}}active{{/if}}" data-category="all">All</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq templateCategory 'callout')}}active{{/if}}" data-category="callout">Callouts</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq templateCategory 'layout')}}active{{/if}}" data-category="layout">Layouts</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq templateCategory 'rules')}}active{{/if}}" data-category="rules">Rules</button>
+          </div>
+        </div>
+        <div class="pf2e-jd-item-list">
+          {{#each templates as |tmpl|}}
+          <div class="pf2e-jd-list-item {{#if (eq tmpl.id ../selectedTemplateId)}}active{{/if}}" data-action="select-template" data-template-id="{{tmpl.id}}">
+            <div class="pf2e-jd-item-icon">
+              <i class="{{tmpl.icon}}"></i>
+            </div>
+            <div class="pf2e-jd-item-info">
+              <div class="pf2e-jd-item-name">{{tmpl.title}}</div>
+              <div class="pf2e-jd-item-desc">{{tmpl.description}}</div>
+            </div>
+          </div>
+          {{/each}}
+        </div>
+      </div>
+
+      <!-- TAB 2: ENTITIES LIST -->
+      <div class="pf2e-jd-tab-view {{#if (eq activeTab 'entities')}}active{{else}}hidden{{/if}}" data-view="entities">
+        <div class="pf2e-jd-filter-bar">
+          <input type="text" class="pf2e-jd-search-input" placeholder="Search Actors, Scenes, Items..." value="{{entityQuery}}">
+          <div class="pf2e-jd-pill-group">
+            <button type="button" class="pf2e-jd-pill {{#if (eq entityType 'all')}}active{{/if}}" data-entity-type="all">All</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq entityType 'Scene')}}active{{/if}}" data-entity-type="Scene">Scenes</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq entityType 'Actor')}}active{{/if}}" data-entity-type="Actor">Actors</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq entityType 'Item')}}active{{/if}}" data-entity-type="Item">Items</button>
+            <button type="button" class="pf2e-jd-pill {{#if (eq entityType 'JournalEntry')}}active{{/if}}" data-entity-type="JournalEntry">Journals</button>
+          </div>
+        </div>
+        <div class="pf2e-jd-item-list">
+          {{#if entities.length}}
+            {{#each entities as |ent|}}
+            <div class="pf2e-jd-list-item {{#if (eq ent.uuid ../selectedEntityUuid)}}active{{/if}}" data-action="select-entity" data-entity-uuid="{{ent.uuid}}">
+              <div class="pf2e-jd-item-icon">
+                <i class="{{ent.icon}}"></i>
+              </div>
+              <div class="pf2e-jd-item-info">
+                <div class="pf2e-jd-item-name">{{ent.name}}</div>
+                <div class="pf2e-jd-item-desc">{{ent.typeLabel}}</div>
+              </div>
+            </div>
+            {{/each}}
+          {{else}}
+            <div style="padding: 20px; text-align: center; color: #64748b; font-size: 0.9em;">
+              No matching entities found in world.
+            </div>
+          {{/if}}
+        </div>
+      </div>
+
+      <!-- TAB 3: SKILL CHECKS FORM -->
+      <div class="pf2e-jd-tab-view {{#if (eq activeTab 'checks')}}active{{else}}hidden{{/if}}" data-view="checks">
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto;">
+          <div class="pf2e-jd-field">
+            <label>Check Type / Skill</label>
+            <select class="pf2e-jd-check-skill" data-action="update-check">
+              <optgroup label="Saves">
+                <option value="perception" {{#if (eq checkData.skill 'perception')}}selected{{/if}}>Perception</option>
+                <option value="fortitude" {{#if (eq checkData.skill 'fortitude')}}selected{{/if}}>Fortitude</option>
+                <option value="reflex" {{#if (eq checkData.skill 'reflex')}}selected{{/if}}>Reflex</option>
+                <option value="will" {{#if (eq checkData.skill 'will')}}selected{{/if}}>Will</option>
+              </optgroup>
+              <optgroup label="Skills">
+                <option value="acrobatics" {{#if (eq checkData.skill 'acrobatics')}}selected{{/if}}>Acrobatics</option>
+                <option value="arcana" {{#if (eq checkData.skill 'arcana')}}selected{{/if}}>Arcana</option>
+                <option value="athletics" {{#if (eq checkData.skill 'athletics')}}selected{{/if}}>Athletics</option>
+                <option value="crafting" {{#if (eq checkData.skill 'crafting')}}selected{{/if}}>Crafting</option>
+                <option value="deception" {{#if (eq checkData.skill 'deception')}}selected{{/if}}>Deception</option>
+                <option value="diplomacy" {{#if (eq checkData.skill 'diplomacy')}}selected{{/if}}>Diplomacy</option>
+                <option value="intimidation" {{#if (eq checkData.skill 'intimidation')}}selected{{/if}}>Intimidation</option>
+                <option value="medicine" {{#if (eq checkData.skill 'medicine')}}selected{{/if}}>Medicine</option>
+                <option value="nature" {{#if (eq checkData.skill 'nature')}}selected{{/if}}>Nature</option>
+                <option value="occultism" {{#if (eq checkData.skill 'occultism')}}selected{{/if}}>Occultism</option>
+                <option value="performance" {{#if (eq checkData.skill 'performance')}}selected{{/if}}>Performance</option>
+                <option value="religion" {{#if (eq checkData.skill 'religion')}}selected{{/if}}>Religion</option>
+                <option value="society" {{#if (eq checkData.skill 'society')}}selected{{/if}}>Society</option>
+                <option value="stealth" {{#if (eq checkData.skill 'stealth')}}selected{{/if}}>Stealth</option>
+                <option value="survival" {{#if (eq checkData.skill 'survival')}}selected{{/if}}>Survival</option>
+                <option value="thievery" {{#if (eq checkData.skill 'thievery')}}selected{{/if}}>Thievery</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="pf2e-jd-field">
+            <label>Difficulty Class (DC)</label>
+            <input type="number" class="pf2e-jd-check-dc" value="{{checkData.dc}}" min="1" max="60" data-action="update-check">
+          </div>
+
+          <div class="pf2e-jd-field">
+            <label>Task / Purpose Description</label>
+            <input type="text" class="pf2e-jd-check-purpose" value="{{checkData.purpose}}" placeholder="to Search the Archives" data-action="update-check">
+          </div>
+
+          <div class="pf2e-jd-field">
+            <label>Output Format</label>
+            <select class="pf2e-jd-check-format" data-action="update-check">
+              <option value="table" {{#if (eq checkData.format 'table')}}selected{{/if}}>Full 4-Degree Results Table</option>
+              <option value="inline" {{#if (eq checkData.format 'inline')}}selected{{/if}}>Inline @Check Enricher</option>
+            </select>
+          </div>
+
+          <div class="pf2e-jd-field">
+            <label>Traits (Optional)</label>
+            <input type="text" class="pf2e-jd-check-traits" value="{{checkData.traits}}" placeholder="secret, exploration" data-action="update-check">
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANE: PREVIEW & CUSTOMIZATION -->
+    <div class="pf2e-jd-right-pane">
+      <div class="pf2e-jd-preview-header">
+        <div class="pf2e-jd-preview-title-row">
+          <span><i class="fa-solid fa-eye"></i> Live Preview</span>
+          <div class="pf2e-jd-drag-handle" draggable="true" title="Click & Drag directly into an open Journal editor!">
+            <i class="fa-solid fa-grip-vertical"></i> Drag to Journal
+          </div>
+        </div>
+        <span class="pf2e-jd-preview-subtitle">Renders as it will appear in the Journal</span>
+      </div>
+
+      <!-- Customization Controls Box -->
+      {{#if (eq activeTab 'entities')}}
+        {{#if selectedEntity}}
+        <div class="pf2e-jd-options-box">
+          <div class="pf2e-jd-field" style="flex: 1;">
+            <label>Card Format</label>
+            <select class="pf2e-jd-entity-format" data-action="update-entity-format">
+              {{#if (eq selectedEntity.type 'Scene')}}
+                <option value="scene-card" {{#if (eq entityFormat 'scene-card')}}selected{{/if}}>Interactive Battle Map Card (View & Activate Buttons)</option>
+                <option value="inline" {{#if (eq entityFormat 'inline')}}selected{{/if}}>Simple Inline Link (@UUID)</option>
+              {{else if (eq selectedEntity.type 'Actor')}}
+                <option value="creature-card" {{#if (eq entityFormat 'creature-card')}}selected{{/if}}>Creature / NPC Roster Card (Portrait, Level, HP/AC)</option>
+                <option value="inline" {{#if (eq entityFormat 'inline')}}selected{{/if}}>Simple Inline Link (@UUID)</option>
+              {{else if (eq selectedEntity.type 'Item')}}
+                <option value="item-card" {{#if (eq entityFormat 'item-card')}}selected{{/if}}>Treasure / Item Card (Icon, Price, Traits)</option>
+                <option value="inline" {{#if (eq entityFormat 'inline')}}selected{{/if}}>Simple Inline Link (@UUID)</option>
+              {{else}}
+                <option value="inline" selected>Simple Inline Link (@UUID)</option>
+              {{/if}}
+            </select>
+          </div>
+        </div>
+        {{/if}}
+      {{/if}}
+
+      <!-- Live Rendered Preview Container (Draggable) -->
+      <div class="pf2e-jd-preview-scroll" draggable="true" title="Drag this formatted card directly into an open journal editor">
+        {{{renderedPreviewHtml}}}
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer Actions -->
+  <footer class="pf2e-jd-footer">
+    <div class="pf2e-jd-footer-hint">
+      <i class="fa-solid fa-hand-pointer"></i> Drag any item/card into your journal or click <strong>Insert</strong>.
+    </div>
+    <div class="pf2e-jd-footer-buttons">
+      <button type="button" class="pf2e-jd-btn pf2e-jd-btn-cancel" data-action="close">
+        <i class="fa-solid fa-xmark"></i> Cancel
+      </button>
+      <button type="button" class="pf2e-jd-btn pf2e-jd-btn-insert" data-action="insert">
+        <i class="fa-solid fa-feather-pointed"></i> Insert into Journal
+      </button>
+    </div>
+  </footer>
+</div>

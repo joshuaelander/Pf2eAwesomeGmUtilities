@@ -697,3 +697,182 @@ export const MAP_PIN_ICONS = [
   { id: "icons/svg/anchor.svg", label: "Port / Coastal", icon: "icons/svg/anchor.svg" },
   { id: "scene-thumb", label: "Scene Thumbnail (Live Preview)", icon: "icons/svg/castle.svg" }
 ];
+
+export const JOURNAL_AP_TEMPLATES = [
+  {
+    id: "read-aloud",
+    title: "Read-Aloud (Boxed Text)",
+    category: "callout",
+    icon: "fa-solid fa-feather-pointed",
+    description: "Classic Paizo AP narrative flavor text box with ornate accent border.",
+    html: `<aside class="pf2e-ap-card pf2e-read-aloud">
+  <div class="pf2e-read-aloud-header">
+    <i class="fa-solid fa-feather-pointed"></i>
+    <span class="pf2e-read-aloud-title">Read Aloud</span>
+  </div>
+  <div class="pf2e-read-aloud-body">
+    <p><em><selection>You step into the ancient chamber. Flickering sconces cast long dancing shadows across the damp stone walls, and the distant rumble of grinding gears echoes from the depths below.</selection></em></p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-treasure",
+    title: "Treasure Callout",
+    category: "callout",
+    icon: "fa-solid fa-coins",
+    description: "Golden callout box detailing loot, coins, and magical items in an area.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-treasure">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-coins"></i>
+    <strong>TREASURE</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p><selection>Inside the reinforced iron chest are <strong>25 gp</strong>, <strong>45 sp</strong>, and a hidden velvet pouch containing two gems worth 10 gp each.</selection></p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-tactics",
+    title: "Tactics & Morale",
+    category: "callout",
+    icon: "fa-solid fa-swords",
+    description: "Combat tactics, initial positioning, and retreat conditions.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-tactics">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-swords"></i>
+    <strong>TACTICS</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p><strong>Before Combat:</strong> The sentries hide in the shadows (@Check[stealth|dc:22]).</p>
+    <p><strong>During Combat:</strong> On round 1, they focus fire with ranged attacks before falling back behind cover.</p>
+    <p><strong>Morale:</strong> If the leader falls or they are reduced below 15 HP, they attempt to flee toward the exit.</p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-hazard",
+    title: "Hazard / Trap Summary",
+    category: "callout",
+    icon: "fa-solid fa-triangle-exclamation",
+    description: "Hazard detection, trigger, and disable checks formatted for quick GM reference.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-hazard">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    <strong>HAZARD: SPEAR GAUNTLET</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p><strong>Stealth:</strong> @Check[stealth|dc:20] (trained) to detect the disguised trigger stone.</p>
+    <p><strong>Description:</strong> When more than 50 lbs of weight presses on the stone, spring-loaded bronze spears thrust upward from the floor.</p>
+    <p><strong>Disable:</strong> @Check[thievery|dc:18] (trained) to jam the release mechanism with an iron spike.</p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-investigation",
+    title: "Investigation & Clues",
+    category: "callout",
+    icon: "fa-solid fa-magnifying-glass",
+    description: "Perception, Recall Knowledge, and environmental clues for player exploration.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-investigation">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <strong>INVESTIGATION</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p>A character examining the dust-laden desk who succeeds at a @Check[perception|dc:18] check spots scuff marks revealing a sliding false drawer bottom.</p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-xp",
+    title: "XP Award Callout",
+    category: "callout",
+    icon: "fa-solid fa-award",
+    description: "Milestone or accomplishment XP grant box.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-xp">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-award"></i>
+    <strong>XP AWARD</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p>Award the party <strong>30 XP</strong> for deciphering the warden's cipher without raising the fortress alarm.</p>
+  </div>
+</aside>`
+  },
+  {
+    id: "callout-secret",
+    title: "GM Secret Note",
+    category: "callout",
+    icon: "fa-solid fa-eye-slash",
+    description: "Hidden GM-only aside with secret lore, background revelations, or NPC motivations.",
+    html: `<aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-secret">
+  <div class="pf2e-callout-header">
+    <i class="fa-solid fa-eye-slash"></i>
+    <strong>GM SECRET / BACKGROUND</strong>
+  </div>
+  <div class="pf2e-callout-body">
+    <p><selection>The merchant is secretly an undercover informant for the local thieves' guild. If confronted with the stolen signet ring, he panics and offers a bribe.</selection></p>
+  </div>
+</aside>`
+  },
+  {
+    id: "columns-2",
+    title: "Two-Column Layout",
+    category: "layout",
+    icon: "fa-solid fa-columns",
+    description: "Side-by-side two-column responsive grid for narrative text and sidebars.",
+    html: `<div class="pf2e-columns-2">
+  <div class="pf2e-column">
+    <p><strong>Main Narrative:</strong> Enter the primary scene or chamber description here. The two columns adjust gracefully on standard and wide displays.</p>
+  </div>
+  <div class="pf2e-column">
+    <aside class="pf2e-ap-card pf2e-callout-aside pf2e-callout-investigation">
+      <div class="pf2e-callout-header">
+        <i class="fa-solid fa-circle-info"></i>
+        <strong>ROOM FEATURES</strong>
+      </div>
+      <div class="pf2e-callout-body">
+        <ul>
+          <li><strong>Illumination:</strong> Dim torchlight.</li>
+          <li><strong>Ceiling:</strong> 20 ft vaulted stone.</li>
+          <li><strong>Doors:</strong> Heavy iron-banded oak.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+</div>`
+  },
+  {
+    id: "check-table",
+    title: "Skill Check & DC Table",
+    category: "rules",
+    icon: "fa-solid fa-table-list",
+    description: "Four-degree Pathfinder 2e degree of success results table.",
+    html: `<table class="pf2e-check-table">
+  <thead>
+    <tr>
+      <th colspan="2">@Check[perception|dc:20] to Search the Archives</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr class="crit-success">
+      <td><strong>Critical Success</strong></td>
+      <td>You uncover the lost treaty and a secret correspondence identifying the conspirators.</td>
+    </tr>
+    <tr class="success">
+      <td><strong>Success</strong></td>
+      <td>You locate the lost treaty among the dusty shelves.</td>
+    </tr>
+    <tr class="failure">
+      <td><strong>Failure</strong></td>
+      <td>You find nothing of particular value after an hour of diligent searching.</td>
+    </tr>
+    <tr class="crit-failure">
+      <td><strong>Critical Failure</strong></td>
+      <td>You accidentally knock over an ancient ink pot, damaging several delicate scrolls and making a loud disturbance.</td>
+    </tr>
+  </tbody>
+</table>`
+  }
+];
+

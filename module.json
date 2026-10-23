@@ -1,7 +1,7 @@
 {
   "id": "pf2e-awesome-gm-utilities",
   "title": "PF2e Awesome GM Utilities",
-  "version": "1.0.24",
+  "version": "1.0.26",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -16,7 +16,8 @@
     "styles/sound-pad.css",
     "styles/scene-switcher.css",
     "styles/resource-tracker.css",
-    "styles/scene-links.css"
+    "styles/scene-links.css",
+    "styles/journal-editor.css"
   ],
   "languages": [
     {
