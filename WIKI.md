@@ -186,7 +186,7 @@ Interactive Map Pins connect world maps, regional overland charts, and town diag
   - **View Scene:** Takes the GM to inspect the destination scene privately.
   - **Activate Scene:** Activates the destination scene for all players.
   - **Cancel:** Dismisses the menu.
-- **Journal Links:** When scenes are linked inside journal entries using the AP Editor cards, clicking the card's **View Map** or **Activate** buttons triggers the scene transition directly from the journal.
+- **Journal Links:** When scenes are linked inside journal entries using the AP Editor cards, clicking the map name link directly opens the Scene Transition panel to view, activate, or configure the scene.
 
 ---
 
@@ -214,7 +214,7 @@ The **Advanced Journal Editor & AP Styler** brings official Paizo Adventure Path
 
 ### 8.3 Entity & Scene Linker Cards
 Generate rich, clickable display cards for documents in your world:
-- **Battle Map Cards:** Features map thumbnail art, navigation title, lighting summary, and live **View Map** and **Activate** buttons.
+- **Battle Map Cards:** Features map thumbnail art, navigation title, lighting summary, and an enriched `@UUID` document link that opens the Scene Transition menu on click.
 - **Creature Roster Cards:** Features actor portrait avatar, level badge, trait pills, AC, HP, and Perception modifiers.
 - **Item & Loot Cards:** Features item image, level badge, price in gold pieces, rarity tag, and concise description summaries.
 - **Inline Links:** Standard `@UUID[...]` links with clean enriched names.

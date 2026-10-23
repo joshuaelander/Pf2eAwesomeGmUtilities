@@ -266,14 +266,6 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
       <span class="pf2e-scene-card-type"><i class="fa-solid fa-compass"></i> ${navName} &bull; ${lightingText}</span>
     </div>
   </div>
-  <div class="pf2e-scene-card-actions">
-    <button type="button" class="pf2e-scene-card-btn view-scene" data-scene-id="${doc.id}" title="View this Scene on GM Canvas">
-      <i class="fa-solid fa-eye"></i> View Map
-    </button>
-    <button type="button" class="pf2e-scene-card-btn activate-scene" data-scene-id="${doc.id}" title="Activate Scene for All Players">
-      <i class="fa-solid fa-play"></i> Activate
-    </button>
-  </div>
 </section>`;
     }
 

@@ -43,12 +43,12 @@ Navigation pins and journal links that allow the GM to jump between interconnect
 - **Map-to-Map Navigation:** Place pins on world maps or regional overland maps that connect directly to local battle maps or interior locations.
 - **Interactive Transition Menu:** Clicking or double-clicking a scene pin presents options to inspect the scene privately or activate it for the entire table.
 - **Drag-and-Drop Pin Creation:** Drag any scene document directly onto the canvas to automatically generate an interactive scene navigation pin.
-- **Journal Integration:** Scene links embedded inside journal entries provide direct buttons to view or activate linked battle maps.
+- **Journal Integration:** Scene links embedded inside journal entries open the interactive Scene Transition panel to view, activate, or configure maps.
 
 ### 6. Advanced Journal Editor & AP Styler
 A publishing and styling toolkit integrated into Foundry's ProseMirror journal editor.
 - **Adventure Path Layout Templates:** Insert pre-styled narrative elements including Read-Aloud boxed text, GM Callouts (Treasure, Tactics, Hazards, Investigation, XP Awards, Secrets), and multi-column responsive sections.
-- **Entity & Scene Link Cards:** Insert rich interactive cards for battle maps (with live View and Activate buttons), creature rosters (portraits, levels, AC, HP, Perception), and item loot cards.
+- **Entity & Scene Link Cards:** Insert rich interactive cards for battle maps (with thumbnail art and clickable scene links), creature rosters (portraits, levels, AC, HP, Perception), and item loot cards.
 - **Skill Check Tables:** Generate formatted DC tables with all four degrees of success (Critical Success, Success, Failure, Critical Failure) or compact inline check tags.
 - **Drag-and-Drop Publishing:** Drag formatted cards or templates directly from the utility window into open journal pages at your cursor position.
 

@@ -156,7 +156,7 @@
             <label>Card Format</label>
             <select class="pf2e-jd-entity-format" data-action="update-entity-format">
               {{#if (eq selectedEntity.type 'Scene')}}
-                <option value="scene-card" {{#if (eq entityFormat 'scene-card')}}selected{{/if}}>Interactive Battle Map Card (View & Activate Buttons)</option>
+                <option value="scene-card" {{#if (eq entityFormat 'scene-card')}}selected{{/if}}>Interactive Battle Map Card (@UUID Scene Link)</option>
                 <option value="inline" {{#if (eq entityFormat 'inline')}}selected{{/if}}>Simple Inline Link (@UUID)</option>
               {{else if (eq selectedEntity.type 'Actor')}}
                 <option value="creature-card" {{#if (eq entityFormat 'creature-card')}}selected{{/if}}>Creature / NPC Roster Card (Portrait, Level, HP/AC)</option>
