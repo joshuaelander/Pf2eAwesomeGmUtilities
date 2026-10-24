@@ -585,8 +585,8 @@ function patchClassHover(cls) {
 }
 
 function patchTokenHover() {
-  if (typeof Token !== "undefined") patchClassHover(Token);
-  if (CONFIG.Token?.objectClass) patchClassHover(CONFIG.Token.objectClass);
+  const tokenClass = CONFIG.Token?.objectClass || foundry.canvas?.placeables?.Token;
+  if (tokenClass) patchClassHover(tokenClass);
 }
 
 /* ------------------------------------------------------------------------- */

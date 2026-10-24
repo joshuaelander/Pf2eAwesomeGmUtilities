@@ -116,14 +116,15 @@ export class SceneLinks {
   /* ------------------------------------------------------------------------- */
 
   /**
-   * Patches Note.prototype permissions, getters, and click handlers to execute scene transitions.
+   * Patches Note permissions, getters, and click handlers to execute scene transitions.
    */
   static _patchNotePlaceables() {
-    if (typeof Note === "undefined") return;
+    const NoteClass = CONFIG.Note?.objectClass || foundry.canvas?.placeables?.Note;
+    if (!NoteClass?.prototype) return;
 
     // 1. isInteractable getter: ensure scene links are always interactive for GM across all tools & layers
-    const originalIsInteractable = Object.getOwnPropertyDescriptor(Note.prototype, "isInteractable")?.get;
-    Object.defineProperty(Note.prototype, "isInteractable", {
+    const originalIsInteractable = Object.getOwnPropertyDescriptor(NoteClass.prototype, "isInteractable")?.get;
+    Object.defineProperty(NoteClass.prototype, "isInteractable", {
       get: function () {
         if (this.isPreview) return false;
         if (this.document?.getFlag(MODULE_ID, "isSceneLink") && game.user?.isGM) {
@@ -136,8 +137,8 @@ export class SceneLinks {
     });
 
     // 2. _canView: allow GM to double-click note even with entryId = null
-    const originalCanView = Note.prototype._canView;
-    Note.prototype._canView = function (user, event) {
+    const originalCanView = NoteClass.prototype._canView;
+    NoteClass.prototype._canView = function (user, event) {
       if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
         return game.user?.isGM ?? false;
       }
@@ -145,8 +146,8 @@ export class SceneLinks {
     };
 
     // 3. _canControl: allow GM single-click if sceneLinkSingleClick setting is enabled
-    const originalCanControl = Note.prototype._canControl;
-    Note.prototype._canControl = function (user, event) {
+    const originalCanControl = NoteClass.prototype._canControl;
+    NoteClass.prototype._canControl = function (user, event) {
       if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
         const singleClick = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
         if (singleClick && game.user?.isGM) return true;
@@ -155,8 +156,8 @@ export class SceneLinks {
     };
 
     // 4. Double-click handler
-    const originalOnClickLeft2 = Note.prototype._onClickLeft2;
-    Note.prototype._onClickLeft2 = function (event) {
+    const originalOnClickLeft2 = NoteClass.prototype._onClickLeft2;
+    NoteClass.prototype._onClickLeft2 = function (event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
       if (isSceneLink && game.user?.isGM) {
         SceneLinks.handleNoteActivate(this.document, event);
@@ -166,8 +167,8 @@ export class SceneLinks {
     };
 
     // 5. Optional single-click handler
-    const originalOnClickLeft = Note.prototype._onClickLeft;
-    Note.prototype._onClickLeft = function (event) {
+    const originalOnClickLeft = NoteClass.prototype._onClickLeft;
+    NoteClass.prototype._onClickLeft = function (event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
       const singleClickSetting = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
       if (isSceneLink && singleClickSetting && game.user?.isGM && !event.shiftKey && !event.ctrlKey) {
