@@ -358,6 +358,7 @@ export class SoundPadApp extends BaseClass {
     let playlistId = "";
     let src = "";
     let type = "playlist-sound";
+    let slotVolume = null;
 
     // Case 1: PlaylistSound dropped directly
     if (data.type === "PlaylistSound") {
@@ -375,9 +376,16 @@ export class SoundPadApp extends BaseClass {
       }
 
       if (soundDoc) {
+        soundId = soundDoc.id;
         title = soundDoc.name;
         src = soundDoc.path;
         playlistId = soundDoc.parent?.id || playlistId;
+
+        // Determine volume from track or module default setting
+        const useTrackVolume = game.settings.get(MODULE_ID, "soundPadUseTrackVolume");
+        if (useTrackVolume && soundDoc.volume != null) {
+          slotVolume = soundDoc.volume;
+        }
       }
     }
     // Case 2: Whole Playlist dropped
@@ -391,6 +399,7 @@ export class SoundPadApp extends BaseClass {
         playlistDoc = game.playlists.get(playlistId);
       }
       if (playlistDoc) {
+        playlistId = playlistDoc.id;
         title = playlistDoc.name;
       }
     }
@@ -403,6 +412,12 @@ export class SoundPadApp extends BaseClass {
       return;
     }
 
+    // Fallback to configured default volume if not determined from track
+    if (slotVolume == null) {
+      const defPct = game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40;
+      slotVolume = sliderToVolume(defPct / 100);
+    }
+
     // Update slot
     const slot = this._getSlot(slotId);
     if (!slot) return;
@@ -412,6 +427,7 @@ export class SoundPadApp extends BaseClass {
     slot.soundId = soundId;
     slot.playlistId = playlistId;
     slot.src = src;
+    slot.volume = slotVolume;
 
     // Pick appropriate icon
     if (type === "playlist") slot.icon = "fa-solid fa-list-music";
@@ -588,6 +604,7 @@ export class SoundPadApp extends BaseClass {
     if (!bank) return;
 
     const newSlotId = `slot-${Date.now()}`;
+    const defPct = game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40;
     const newSlot = {
       id: newSlotId,
       name: `Slot ${bank.slots.length + 1}`,
@@ -598,7 +615,7 @@ export class SoundPadApp extends BaseClass {
       color: "crimson",
       icon: "fa-solid fa-music",
       mode: "loop",
-      volume: 0.8,
+      volume: sliderToVolume(defPct / 100),
       fadeDuration: 1.5
     };
 

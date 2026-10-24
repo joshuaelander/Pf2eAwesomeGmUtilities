@@ -348,7 +348,7 @@ export const DEFAULT_BANKS = [
         color: "crimson",
         icon: "fa-solid fa-dragon",
         mode: "loop",
-        volume: 0.8,
+        volume: 0.25,
         fadeDuration: 1.5
       },
       {
@@ -361,7 +361,7 @@ export const DEFAULT_BANKS = [
         color: "crimson",
         icon: "fa-solid fa-shield-halved",
         mode: "loop",
-        volume: 0.8,
+        volume: 0.25,
         fadeDuration: 1.5
       },
       {
@@ -374,7 +374,7 @@ export const DEFAULT_BANKS = [
         color: "fire",
         icon: "fa-solid fa-skull",
         mode: "loop",
-        volume: 0.75,
+        volume: 0.25,
         fadeDuration: 2.0
       },
       {
@@ -387,7 +387,7 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-trophy",
         mode: "oneshot",
-        volume: 0.85,
+        volume: 0.25,
         fadeDuration: 0.5
       },
       {
@@ -400,7 +400,7 @@ export const DEFAULT_BANKS = [
         color: "shadow",
         icon: "fa-solid fa-heart-crack",
         mode: "toggle",
-        volume: 0.7,
+        volume: 0.25,
         fadeDuration: 2.0
       },
       {
@@ -413,7 +413,7 @@ export const DEFAULT_BANKS = [
         color: "fire",
         icon: "fa-solid fa-person-running",
         mode: "loop",
-        volume: 0.8,
+        volume: 0.25,
         fadeDuration: 1.0
       }
     ]
@@ -433,7 +433,7 @@ export const DEFAULT_BANKS = [
         color: "nature",
         icon: "fa-solid fa-campground",
         mode: "loop",
-        volume: 0.6,
+        volume: 0.25,
         fadeDuration: 3.0
       },
       {
@@ -446,7 +446,7 @@ export const DEFAULT_BANKS = [
         color: "ocean",
         icon: "fa-solid fa-cloud-showers-heavy",
         mode: "loop",
-        volume: 0.65,
+        volume: 0.25,
         fadeDuration: 3.0
       },
       {
@@ -459,7 +459,7 @@ export const DEFAULT_BANKS = [
         color: "shadow",
         icon: "fa-solid fa-dungeon",
         mode: "loop",
-        volume: 0.6,
+        volume: 0.25,
         fadeDuration: 3.0
       },
       {
@@ -472,7 +472,7 @@ export const DEFAULT_BANKS = [
         color: "arcane",
         icon: "fa-solid fa-monument",
         mode: "loop",
-        volume: 0.6,
+        volume: 0.25,
         fadeDuration: 3.0
       },
       {
@@ -485,7 +485,7 @@ export const DEFAULT_BANKS = [
         color: "shadow",
         icon: "fa-solid fa-ghost",
         mode: "loop",
-        volume: 0.65,
+        volume: 0.25,
         fadeDuration: 2.5
       },
       {
@@ -498,14 +498,14 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-sun",
         mode: "loop",
-        volume: 0.6,
+        volume: 0.25,
         fadeDuration: 2.5
       }
     ]
   },
   {
     id: "bank-tavern",
-    name: "Tavern & Town",
+    name: "Around Town",
     icon: "fa-solid fa-beer-mug-empty",
     slots: [
       {
@@ -518,7 +518,7 @@ export const DEFAULT_BANKS = [
         color: "amber",
         icon: "fa-solid fa-beer-mug-empty",
         mode: "loop",
-        volume: 0.7,
+        volume: 0.25,
         fadeDuration: 2.0
       },
       {
@@ -531,7 +531,7 @@ export const DEFAULT_BANKS = [
         color: "amber",
         icon: "fa-solid fa-shop",
         mode: "loop",
-        volume: 0.65,
+        volume: 0.25,
         fadeDuration: 2.0
       },
       {
@@ -544,7 +544,7 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-guitar",
         mode: "toggle",
-        volume: 0.75,
+        volume: 0.25,
         fadeDuration: 1.5
       },
       {
@@ -557,7 +557,7 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-crown",
         mode: "loop",
-        volume: 0.7,
+        volume: 0.25,
         fadeDuration: 2.0
       },
       {
@@ -570,7 +570,7 @@ export const DEFAULT_BANKS = [
         color: "ocean",
         icon: "fa-solid fa-ship",
         mode: "loop",
-        volume: 0.65,
+        volume: 0.25,
         fadeDuration: 2.5
       },
       {
@@ -583,14 +583,14 @@ export const DEFAULT_BANKS = [
         color: "shadow",
         icon: "fa-solid fa-mask",
         mode: "loop",
-        volume: 0.65,
+        volume: 0.25,
         fadeDuration: 2.0
       }
     ]
   },
   {
     id: "bank-sfx",
-    name: "SFX & Stingers",
+    name: "SFX",
     icon: "fa-solid fa-bolt",
     slots: [
       {
@@ -603,7 +603,7 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-dice-d20",
         mode: "oneshot",
-        volume: 0.9,
+        volume: 0.25,
         fadeDuration: 0.0
       },
       {
@@ -616,7 +616,7 @@ export const DEFAULT_BANKS = [
         color: "crimson",
         icon: "fa-solid fa-dragon",
         mode: "oneshot",
-        volume: 0.85,
+        volume: 0.25,
         fadeDuration: 0.0
       },
       {
@@ -629,7 +629,7 @@ export const DEFAULT_BANKS = [
         color: "fire",
         icon: "fa-solid fa-burst",
         mode: "oneshot",
-        volume: 0.85,
+        volume: 0.25,
         fadeDuration: 0.0
       },
       {
@@ -642,7 +642,7 @@ export const DEFAULT_BANKS = [
         color: "arcane",
         icon: "fa-solid fa-key",
         mode: "oneshot",
-        volume: 0.8,
+        volume: 0.25,
         fadeDuration: 0.0
       },
       {
@@ -655,7 +655,7 @@ export const DEFAULT_BANKS = [
         color: "shadow",
         icon: "fa-solid fa-skull-crossbones",
         mode: "oneshot",
-        volume: 0.85,
+        volume: 0.25,
         fadeDuration: 0.0
       },
       {
@@ -668,7 +668,7 @@ export const DEFAULT_BANKS = [
         color: "gold",
         icon: "fa-solid fa-angles-up",
         mode: "oneshot",
-        volume: 0.9,
+        volume: 0.25,
         fadeDuration: 0.0
       }
     ]

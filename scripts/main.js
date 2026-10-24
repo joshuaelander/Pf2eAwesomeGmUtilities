@@ -109,6 +109,27 @@ function registerSettings() {
     default: 1.5
   });
 
+  // Default Sound Pad Volume (percentage 5-100)
+  game.settings.register(MODULE_ID, "soundPadDefaultVolume", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadDefaultVolume.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadDefaultVolume.Hint"),
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 5, max: 100, step: 5 },
+    default: 40
+  });
+
+  // Use Track Volume on Drop
+  game.settings.register(MODULE_ID, "soundPadUseTrackVolume", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadUseTrackVolume.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadUseTrackVolume.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
   // Sound Pad Window Opacity
   game.settings.register(MODULE_ID, "soundPadOpacity", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadOpacity.Name"),

@@ -26,7 +26,27 @@ export class SoundConfigDialog {
 
     // Selected playlist
     let selectedPlaylistId = slot.playlistId || (playlists[0]?.id || "");
-    const selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
+    let selectedPlaylist = playlists.find(p => p.id === selectedPlaylistId);
+
+    // If soundId is missing on the slot, try to resolve it from the sound path across playlists
+    let soundId = slot.soundId || "";
+    if (!soundId && slot.src) {
+      let match = selectedPlaylist?.sounds.find(s => s.path === slot.src);
+      if (!match) {
+        for (const pl of playlists) {
+          match = pl.sounds.find(s => s.path === slot.src);
+          if (match) {
+            selectedPlaylistId = pl.id;
+            selectedPlaylist = pl;
+            break;
+          }
+        }
+      }
+      if (match) {
+        soundId = match.id;
+      }
+    }
+
     const sounds = selectedPlaylist ? selectedPlaylist.sounds : [];
 
     // Color themes options
@@ -45,18 +65,23 @@ export class SoundConfigDialog {
       { key: "restart", label: "Restart on Press (Re-triggers from start each click)", selected: slot.mode === "restart" }
     ];
 
+    const defPct = (game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40);
+    const fallbackVol = sliderToVolume(defPct / 100);
+    const currentVol = slot.volume != null ? slot.volume : fallbackVol;
+    const currentSlider = volumeToSlider(currentVol);
+
     const context = {
       slot: {
         id: slot.id,
         name: slot.name || "",
         type: slot.type || "playlist-sound",
         playlistId: selectedPlaylistId,
-        soundId: slot.soundId || "",
+        soundId: soundId,
         src: slot.src || "",
         icon: slot.icon || "fa-solid fa-music",
-        volume: slot.volume ?? 0.8,
-        volumeSlider: volumeToSlider(slot.volume ?? 0.8),
-        displayVolume: Math.round(volumeToSlider(slot.volume ?? 0.8) * 100),
+        volume: currentVol,
+        volumeSlider: currentSlider,
+        displayVolume: Math.round(currentSlider * 100),
         fadeDuration: slot.fadeDuration ?? 1.5,
         color: slot.color || "crimson"
       },
@@ -92,6 +117,7 @@ export class SoundConfigDialog {
             icon: '<i class="fa-solid fa-trash"></i>',
             label: "Clear Slot",
             callback: () => {
+              const defSlotPct = (game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40);
               const clearedSlot = {
                 id: slot.id,
                 name: "Empty Slot",
@@ -102,7 +128,7 @@ export class SoundConfigDialog {
                 icon: "fa-solid fa-plus",
                 color: "shadow",
                 mode: "loop",
-                volume: 0.8,
+                volume: sliderToVolume(defSlotPct / 100),
                 fadeDuration: 1.5
               };
               if (onSave) onSave(clearedSlot);
@@ -145,7 +171,9 @@ export class SoundConfigDialog {
     const color = $html.find("input[name='slot-color']:checked").val() || "crimson";
     const icon = $html.find("#slot-icon").val()?.trim() || "fa-solid fa-music";
     const mode = $html.find("#slot-mode").val() || "loop";
-    const sliderVal = parseFloat($html.find("#slot-volume").val()) || 0.8;
+    const rawSlider = parseFloat($html.find("#slot-volume").val());
+    const defPct = (game.settings?.get?.(MODULE_ID, "soundPadDefaultVolume") ?? 40);
+    const sliderVal = isNaN(rawSlider) ? (defPct / 100) : rawSlider;
     const volume = sliderToVolume(sliderVal);
     const fadeDuration = parseFloat($html.find("#slot-fade").val()) || 1.5;
 

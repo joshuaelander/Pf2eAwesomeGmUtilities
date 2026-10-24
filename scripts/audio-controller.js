@@ -264,12 +264,18 @@ export class AudioController {
     }
   }
 
+  getDefaultVolume() {
+    const defPct = (game.settings?.get?.(MODULE_ID, "soundPadDefaultVolume") ?? 40);
+    return sliderToVolume(defPct / 100);
+  }
+
   /**
    * Start playing a slot
    * @param {object} slot
    */
   async playSlot(slot) {
-    const targetVolume = Math.min(1.0, Math.max(0.0, slot.volume ?? 0.8));
+    const fallbackVol = this.getDefaultVolume();
+    const targetVolume = Math.min(1.0, Math.max(0.0, slot.volume ?? fallbackVol));
 
     // Handle File / SFX
     if (slot.type === "file" && slot.src) {
@@ -691,7 +697,8 @@ export class AudioController {
 
     try {
       this.previewAudio = new Audio(audioSrc);
-      this.previewAudio.volume = Math.min(1.0, Math.max(0.0, slot.volume ?? 0.8));
+      const fallbackVol = this.getDefaultVolume();
+      this.previewAudio.volume = Math.min(1.0, Math.max(0.0, slot.volume ?? fallbackVol));
       this.previewAudio.loop = slot.mode === "loop";
 
       this.previewData = {
@@ -813,7 +820,8 @@ export class AudioController {
     }
 
     if (this.previewAudio && this.activeTrack) {
-      this.previewAudio.volume = Math.min(1.0, (this.activeTrack.volume || 0.8) * volume);
+      const fallbackVol = this.getDefaultVolume();
+      this.previewAudio.volume = Math.min(1.0, (this.activeTrack.volume ?? fallbackVol) * volume);
     }
     this._notifyListeners();
   }

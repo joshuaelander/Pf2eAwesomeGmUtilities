@@ -246,6 +246,8 @@ Access module settings via **Game Settings &rarr; Configure Settings &rarr; PF2e
 | :--- | :--- | :--- | :--- |
 | **Auto-Stop Other Music** | Boolean | `true` | Automatically fades out existing soundboard background music when triggering a new music track. |
 | **Default Fade Duration** | Number | `1.5` | Crossfade duration in seconds between soundboard music tracks. |
+| **Sound Pad Default Volume** | Number | `40%` | Default volume percentage (5-100%) applied to sound slots when dragged onto the sound pad or created without custom volume. |
+| **Use Existing Track Volume on Drop** | Boolean | `true` | When dragging a playlist sound onto the sound pad, use the track's existing volume from Foundry VTT instead of the default volume. |
 | **Sound Pad Opacity** | Number | `95` | Window opacity percentage for the Sound Pad so the canvas remains visible underneath. |
 | **Scene Switcher Opacity** | Number | `95` | Window opacity percentage for the Scene Switcher window. |
 | **Resource Tracker Opacity** | Number | `95` | Window opacity percentage for the Resource Tracker window. |

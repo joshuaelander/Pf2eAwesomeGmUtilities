@@ -325,6 +325,14 @@
         "Name": "Default Fade Duration",
         "Hint": "Default duration in seconds for smooth crossfading between music tracks."
       },
+      "SoundPadDefaultVolume": {
+        "Name": "Sound Pad Default Volume",
+        "Hint": "Default volume percentage (5-100%) applied to sound slots when dragged onto the sound pad or created without custom volume."
+      },
+      "SoundPadUseTrackVolume": {
+        "Name": "Use Existing Track Volume on Drop",
+        "Hint": "When dragging a playlist sound onto the sound pad, use the track's existing volume from Foundry VTT instead of the default volume."
+      },
       "SoundPadOpacity": {
         "Name": "Sound Pad Opacity",
         "Hint": "Set window opacity percentage so you can see the game canvas underneath."
