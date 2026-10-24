@@ -785,7 +785,6 @@ export class JournalEditor {
         title: "PF2e AP Styles & Entity Linker",
         icon: '<i class="fa-solid fa-feather-pointed fa-fw"></i>',
         scope: scopes.TEXT,
-        weight: 450,
         cmd: (state, dispatch, view) => {
           const activeView = view || menu?.view;
           if (activeView) JournalEditor.registerEditorView(activeView);

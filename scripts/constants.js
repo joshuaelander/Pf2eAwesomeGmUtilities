@@ -829,7 +829,7 @@ export const JOURNAL_AP_TEMPLATES = [
     category: "callout",
     icon: "fa-solid fa-shield-halved",
     description: "PF2e GM-only secret block section hidden from players.",
-    html: `<section class="secret" data-visibility="gm"><p><selection>This entire block of information and lore is strictly restricted to the Game Master.</selection></p></section>`
+    html: `<div class="pf2e-gm-block" data-visibility="gm"><p><selection>This entire block of information and lore is strictly restricted to the Game Master.</selection></p></div>`
   },
   {
     id: "columns-2",
