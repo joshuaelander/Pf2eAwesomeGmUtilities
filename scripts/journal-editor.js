@@ -13,12 +13,14 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
 
   static DEFAULT_OPTIONS = {
     id: "pf2e-journal-template-dialog",
-    tag: "dialog",
+    tag: "div",
     classes: ["pf2e-gm-utility", "pf2e-journal-dialog"],
     window: {
+      frame: true,
       title: "PF2e AP Journal Editor & Styler",
       icon: "fa-solid fa-feather-pointed",
       resizable: true,
+      minimizable: true,
       controls: []
     },
     position: {

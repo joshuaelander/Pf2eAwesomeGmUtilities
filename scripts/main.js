@@ -741,6 +741,10 @@ async function syncMacros() {
 
 Hooks.once("init", () => {
   console.log("PF2e Awesome GM Utilities | Initializing Module...");
+  if (typeof document !== "undefined" && document.body) {
+    document.body.classList.toggle("is-gm", Boolean(game.user?.isGM));
+    document.body.classList.toggle("is-player", !game.user?.isGM);
+  }
   registerSettings();
   registerKeybindings();
   SceneLinks._patchNotePlaceables();
@@ -767,6 +771,10 @@ Hooks.on("renderSceneDirectory", (app, html) => {
 });
 
 Hooks.once("ready", async () => {
+  if (typeof document !== "undefined" && document.body) {
+    document.body.classList.toggle("is-gm", Boolean(game.user?.isGM));
+    document.body.classList.toggle("is-player", !game.user?.isGM);
+  }
   patchTokenHover();
   // Global API namespace
   game.pf2eAwesomeGmUtilities = game.pf2eAwesomeGmUtilities || {};

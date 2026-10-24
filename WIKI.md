@@ -211,7 +211,8 @@ The **Advanced Journal Editor & AP Styler** brings official Paizo Adventure Path
   - **Hazards & Traps:** Vivid orange accents for hazard triggers, disable DCs, and reset conditions.
   - **Investigation & Clues:** Blue accents for Recall Knowledge DCs, library searches, and NPC evidence.
   - **XP Award:** Emerald green accents for milestone accomplishments and bonus quest rewards.
-  - **Secret / Lore:** Purple accents for GM-only world lore, foreshadowing, and plot twists.
+  - **Secret / Lore:** Purple accents for GM-only world lore, foreshadowing, and plot twists. Features PF2e's native **GM Text Inline** (`<span data-visibility="gm">`) so that sensitive text is strictly hidden from players.
+  - **GM Text Inline & GM Text Block:** Dedicated templates inserting PF2e's native inline (`<span data-visibility="gm">`) and block (`<section class="secret" data-visibility="gm">`) markup, rendering with the signature dashed border for GMs while remaining completely invisible to players.
 - **Layouts & Structures:**
   - **Two-Column Responsive Layout:** Organizes text into balanced side-by-side columns that stack cleanly on smaller screens.
   - **Encounter Summary Header:** Header blocks displaying threat levels, party level targets, and environmental hazards.

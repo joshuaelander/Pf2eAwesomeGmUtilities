@@ -191,6 +191,29 @@
   border-bottom-color: rgba(168, 85, 247, 0.25);
 }
 
+/* PF2e GM Text Inline & Secret Visibility */
+.pf2e-callout-secret span[data-visibility="gm"] {
+  border: 1px dashed rgba(192, 132, 252, 0.65);
+  padding: 1px 4px;
+  background: rgba(168, 85, 247, 0.12);
+  border-radius: 3px;
+  color: #ede9fe;
+}
+
+div.secret[data-visibility="gm"],
+section.secret[data-visibility="gm"] {
+  border: 1px dashed rgba(192, 132, 252, 0.5);
+  padding: 8px 12px;
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: 4px;
+  margin: 0.5em 0;
+}
+
+/* Ensure non-GM players never see GM secret content */
+body.is-player .pf2e-callout-secret {
+  display: none !important;
+}
+
 /* -------------------------------------------------------------------------
    4. SCENE & BATTLE MAP CARD
    ------------------------------------------------------------------------- */
@@ -565,9 +588,9 @@
 
 .pf2e-journal-dialog {
   min-width: 680px;
-  max-width: 880px;
   background: #13171f;
   color: #e2e8f0;
+  margin: 0 !important;
 }
 
 .pf2e-journal-dialog .window-content {

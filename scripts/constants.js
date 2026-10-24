@@ -801,7 +801,7 @@ export const JOURNAL_AP_TEMPLATES = [
   },
   {
     id: "callout-secret",
-    title: "GM Secret Note",
+    title: "GM Secret Note Box",
     category: "callout",
     icon: "fa-solid fa-eye-slash",
     description: "Hidden GM-only aside with secret lore, background revelations, or NPC motivations.",
@@ -811,9 +811,25 @@ export const JOURNAL_AP_TEMPLATES = [
     <strong>GM SECRET / BACKGROUND</strong>
   </div>
   <div class="pf2e-callout-body">
-    <p><selection>The merchant is secretly an undercover informant for the local thieves' guild. If confronted with the stolen signet ring, he panics and offers a bribe.</selection></p>
+    <p><span data-visibility="gm"><selection>The merchant is secretly an undercover informant for the local thieves' guild. If confronted with the stolen signet ring, he panics and offers a bribe.</selection></span></p>
   </div>
 </aside>`
+  },
+  {
+    id: "gm-text-inline",
+    title: "GM Text Inline",
+    category: "callout",
+    icon: "fa-solid fa-user-secret",
+    description: "PF2e GM-only inline secret text hidden from players.",
+    html: `<span data-visibility="gm"><selection>Secret GM-only note or information hidden from players.</selection></span>`
+  },
+  {
+    id: "gm-text-block",
+    title: "GM Text Block",
+    category: "callout",
+    icon: "fa-solid fa-shield-halved",
+    description: "PF2e GM-only secret block section hidden from players.",
+    html: `<section class="secret" data-visibility="gm"><p><selection>This entire block of information and lore is strictly restricted to the Game Master.</selection></p></section>`
   },
   {
     id: "columns-2",
