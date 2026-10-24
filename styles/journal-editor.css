@@ -191,9 +191,8 @@
   border-bottom-color: rgba(168, 85, 247, 0.25);
 }
 
-/* PF2e GM Text Inline & Secret Visibility */
-.pf2e-callout-secret span[data-visibility="gm"],
-span[data-visibility="gm"] {
+/* PF2e GM Text Inline & Secret Visibility (Scoped strictly to AP callouts and blocks) */
+.pf2e-callout-secret span[data-visibility="gm"] {
   border: 1px dashed rgba(192, 132, 252, 0.65);
   padding: 1px 4px;
   background: rgba(168, 85, 247, 0.12);
@@ -201,12 +200,8 @@ span[data-visibility="gm"] {
   color: #ede9fe;
 }
 
-div.pf2e-gm-block,
-div.pf2e-gm-block[data-visibility="gm"],
-div[data-visibility="gm"],
-section[data-visibility="gm"],
-div.secret[data-visibility="gm"],
-section.secret[data-visibility="gm"] {
+/* GM Text Block */
+.pf2e-gm-block {
   border: 1px dashed rgba(192, 132, 252, 0.5);
   padding: 8px 12px;
   background: rgba(168, 85, 247, 0.08);
@@ -214,18 +209,15 @@ section.secret[data-visibility="gm"] {
   margin: 0.5em 0;
 }
 
-/* Hide unwanted core secret reveal buttons on GM text blocks */
+/* Hide unwanted core secret reveal buttons strictly within custom GM blocks */
 .pf2e-gm-block .secret-reveal,
-[data-visibility="gm"] .secret-reveal,
-.pf2e-callout-secret .secret-reveal,
-button.secret-reveal {
+.pf2e-callout-secret .secret-reveal {
   display: none !important;
 }
 
-/* Ensure non-GM players never see GM secret content */
+/* Ensure non-GM players never see custom GM secret content */
 body.is-player .pf2e-callout-secret,
-body.is-player .pf2e-gm-block,
-body.is-player [data-visibility="gm"] {
+body.is-player .pf2e-gm-block {
   display: none !important;
 }
 
