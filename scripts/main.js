@@ -539,7 +539,7 @@ function registerSceneControls(controls) {
 /* ------------------------------------------------------------------------- */
 
 function isGmUtilitiesActive() {
-  return ui.controls?.control?.name === "pf2e-gm-utilities" || ui.controls?.activeControl === "pf2e-gm-utilities";
+  return ui.controls?.control?.name === "pf2e-gm-utilities";
 }
 
 function patchClassHover(cls) {
