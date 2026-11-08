@@ -117,65 +117,114 @@ export class SceneLinks {
 
   /**
    * Patches Note permissions, getters, and click handlers to execute scene transitions.
+   * Utilizes libWrapper when present to maintain conflict-free interop with modules like
+   * Monk's Active Tile Triggers, with a graceful native fallback if libWrapper is not installed.
    */
   static _patchNotePlaceables() {
+    if (this._notePlaceablesPatched) return;
+    this._notePlaceablesPatched = true;
+
     const NoteClass = CONFIG.Note?.objectClass || foundry.canvas?.placeables?.Note;
     if (!NoteClass?.prototype) return;
 
-    // 1. isInteractable getter: ensure scene links are always interactive for GM across all tools & layers
-    const originalIsInteractable = Object.getOwnPropertyDescriptor(NoteClass.prototype, "isInteractable")?.get;
-    Object.defineProperty(NoteClass.prototype, "isInteractable", {
-      get: function () {
-        if (this.isPreview) return false;
-        if (this.document?.getFlag(MODULE_ID, "isSceneLink") && game.user?.isGM) {
-          return true;
-        }
-        if (originalIsInteractable) return originalIsInteractable.call(this);
-        return false;
-      },
-      configurable: true
-    });
+    // Define reusable wrapper handlers compatible with both libWrapper and direct fallback
+    const isInteractableWrapper = function (wrapped) {
+      if (this.isPreview) return false;
+      if (this.document?.getFlag(MODULE_ID, "isSceneLink") && game.user?.isGM) {
+        return true;
+      }
+      return wrapped ? wrapped() : false;
+    };
 
-    // 2. _canView: allow GM to double-click note even with entryId = null
-    const originalCanView = NoteClass.prototype._canView;
-    NoteClass.prototype._canView = function (user, event) {
+    const canViewWrapper = function (wrapped, user, event) {
       if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
         return game.user?.isGM ?? false;
       }
-      return originalCanView.call(this, user, event);
+      return wrapped(user, event);
     };
 
-    // 3. _canControl: allow GM single-click if sceneLinkSingleClick setting is enabled
-    const originalCanControl = NoteClass.prototype._canControl;
-    NoteClass.prototype._canControl = function (user, event) {
+    const canControlWrapper = function (wrapped, user, event) {
       if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
         const singleClick = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
         if (singleClick && game.user?.isGM) return true;
       }
-      return originalCanControl.call(this, user, event);
+      return wrapped(user, event);
     };
 
-    // 4. Double-click handler
-    const originalOnClickLeft2 = NoteClass.prototype._onClickLeft2;
-    NoteClass.prototype._onClickLeft2 = function (event) {
+    const onClickLeft2Wrapper = function (wrapped, event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
       if (isSceneLink && game.user?.isGM) {
         SceneLinks.handleNoteActivate(this.document, event);
         return;
       }
-      return originalOnClickLeft2.call(this, event);
+      return wrapped(event);
     };
 
-    // 5. Optional single-click handler
-    const originalOnClickLeft = NoteClass.prototype._onClickLeft;
-    NoteClass.prototype._onClickLeft = function (event) {
+    const onClickLeftWrapper = function (wrapped, event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
       const singleClickSetting = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
       if (isSceneLink && singleClickSetting && game.user?.isGM && !event.shiftKey && !event.ctrlKey) {
         SceneLinks.handleNoteActivate(this.document, event);
         return;
       }
-      return originalOnClickLeft.call(this, event);
+      return wrapped(event);
+    };
+
+    function patchIsInteractable(proto) {
+      let origGet = null;
+      let parent = proto;
+      while (parent && !origGet) {
+        origGet = Object.getOwnPropertyDescriptor(parent, "isInteractable")?.get;
+        parent = Object.getPrototypeOf(parent);
+      }
+      Object.defineProperty(proto, "isInteractable", {
+        get: function () {
+          return isInteractableWrapper.call(this, origGet ? origGet.bind(this) : () => false);
+        },
+        configurable: true
+      });
+    }
+
+    // 1. Cooperative wrapping with libWrapper when available (e.g. alongside Monk's Active Tile Triggers)
+    if (globalThis.libWrapper?.register) {
+      try {
+        const target = "foundry.canvas.placeables.Note.prototype";
+        try {
+          libWrapper.register(MODULE_ID, `${target}.isInteractable`, isInteractableWrapper, "MIXED");
+        } catch {
+          patchIsInteractable(NoteClass.prototype);
+        }
+        libWrapper.register(MODULE_ID, `${target}._canView`, canViewWrapper, "MIXED");
+        libWrapper.register(MODULE_ID, `${target}._canControl`, canControlWrapper, "MIXED");
+        libWrapper.register(MODULE_ID, `${target}._onClickLeft2`, onClickLeft2Wrapper, "MIXED");
+        libWrapper.register(MODULE_ID, `${target}._onClickLeft`, onClickLeftWrapper, "MIXED");
+        return;
+      } catch (err) {
+        console.warn("PF2e Awesome GM Utilities | Failed to register Note placeable wrappers with libWrapper, falling back to prototype patch:", err);
+      }
+    }
+
+    // 2. Direct monkey-patching fallback when libWrapper is not installed
+    patchIsInteractable(NoteClass.prototype);
+
+    const originalCanView = NoteClass.prototype._canView;
+    NoteClass.prototype._canView = function (user, event) {
+      return canViewWrapper.call(this, originalCanView.bind(this), user, event);
+    };
+
+    const originalCanControl = NoteClass.prototype._canControl;
+    NoteClass.prototype._canControl = function (user, event) {
+      return canControlWrapper.call(this, originalCanControl.bind(this), user, event);
+    };
+
+    const originalOnClickLeft2 = NoteClass.prototype._onClickLeft2;
+    NoteClass.prototype._onClickLeft2 = function (event) {
+      return onClickLeft2Wrapper.call(this, originalOnClickLeft2.bind(this), event);
+    };
+
+    const originalOnClickLeft = NoteClass.prototype._onClickLeft;
+    NoteClass.prototype._onClickLeft = function (event) {
+      return onClickLeftWrapper.call(this, originalOnClickLeft.bind(this), event);
     };
   }
 

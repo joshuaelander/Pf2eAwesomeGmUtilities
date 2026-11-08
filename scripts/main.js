@@ -585,6 +585,32 @@ function patchClassHover(cls) {
 }
 
 function patchTokenHover() {
+  if (patchTokenHover._done) return;
+  patchTokenHover._done = true;
+
+  const canHoverWrapper = function (wrapped, user, event) {
+    if (isGmUtilitiesActive()) return false;
+    return wrapped(user, event);
+  };
+
+  const onHoverInWrapper = function (wrapped, event, options) {
+    if (isGmUtilitiesActive()) return false;
+    return wrapped(event, options);
+  };
+
+  // 1. Cooperative wrapping with libWrapper when available
+  if (globalThis.libWrapper?.register) {
+    try {
+      const target = "foundry.canvas.placeables.Token.prototype";
+      libWrapper.register(MODULE_ID, `${target}._canHover`, canHoverWrapper, "MIXED");
+      libWrapper.register(MODULE_ID, `${target}._onHoverIn`, onHoverInWrapper, "MIXED");
+      return;
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed to register Token hover wrappers with libWrapper, falling back to prototype patch:", err);
+    }
+  }
+
+  // 2. Direct monkey-patching fallback
   const tokenClass = CONFIG.Token?.objectClass || foundry.canvas?.placeables?.Token;
   if (tokenClass) patchClassHover(tokenClass);
 }

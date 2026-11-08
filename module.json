@@ -1,7 +1,7 @@
 {
   "id": "pf2e-awesome-gm-utilities",
   "title": "PF2e Awesome GM Utilities",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -39,6 +39,13 @@
         "id": "pf2e",
         "type": "system",
         "compatibility": {}
+      }
+    ],
+    "optional": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "reason": "Resolves potential canvas interaction collisions when running alongside modules like Monk's Active Tile Triggers."
       }
     ]
   },
