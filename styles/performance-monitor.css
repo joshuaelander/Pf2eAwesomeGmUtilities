@@ -168,6 +168,15 @@
   color: #ffffff;
 }
 
+.perf-btn.is-scanning,
+.perf-btn:disabled {
+  background: rgba(197, 155, 39, 0.16);
+  border-color: rgba(230, 197, 93, 0.55);
+  color: #facc15;
+  opacity: 0.9;
+  cursor: wait;
+}
+
 .perf-btn-icon {
   padding: 5px 8px;
 }

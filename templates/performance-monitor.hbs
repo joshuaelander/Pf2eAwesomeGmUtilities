@@ -31,8 +31,12 @@
         {{#if live.hookProfiling}}Stop Profiler{{else}}Live Profiler{{/if}}
       </button>
 
-      <button type="button" class="perf-btn" data-perf-action="run-audit" title="Scan World Collections, PF2e Actors, Active Scene, and Module Settings/Flags size">
-        <i class="fa-solid fa-magnifying-glass-chart"></i> Deep Audit
+      <button type="button" class="perf-btn {{#if live.auditInProgress}}is-scanning{{/if}}" data-perf-action="run-audit" data-idle-icon="fa-solid fa-magnifying-glass-chart" data-idle-label="Deep Audit" {{#if live.auditInProgress}}disabled{{/if}} title="Scan World Collections, PF2e Actors, Active Scene, and Module Settings/Flags size in the background">
+        {{#if live.auditInProgress}}
+          <i class="fa-solid fa-spinner fa-spin"></i> Scanning ({{live.auditProgress}}%)...
+        {{else}}
+          <i class="fa-solid fa-magnifying-glass-chart"></i> Deep Audit
+        {{/if}}
       </button>
 
       <button type="button" class="perf-btn" data-perf-action="toggle-hud" title="Show or hide the compact floating FPS/Memory HUD pill">
@@ -394,16 +398,24 @@
         <div class="perf-audit-prompt">
           <i class="fa-solid fa-magnifying-glass-chart"></i>
           <h3>Deep World, PF2e Actor &amp; Canvas Audit</h3>
-          <p>Run an on-demand scan to measure World collection sizes, find bloated PF2e Actors (high item/rule counts), inspect heavy Scenes, WebGL texture cache, and per-module Settings/Flags storage.</p>
-          <button type="button" class="perf-btn perf-btn-gold perf-btn-lg" data-perf-action="run-audit">
-            <i class="fa-solid fa-magnifying-glass-chart"></i> Run Deep Audit Now
+          <p>Run an on-demand background scan to measure World collection sizes, find bloated PF2e Actors (high item/rule counts), inspect heavy Scenes, WebGL texture cache, and per-module Settings/Flags storage without freezing the canvas.</p>
+          <button type="button" class="perf-btn perf-btn-gold perf-btn-lg {{#if live.auditInProgress}}is-scanning{{/if}}" data-perf-action="run-audit" data-idle-icon="fa-solid fa-magnifying-glass-chart" data-idle-label="Run Deep Audit Now" {{#if live.auditInProgress}}disabled{{/if}}>
+            {{#if live.auditInProgress}}
+              <i class="fa-solid fa-spinner fa-spin"></i> Scanning ({{live.auditProgress}}%)...
+            {{else}}
+              <i class="fa-solid fa-magnifying-glass-chart"></i> Run Deep Audit Now
+            {{/if}}
           </button>
         </div>
       {{else}}
         <div class="perf-audit-meta">
-          <span><i class="fa-solid fa-clock"></i> Last scanned at <strong>{{audit.timeStr}}</strong> (took {{audit.scanMs}} ms) · Total World Payload: <strong>{{audit.totalWorldFormatted}}</strong> · Compendium Packs: <strong>{{audit.compendiumCount}}</strong></span>
-          <button type="button" class="perf-btn perf-btn-sm" data-perf-action="run-audit">
-            <i class="fa-solid fa-arrows-rotate"></i> Re-Scan
+          <span><i class="fa-solid fa-clock"></i> Last scanned at <strong>{{audit.timeStr}}</strong> ({{audit.scanSummary}}) · Total World Payload: <strong>{{audit.totalWorldFormatted}}</strong> · Compendium Packs: <strong>{{audit.compendiumCount}}</strong></span>
+          <button type="button" class="perf-btn perf-btn-sm {{#if live.auditInProgress}}is-scanning{{/if}}" data-perf-action="run-audit" data-idle-icon="fa-solid fa-arrows-rotate" data-idle-label="Re-Scan" {{#if live.auditInProgress}}disabled{{/if}}>
+            {{#if live.auditInProgress}}
+              <i class="fa-solid fa-spinner fa-spin"></i> Scanning ({{live.auditProgress}}%)...
+            {{else}}
+              <i class="fa-solid fa-arrows-rotate"></i> Re-Scan
+            {{/if}}
           </button>
         </div>
 

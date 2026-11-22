@@ -111,8 +111,13 @@ export class PerformanceMonitorEngine {
     this._burstTimer = null;
     this._burstRemaining = 0;
 
-    // On-demand deep audit snapshot
+    // On-demand deep audit snapshot & background scan state
     this._auditData = null;
+    this._auditInProgress = false;
+    this._auditProgress = 0;
+    this._auditWindowStart = 0;
+    this._auditWindowEnd = 0;
+    this._auditCancelToken = 0;
 
     // Subscribers notified on 1-second ticks or state changes
     this._subscribers = new Set();
@@ -220,6 +225,9 @@ export class PerformanceMonitorEngine {
    * and frees timers so zero background overhead remains.
    */
   deactivate() {
+    this._auditCancelToken++;
+    this._auditInProgress = false;
+    this._auditProgress = 0;
     this.stopBurstProfile();
     this.stopHookProfiling();
     this._stopFrameLoop();
@@ -419,7 +427,7 @@ export class PerformanceMonitorEngine {
 
   _wrapHookEntry(entry, forcedOwner = null) {
     if (!entry || typeof entry.fn !== "function") return;
-    if (this._wrappedEntries.has(entry.id) || entry.fn._pf2ePerfOrigFn) return;
+    if (this._wrappedEntries.has(entry.id) || entry.fn._pf2ePerfOrigFn || entry.fn._pf2ePerfInternal) return;
     if (entry.hook === "error") return; // Never recursively wrap error hook
 
     const origFn = entry.fn;
@@ -682,23 +690,32 @@ export class PerformanceMonitorEngine {
       const dt = now - this._lastFrameTime;
       this._lastFrameTime = now;
 
+      const inAuditCooldown = this._auditInProgress || (this._auditWindowEnd > 0 && now <= this._auditWindowEnd + 450);
+      const inAuditHeapCooldown = this._auditInProgress || (this._auditWindowEnd > 0 && now <= this._auditWindowEnd + 1200);
+
       // Ignore huge pauses caused by switching browser tabs (> 2500ms)
       if (dt > 0 && dt < 2500) {
-        this._frameTimesThisSec.push(dt);
-        if (dt > this._maxFrameMs) this._maxFrameMs = dt;
+        if (!inAuditCooldown || dt < 50) {
+          this._frameTimesThisSec.push(dt);
+        }
+        if (!inAuditCooldown) {
+          if (dt > this._maxFrameMs) this._maxFrameMs = dt;
 
-        // Detect frame drop spike if PerformanceObserver isn't available
-        if (dt >= 50) {
-          this._spikesThisSec++;
-          if (!this._longTaskObserver) {
-            const diag = this._diagnoseFreezeWindow(now - dt, now, dt, null);
-            this._recordLongTask({
-              durationMs: dt,
-              perfEnd: now,
-              culprit: diag.culprit,
-              category: diag.category,
-              details: diag.details
-            });
+          // Detect frame drop spike if PerformanceObserver isn't available
+          if (dt >= 50) {
+            this._spikesThisSec++;
+            if (!this._longTaskObserver) {
+              const diag = this._diagnoseFreezeWindow(now - dt, now, dt, null);
+              if (!diag?.ignore) {
+                this._recordLongTask({
+                  durationMs: dt,
+                  perfEnd: now,
+                  culprit: diag.culprit,
+                  category: diag.category,
+                  details: diag.details
+                });
+              }
+            }
           }
         }
       }
@@ -715,13 +732,19 @@ export class PerformanceMonitorEngine {
         this._currentFps = fps;
         this._avgFrameMs = avgMs;
 
-        // Memory sample (Chromium / Electron)
+        // Memory sample (Chromium / Electron) — pause peak/trend sampling during Deep Audit
+        // so temporary JSON serialization allocations & post-audit GC don't skew metrics
         const mem = this.getMemorySnapshot();
         const heapMB = mem.available ? mem.usedMB : 0;
-        if (heapMB > this._peakHeapMB) this._peakHeapMB = heapMB;
         if (mem.available) {
-          this._heapSamples.push({ ts: Date.now(), mb: heapMB });
-          if (this._heapSamples.length > 180) this._heapSamples.shift(); // 3-minute rolling trend
+          if (inAuditHeapCooldown) {
+            const rawBytes = performance?.memory?.usedJSHeapSize || 0;
+            if (rawBytes > 0) this._lastHeapBytes = rawBytes;
+          } else {
+            if (heapMB > this._peakHeapMB) this._peakHeapMB = heapMB;
+            this._heapSamples.push({ ts: Date.now(), mb: heapMB });
+            if (this._heapSamples.length > 180) this._heapSamples.shift(); // 3-minute rolling trend
+          }
         }
 
         this._history.push({
@@ -771,6 +794,7 @@ export class PerformanceMonitorEngine {
 
     const addHook = (hookName, fn) => {
       try {
+        fn._pf2ePerfInternal = true;
         const id = origOn.call(Hooks, hookName, fn);
         this._activityHookIds.push({ hook: hookName, id });
       } catch {
@@ -796,6 +820,8 @@ export class PerformanceMonitorEngine {
 
     // Throttled pointer/wheel interaction breadcrumbs (at most 1 per 150ms, passive)
     this._onActivityPointerBound = (e) => {
+      // Ignore clicks inside the Performance Checker windows themselves
+      if (e.target?.closest?.("#pf2e-performance-monitor, #pf2e-performance-hud")) return;
       const now = performance.now();
       if (now - this._lastInteractionTs < 150) return;
       this._lastInteractionTs = now;
@@ -847,6 +873,29 @@ export class PerformanceMonitorEngine {
   }
 
   /**
+   * Returns true if a script URL belongs to the Performance Checker profiler itself,
+   * preventing observer-effect self-reporting while still honestly measuring all other
+   * files of this module (Sound Pad, Resource Tracker, Scene Links, etc.).
+   */
+  _isSelfProfilerUrl(url) {
+    if (!url || typeof url !== "string") return false;
+    const lower = url.toLowerCase();
+    return lower.includes(`/${MODULE_ID}/scripts/performance-monitor.js`) || lower.endsWith("/performance-monitor.js");
+  }
+
+  /**
+   * Returns true if a timing window [startTime, endTime] (performance.now() ms)
+   * overlaps an active background Deep Audit or its immediate post-scan cooldown.
+   */
+  _isInAuditSuppressionWindow(startTime, endTime = startTime) {
+    if (this._auditInProgress) return true;
+    if (this._auditWindowEnd <= 0) return false;
+    const winStart = this._auditWindowStart - 50;
+    const winEnd = this._auditWindowEnd + 450;
+    return startTime <= winEnd && endTime >= winStart;
+  }
+
+  /**
    * Correlates LoAF script timings, Hook Profiler timeline, recent UI/Canvas breadcrumbs,
    * newly decoded assets, and JS heap GC drops to identify what caused a freeze.
    */
@@ -861,13 +910,21 @@ export class PerformanceMonitorEngine {
       scripts.sort((a, b) => (b.duration || 0) - (a.duration || 0));
 
       let totalScriptMs = 0;
+      let selfProfilerMs = 0;
       const topScriptDesc = [];
       for (const s of scripts) {
         const sDur = Number(s.duration || 0);
+        const url = s.sourceURL || "";
+
+        // Exclude the Performance Checker's own diagnostic/UI script from freeze blame
+        if (this._isSelfProfilerUrl(url)) {
+          selfProfilerMs += sDur;
+          continue;
+        }
+
         totalScriptMs += sDur;
         if (sDur < 8) continue;
 
-        const url = s.sourceURL || "";
         const pkgId = this.extractPackageFromStack(url, false);
         const pkgTitle = this.getPackageTitle(pkgId);
         const file = this._shortFileName(url);
@@ -899,6 +956,11 @@ export class PerformanceMonitorEngine {
         }
       }
 
+      // If this frame was predominantly caused by the Performance Checker's own scan/UI, ignore it
+      if (selfProfilerMs >= durationMs * 0.45 || (selfProfilerMs > 0 && (durationMs - selfProfilerMs) < 50)) {
+        return { ignore: true, culprit: "", category: "", details: "" };
+      }
+
       if (topScriptDesc.length > 0) {
         detailParts.push(`Scripts: ${topScriptDesc.join("; ")}`);
       }
@@ -928,7 +990,12 @@ export class PerformanceMonitorEngine {
 
     // 2. Overlapping Hook Profiler events (if Hook Profiler was running)
     const overlappingHooks = this._recentHookEvents
-      .filter(h => h.end >= (startTime - 15) && h.start <= (endTime + 15))
+      .filter(h =>
+        h.end >= (startTime - 15) &&
+        h.start <= (endTime + 15) &&
+        h.hook !== "renderPerformanceMonitorApp" &&
+        h.hook !== "renderPerformanceHudApp"
+      )
       .sort((a, b) => b.dt - a.dt);
 
     if (overlappingHooks.length > 0) {
@@ -1008,6 +1075,7 @@ export class PerformanceMonitorEngine {
     }
 
     return {
+      ignore: false,
       culprit,
       category,
       details: detailParts.join(" · ")
@@ -1027,7 +1095,9 @@ export class PerformanceMonitorEngine {
             if (entry.duration >= 50) {
               const startTime = entry.startTime;
               const endTime = startTime + entry.duration;
+              if (this._isInAuditSuppressionWindow(startTime, endTime)) continue;
               const diag = this._diagnoseFreezeWindow(startTime, endTime, entry.duration, entry);
+              if (diag?.ignore) continue;
               this._recordLongTask({
                 durationMs: entry.duration,
                 perfEnd: endTime,
@@ -1050,7 +1120,9 @@ export class PerformanceMonitorEngine {
             if (entry.duration >= 50) {
               const startTime = entry.startTime;
               const endTime = startTime + entry.duration;
+              if (this._isInAuditSuppressionWindow(startTime, endTime)) continue;
               const diag = this._diagnoseFreezeWindow(startTime, endTime, entry.duration, null);
+              if (diag?.ignore) continue;
               this._recordLongTask({
                 durationMs: entry.duration,
                 perfEnd: endTime,
@@ -1232,6 +1304,8 @@ export class PerformanceMonitorEngine {
       uniqueErrors: this._errors.length,
       hookProfiling: this.hookProfiling,
       burstRemaining: this._burstRemaining,
+      auditInProgress: this._auditInProgress,
+      auditProgress: this._auditProgress,
       history: this._history
     };
   }
@@ -1323,233 +1397,375 @@ export class PerformanceMonitorEngine {
   /**
    * Runs an on-demand Deep Audit of World Collections, PF2e Actors, Active Scene,
    * WebGL/PIXI cache, and per-module Settings & Document Flag storage (GM only).
+   *
+   * Executes asynchronously in small ~5ms background slices yielded across animation
+   * frames so the canvas stays responsive and never triggers false freeze warnings.
    */
-  runDeepAudit() {
+  async runDeepAudit() {
     if (!this.isUserGM()) return null;
-    const t0 = performance.now();
+    if (this._auditInProgress) return this._auditData;
 
-    // 1. World Collections size & count
-    const measureCollection = (label, col, icon, cap = 500) => {
-      const items = col?.contents || [];
-      const count = items.length;
-      let bytes = 0;
-      const sampleCount = Math.min(count, cap);
-      for (let i = 0; i < sampleCount; i++) {
-        bytes += safeJsonByteLength(items[i]?.toObject?.(false) ?? items[i]?._source);
+    const myToken = ++this._auditCancelToken;
+    this._auditInProgress = true;
+    this._auditProgress = 0;
+    this._auditWindowStart = performance.now();
+    this._notify(false);
+
+    const SLICE_BUDGET_MS = 5;
+    const wallStart = performance.now();
+    let sliceStart = wallStart;
+    let activeComputeMs = 0;
+    let lastProgressNotify = wallStart;
+
+    const yieldToNextFrame = () => new Promise((resolve) => {
+      if (document.hidden || typeof requestAnimationFrame !== "function") {
+        setTimeout(resolve, 16);
+        return;
       }
-      if (count > sampleCount && sampleCount > 0) {
-        bytes = Math.round((bytes / sampleCount) * count);
-      }
-      return {
-        label,
-        icon,
-        count,
-        bytes,
-        sizeFormatted: formatBytes(bytes),
-        estimated: count > sampleCount
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
       };
-    };
+      requestAnimationFrame(finish);
+      setTimeout(finish, 34); // Fallback if rAF is throttled
+    });
 
-    const collections = [
-      measureCollection("Actors", game.actors, "fa-solid fa-users", 400),
-      measureCollection("Items", game.items, "fa-solid fa-suitcase", 500),
-      measureCollection("Scenes", game.scenes, "fa-solid fa-map", 200),
-      measureCollection("Journals", game.journal, "fa-solid fa-book-open", 300),
-      measureCollection("Chat Messages", game.messages, "fa-solid fa-comments", 600),
-      measureCollection("Combats", game.combats, "fa-solid fa-swords", 100),
-      measureCollection("Macros", game.macros, "fa-solid fa-code", 300),
-      measureCollection("Playlists", game.playlists, "fa-solid fa-music", 100),
-      measureCollection("Roll Tables", game.tables, "fa-solid fa-table-list", 200)
-    ];
-
-    const totalWorldBytes = collections.reduce((s, c) => s + c.bytes, 0);
-
-    // 2. PF2e Heavy Actors (embedded items + rule elements + byte size)
-    const heavyActors = (game.actors?.contents || []).map(actor => {
-      const itemCount = actor.items?.size || 0;
-      const ruleCount = Array.isArray(actor.rules) ? actor.rules.length : 0;
-      const bytes = safeJsonByteLength(actor._source);
-      return {
-        id: actor.id,
-        name: actor.name,
-        type: actor.type,
-        itemCount,
-        ruleCount,
-        bytes,
-        sizeFormatted: formatBytes(bytes),
-        isHeavy: itemCount >= 120 || bytes >= 250 * 1024
-      };
-    }).sort((a, b) => (b.bytes - a.bytes) || (b.itemCount - a.itemCount)).slice(0, 10);
-
-    // 3. Heaviest Scenes
-    const heavyScenes = (game.scenes?.contents || []).map(scene => {
-      const walls = scene.walls?.size || 0;
-      const lights = scene.lights?.size || 0;
-      const tokens = scene.tokens?.size || 0;
-      const tiles = scene.tiles?.size || 0;
-      const sounds = scene.sounds?.size || 0;
-      const notes = scene.notes?.size || 0;
-      const regions = scene.regions?.size || 0;
-      const w = scene.width || 0;
-      const h = scene.height || 0;
-      const megapixels = Number(((w * h) / 1000000).toFixed(1));
-      const complexity = walls + (lights * 4) + (tokens * 3) + (tiles * 2) + (megapixels * 10);
-      return {
-        id: scene.id,
-        name: scene.name,
-        active: scene.active,
-        isViewed: canvas?.scene?.id === scene.id,
-        dimensions: `${w} × ${h}`,
-        megapixels,
-        walls,
-        lights,
-        tokens,
-        tiles,
-        sounds,
-        notes,
-        regions,
-        complexity: Math.round(complexity),
-        isHeavy: walls >= 400 || lights >= 35 || tokens >= 50 || megapixels >= 40
-      };
-    }).sort((a, b) => b.complexity - a.complexity).slice(0, 10);
-
-    // 4. Per-Module Data Bloat (Settings + Document Flags)
-    const storageByModule = new Map();
-    const addStorage = (modId, bytes, kind) => {
-      if (!modId || bytes <= 0) return;
-      let rec = storageByModule.get(modId);
-      if (!rec) {
-        rec = { settingsBytes: 0, flagsBytes: 0, totalBytes: 0 };
-        storageByModule.set(modId, rec);
-      }
-      if (kind === "settings") rec.settingsBytes += bytes;
-      else rec.flagsBytes += bytes;
-      rec.totalBytes = rec.settingsBytes + rec.flagsBytes;
-    };
-
-    // World settings storage
-    try {
-      const worldStorage = game.settings?.storage?.get?.("world");
-      if (worldStorage) {
-        for (const settingDoc of worldStorage.values()) {
-          const fullKey = settingDoc?.key || "";
-          const ns = fullKey.split(".")[0];
-          if (!ns || ns === "core") continue;
-          const id = ns === game.system?.id ? `system:${ns}` : ns;
-          addStorage(id, safeJsonByteLength(settingDoc.value), "settings");
+    const setProgress = (pct) => {
+      const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+      if (clamped !== this._auditProgress) {
+        this._auditProgress = clamped;
+        const now = performance.now();
+        if (now - lastProgressNotify >= 80 || clamped === 100) {
+          lastProgressNotify = now;
+          this._notify(false);
         }
       }
-    } catch {
-      // Ignore storage access errors
-    }
+    };
 
-    // Document flags across key collections
-    const flagCollections = [
-      game.actors?.contents || [],
-      game.scenes?.contents || [],
-      game.items?.contents || [],
-      (game.messages?.contents || []).slice(-500),
-      game.journal?.contents || [],
-      game.users?.contents || []
-    ];
-    for (const docs of flagCollections) {
-      for (const doc of docs) {
-        const flags = doc?.flags || doc?._source?.flags;
-        if (!flags || typeof flags !== "object") continue;
+    const maybeYield = async () => {
+      const now = performance.now();
+      const spent = now - sliceStart;
+      if (spent >= SLICE_BUDGET_MS) {
+        activeComputeMs += spent;
+        await yieldToNextFrame();
+        if (this._auditCancelToken !== myToken) {
+          throw new Error("__AUDIT_ABORTED__");
+        }
+        sliceStart = performance.now();
+      }
+    };
+
+    try {
+      // Yield immediately so the click handler finishes and UI paints "Scanning (0%)..." first
+      await yieldToNextFrame();
+      if (this._auditCancelToken !== myToken) throw new Error("__AUDIT_ABORTED__");
+      sliceStart = performance.now();
+
+      // Shared per-module storage accumulator (Settings + Document Flags)
+      const storageByModule = new Map();
+      const addStorage = (modId, bytes, kind) => {
+        if (!modId || bytes <= 0) return;
+        let rec = storageByModule.get(modId);
+        if (!rec) {
+          rec = { settingsBytes: 0, flagsBytes: 0, totalBytes: 0 };
+          storageByModule.set(modId, rec);
+        }
+        if (kind === "settings") rec.settingsBytes += bytes;
+        else rec.flagsBytes += bytes;
+        rec.totalBytes = rec.settingsBytes + rec.flagsBytes;
+      };
+
+      const collectDocFlags = (doc) => {
+        const flags = doc?._source?.flags || doc?.flags;
+        if (!flags || typeof flags !== "object") return;
         for (const [ns, val] of Object.entries(flags)) {
           if (ns === "core" || val == null) continue;
           const id = ns === game.system?.id ? `system:${ns}` : ns;
           addStorage(id, safeJsonByteLength(val), "flags");
         }
-      }
-    }
+      };
 
-    // 5. Active Canvas & WebGL GPU Info
-    const activeScene = canvas?.scene;
-    let gpuRenderer = "Unavailable";
-    let maxTextureSize = 0;
-    try {
-      const gl = canvas?.app?.renderer?.gl;
-      if (gl) {
-        maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
-        const dbg = gl.getExtension("WEBGL_debug_renderer_info");
-        if (dbg) {
-          gpuRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "WebGL";
-        } else {
-          gpuRenderer = gl.getParameter(gl.RENDERER) || "WebGL";
+      // 1. Single-Pass Actors Scan (Collection weight + PF2e Heavy Actors + Actor Flags)
+      // Uses raw `_source` directly instead of expensive `.toObject(false)` deep clones
+      const actorDocs = game.actors?.contents || [];
+      let totalActorBytes = 0;
+      const actorSummaries = [];
+      for (let i = 0; i < actorDocs.length; i++) {
+        const actor = actorDocs[i];
+        const raw = actor?._source ?? actor?.toObject?.(false);
+        const bytes = safeJsonByteLength(raw);
+        totalActorBytes += bytes;
+        collectDocFlags(actor);
+
+        const itemCount = actor.items?.size || 0;
+        const ruleCount = Array.isArray(actor.rules) ? actor.rules.length : 0;
+        actorSummaries.push({
+          id: actor.id,
+          name: actor.name,
+          type: actor.type,
+          itemCount,
+          ruleCount,
+          bytes,
+          sizeFormatted: formatBytes(bytes),
+          isHeavy: itemCount >= 120 || bytes >= 250 * 1024
+        });
+
+        if (actorDocs.length > 0) {
+          setProgress(2 + ((i + 1) / actorDocs.length) * 26);
+        }
+        await maybeYield();
+      }
+      setProgress(28);
+
+      const heavyActors = actorSummaries
+        .sort((a, b) => (b.bytes - a.bytes) || (b.itemCount - a.itemCount))
+        .slice(0, 10);
+
+      const collections = [
+        {
+          label: "Actors",
+          icon: "fa-solid fa-users",
+          count: actorDocs.length,
+          bytes: totalActorBytes,
+          sizeFormatted: formatBytes(totalActorBytes),
+          estimated: false
+        }
+      ];
+
+      // 2. Remaining World Collections size & count (chunked using fast `_source`)
+      const otherCollectionDefs = [
+        ["Items", game.items, "fa-solid fa-suitcase", 500],
+        ["Scenes", game.scenes, "fa-solid fa-map", 200],
+        ["Journals", game.journal, "fa-solid fa-book-open", 300],
+        ["Chat Messages", game.messages, "fa-solid fa-comments", 600],
+        ["Combats", game.combats, "fa-solid fa-swords", 100],
+        ["Macros", game.macros, "fa-solid fa-code", 300],
+        ["Playlists", game.playlists, "fa-solid fa-music", 100],
+        ["Roll Tables", game.tables, "fa-solid fa-table-list", 200]
+      ];
+
+      const colStepSpan = 40 / otherCollectionDefs.length; // 28% -> 68%
+      for (let cIdx = 0; cIdx < otherCollectionDefs.length; cIdx++) {
+        const [label, col, icon, cap] = otherCollectionDefs[cIdx];
+        const items = col?.contents || [];
+        const count = items.length;
+        const sampleCount = Math.min(count, cap);
+        let bytes = 0;
+        const basePct = 28 + cIdx * colStepSpan;
+
+        for (let i = 0; i < sampleCount; i++) {
+          const doc = items[i];
+          bytes += safeJsonByteLength(doc?._source ?? doc?.toObject?.(false));
+          if (sampleCount > 0 && ((i & 3) === 3 || i === sampleCount - 1)) {
+            setProgress(basePct + ((i + 1) / sampleCount) * colStepSpan);
+          }
+          await maybeYield();
+        }
+        if (count > sampleCount && sampleCount > 0) {
+          bytes = Math.round((bytes / sampleCount) * count);
+        }
+
+        collections.push({
+          label,
+          icon,
+          count,
+          bytes,
+          sizeFormatted: formatBytes(bytes),
+          estimated: count > sampleCount
+        });
+        setProgress(basePct + colStepSpan);
+        await maybeYield();
+      }
+
+      const totalWorldBytes = collections.reduce((s, c) => s + c.bytes, 0);
+
+      // 3. Heaviest Scenes
+      const sceneDocs = game.scenes?.contents || [];
+      const heavyScenesAll = [];
+      for (let i = 0; i < sceneDocs.length; i++) {
+        const scene = sceneDocs[i];
+        const walls = scene.walls?.size || 0;
+        const lights = scene.lights?.size || 0;
+        const tokens = scene.tokens?.size || 0;
+        const tiles = scene.tiles?.size || 0;
+        const sounds = scene.sounds?.size || 0;
+        const notes = scene.notes?.size || 0;
+        const regions = scene.regions?.size || 0;
+        const w = scene.width || 0;
+        const h = scene.height || 0;
+        const megapixels = Number(((w * h) / 1000000).toFixed(1));
+        const complexity = walls + (lights * 4) + (tokens * 3) + (tiles * 2) + (megapixels * 10);
+        heavyScenesAll.push({
+          id: scene.id,
+          name: scene.name,
+          active: scene.active,
+          isViewed: canvas?.scene?.id === scene.id,
+          dimensions: `${w} × ${h}`,
+          megapixels,
+          walls,
+          lights,
+          tokens,
+          tiles,
+          sounds,
+          notes,
+          regions,
+          complexity: Math.round(complexity),
+          isHeavy: walls >= 400 || lights >= 35 || tokens >= 50 || megapixels >= 40
+        });
+        if ((i & 15) === 15) await maybeYield();
+      }
+      const heavyScenes = heavyScenesAll.sort((a, b) => b.complexity - a.complexity).slice(0, 10);
+      setProgress(74);
+
+      // 4. Per-Module Data Bloat: World Settings + Non-Actor Document Flags
+      try {
+        const worldStorage = game.settings?.storage?.get?.("world");
+        if (worldStorage) {
+          for (const settingDoc of worldStorage.values()) {
+            const fullKey = settingDoc?.key || "";
+            const ns = fullKey.split(".")[0];
+            if (ns && ns !== "core") {
+              const id = ns === game.system?.id ? `system:${ns}` : ns;
+              addStorage(id, safeJsonByteLength(settingDoc.value), "settings");
+            }
+            await maybeYield();
+          }
+        }
+      } catch {
+        // Ignore storage access errors
+      }
+      setProgress(78);
+
+      // Non-actor document flags (Actors were already measured in Step 1)
+      const flagCollections = [
+        game.scenes?.contents || [],
+        game.items?.contents || [],
+        (game.messages?.contents || []).slice(-500),
+        game.journal?.contents || [],
+        game.users?.contents || []
+      ];
+      const totalFlagDocs = flagCollections.reduce((sum, arr) => sum + arr.length, 0);
+      let processedFlagDocs = 0;
+
+      for (const docs of flagCollections) {
+        for (let i = 0; i < docs.length; i++) {
+          collectDocFlags(docs[i]);
+          processedFlagDocs++;
+          if (totalFlagDocs > 0 && (processedFlagDocs & 15) === 0) {
+            setProgress(78 + (processedFlagDocs / totalFlagDocs) * 18);
+          }
+          await maybeYield();
         }
       }
-    } catch {
-      // Ignore WebGL read errors
-    }
+      setProgress(96);
 
-    let cachedTextures = 0;
-    try {
-      const managed = canvas?.app?.renderer?.texture?.managedTextures;
-      if (managed) {
-        cachedTextures = typeof managed.size === "number" ? managed.size : (managed.length || 0);
-      } else if (globalThis.PIXI?.utils?.TextureCache) {
-        cachedTextures = Object.keys(PIXI.utils.TextureCache).length;
+      // 5. Active Canvas & WebGL GPU Info
+      const activeScene = canvas?.scene;
+      let gpuRenderer = "Unavailable";
+      let maxTextureSize = 0;
+      try {
+        const gl = canvas?.app?.renderer?.gl;
+        if (gl) {
+          maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 0;
+          const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+          if (dbg) {
+            gpuRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || "WebGL";
+          } else {
+            gpuRenderer = gl.getParameter(gl.RENDERER) || "WebGL";
+          }
+        }
+      } catch {
+        // Ignore WebGL read errors
       }
-    } catch {
-      // Ignore
+
+      let cachedTextures = 0;
+      try {
+        const managed = canvas?.app?.renderer?.texture?.managedTextures;
+        if (managed) {
+          cachedTextures = typeof managed.size === "number" ? managed.size : (managed.length || 0);
+        } else if (globalThis.PIXI?.utils?.TextureCache) {
+          cachedTextures = Object.keys(PIXI.utils.TextureCache).length;
+        }
+      } catch {
+        // Ignore
+      }
+
+      // Core Foundry Performance Settings
+      const perfModeMap = { 0: "Low", 1: "Medium", 2: "High", 3: "Maximum" };
+      let perfModeLabel = "Unknown";
+      let maxFPS = 60;
+      let noCanvas = false;
+      try {
+        const pm = game.settings.get("core", "performanceMode");
+        perfModeLabel = perfModeMap[pm] ?? String(pm);
+        maxFPS = game.settings.get("core", "maxFPS") ?? 60;
+        noCanvas = Boolean(game.settings.get("core", "noCanvas"));
+      } catch {
+        // Ignore
+      }
+
+      const canvasInfo = {
+        ready: Boolean(canvas?.ready && activeScene),
+        noCanvas,
+        sceneName: activeScene?.name || "No Active Scene",
+        dimensions: activeScene ? `${activeScene.width} × ${activeScene.height}` : "—",
+        megapixels: activeScene ? Number(((activeScene.width * activeScene.height) / 1000000).toFixed(1)) : 0,
+        tokens: canvas?.tokens?.placeables?.length || 0,
+        walls: canvas?.walls?.placeables?.length || 0,
+        lights: canvas?.lighting?.placeables?.length || 0,
+        sounds: canvas?.sounds?.placeables?.length || 0,
+        tiles: canvas?.tiles?.placeables?.length || 0,
+        drawings: canvas?.drawings?.placeables?.length || 0,
+        notes: canvas?.notes?.placeables?.length || 0,
+        regions: canvas?.regions?.placeables?.length || 0,
+        cachedTextures,
+        gpuRenderer,
+        maxTextureSize,
+        perfModeLabel,
+        maxFPS
+      };
+
+      activeComputeMs += Math.max(0, performance.now() - sliceStart);
+      const wallMs = Math.max(1, Math.round(performance.now() - wallStart));
+      const scanMs = Number(activeComputeMs.toFixed(1));
+      const wallText = wallMs >= 1000 ? `${(wallMs / 1000).toFixed(1)}s` : `${wallMs} ms`;
+      const scanSummary = `${wallText} background · ${scanMs} ms CPU`;
+
+      this._auditData = {
+        timestamp: Date.now(),
+        timeStr: formatTimeStamp(Date.now()),
+        scanMs,
+        wallMs,
+        scanSummary,
+        collections,
+        totalWorldBytes,
+        totalWorldFormatted: formatBytes(totalWorldBytes),
+        compendiumCount: game.packs?.size || 0,
+        heavyActors,
+        heavyScenes,
+        storageByModule,
+        canvasInfo,
+        chatCount: game.messages?.size || 0,
+        actorCount: game.actors?.size || 0
+      };
+
+      setProgress(100);
+      return this._auditData;
+    } catch (err) {
+      if (err?.message !== "__AUDIT_ABORTED__") {
+        console.warn("PF2e Awesome GM Utilities | Background Deep Audit failed:", err);
+      }
+      return this._auditData;
+    } finally {
+      this._auditWindowEnd = performance.now();
+      const curHeap = performance?.memory?.usedJSHeapSize || 0;
+      if (curHeap > 0) this._lastHeapBytes = curHeap;
+      this._auditInProgress = false;
+      this._auditProgress = 0;
+      this._notify(true);
     }
-
-    // Core Foundry Performance Settings
-    const perfModeMap = { 0: "Low", 1: "Medium", 2: "High", 3: "Maximum" };
-    let perfModeLabel = "Unknown";
-    let maxFPS = 60;
-    let noCanvas = false;
-    try {
-      const pm = game.settings.get("core", "performanceMode");
-      perfModeLabel = perfModeMap[pm] ?? String(pm);
-      maxFPS = game.settings.get("core", "maxFPS") ?? 60;
-      noCanvas = Boolean(game.settings.get("core", "noCanvas"));
-    } catch {
-      // Ignore
-    }
-
-    const canvasInfo = {
-      ready: Boolean(canvas?.ready && activeScene),
-      noCanvas,
-      sceneName: activeScene?.name || "No Active Scene",
-      dimensions: activeScene ? `${activeScene.width} × ${activeScene.height}` : "—",
-      megapixels: activeScene ? Number(((activeScene.width * activeScene.height) / 1000000).toFixed(1)) : 0,
-      tokens: canvas?.tokens?.placeables?.length || 0,
-      walls: canvas?.walls?.placeables?.length || 0,
-      lights: canvas?.lighting?.placeables?.length || 0,
-      sounds: canvas?.sounds?.placeables?.length || 0,
-      tiles: canvas?.tiles?.placeables?.length || 0,
-      drawings: canvas?.drawings?.placeables?.length || 0,
-      notes: canvas?.notes?.placeables?.length || 0,
-      regions: canvas?.regions?.placeables?.length || 0,
-      cachedTextures,
-      gpuRenderer,
-      maxTextureSize,
-      perfModeLabel,
-      maxFPS
-    };
-
-    const scanMs = Number((performance.now() - t0).toFixed(1));
-
-    this._auditData = {
-      timestamp: Date.now(),
-      timeStr: formatTimeStamp(Date.now()),
-      scanMs,
-      collections,
-      totalWorldBytes,
-      totalWorldFormatted: formatBytes(totalWorldBytes),
-      compendiumCount: game.packs?.size || 0,
-      heavyActors,
-      heavyScenes,
-      storageByModule,
-      canvasInfo,
-      chatCount: game.messages?.size || 0,
-      actorCount: game.actors?.size || 0
-    };
-
-    this._notify(true);
-    return this._auditData;
   }
 
   /**
@@ -1560,12 +1776,13 @@ export class PerformanceMonitorEngine {
     const resourceStats = this.getResourceStats();
     const storageMap = this._auditData?.storageByModule || new Map();
 
-    // Count currently registered hooks per module
+    // Count currently registered hooks per module (excluding profiler's own internal hooks)
     const hookCountByMod = new Map();
     const events = Hooks.events || {};
     for (const entries of Object.values(events)) {
       if (!Array.isArray(entries)) continue;
       for (const entry of entries) {
+        if (entry?.fn?._pf2ePerfInternal) continue;
         const owner = this._resolveHookEntryOwner(entry);
         hookCountByMod.set(owner, (hookCountByMod.get(owner) || 0) + 1);
       }
@@ -2287,10 +2504,15 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
         ui.notifications?.info("Performance Checker: Recording hooks for 10 seconds... Perform actions on the canvas now!");
         break;
 
-      case "run-audit":
-        performanceMonitor.runDeepAudit();
-        ui.notifications?.info("Performance Checker: Deep World, PF2e & Flag Audit complete!");
+      case "run-audit": {
+        if (performanceMonitor._auditInProgress) return;
+        ui.notifications?.info("Performance Checker: Running background Deep Audit...");
+        const auditRes = await performanceMonitor.runDeepAudit();
+        if (auditRes) {
+          ui.notifications?.info(`Performance Checker: Background Deep Audit complete (${auditRes.scanSummary})!`);
+        }
         break;
+      }
 
       case "reset-stats":
         performanceMonitor.resetStats();
@@ -2386,6 +2608,21 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
         burstBtn.classList.remove("is-recording");
       }
     }
+
+    // Update Deep Audit button(s) with live background scan progress
+    root.querySelectorAll("[data-perf-action='run-audit']").forEach(btn => {
+      if (live.auditInProgress) {
+        btn.disabled = true;
+        btn.classList.add("is-scanning");
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Scanning (${live.auditProgress}%)...`;
+      } else {
+        btn.disabled = false;
+        btn.classList.remove("is-scanning");
+        const icon = btn.dataset.idleIcon || "fa-solid fa-magnifying-glass-chart";
+        const label = btn.dataset.idleLabel || "Deep Audit";
+        btn.innerHTML = `<i class="${icon}"></i> ${label}`;
+      }
+    });
 
     // Update sparkline SVG polyline smoothly
     const spark = performanceMonitor.buildSparklineSVG(360, 56);
