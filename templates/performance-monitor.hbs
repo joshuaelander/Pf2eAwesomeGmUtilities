@@ -1,0 +1,607 @@
+<div class="pf2e-perf-container">
+
+  <!-- Top Controls & Action Bar -->
+  <header class="perf-toolbar">
+    <div class="perf-toolbar-left">
+      <div class="perf-health-pill status-{{health.statusClass}}" title="Overall System Health Score">
+        <span class="perf-health-score">{{health.score}}</span>
+        <span class="perf-health-label">{{health.grade}}</span>
+      </div>
+      <span class="perf-meta-chip" title="Active Modules Loaded">
+        <i class="fa-solid fa-cubes"></i> {{activeModuleCount}} Active Modules
+      </span>
+      {{#if live.hookProfiling}}
+        <span class="perf-meta-chip is-profiling">
+          <i class="fa-solid fa-circle-dot fa-fade"></i> Hook Profiler ON
+        </span>
+      {{/if}}
+    </div>
+
+    <div class="perf-toolbar-actions">
+      <button type="button" class="perf-btn perf-btn-gold" data-perf-action="burst-profile" title="Profile all module hooks for 10 seconds while you interact with the canvas">
+        {{#if live.burstRemaining}}
+          <i class="fa-solid fa-circle-dot fa-fade"></i> Recording ({{live.burstRemaining}}s)...
+        {{else}}
+          <i class="fa-solid fa-stopwatch"></i> 10s Burst Profile
+        {{/if}}
+      </button>
+
+      <button type="button" class="perf-btn {{#if live.hookProfiling}}perf-btn-danger{{/if}}" data-perf-action="toggle-hook-profiler" title="Continuously time all Foundry Hook callbacks">
+        <i class="fa-solid {{#if live.hookProfiling}}fa-stop{{else}}fa-play{{/if}}"></i>
+        {{#if live.hookProfiling}}Stop Profiler{{else}}Live Profiler{{/if}}
+      </button>
+
+      <button type="button" class="perf-btn" data-perf-action="run-audit" title="Scan World Collections, PF2e Actors, Active Scene, and Module Settings/Flags size">
+        <i class="fa-solid fa-magnifying-glass-chart"></i> Deep Audit
+      </button>
+
+      <button type="button" class="perf-btn" data-perf-action="toggle-hud" title="Show or hide the compact floating FPS/Memory HUD pill">
+        <i class="fa-solid fa-window-restore"></i> Mini HUD
+      </button>
+
+      <button type="button" class="perf-btn perf-btn-icon" data-perf-action="copy-report" title="Copy Markdown diagnostic report to clipboard">
+        <i class="fa-solid fa-clipboard"></i>
+      </button>
+
+      <button type="button" class="perf-btn perf-btn-icon" data-perf-action="reset-stats" title="Reset collected timings, spikes, and error counters">
+        <i class="fa-solid fa-rotate-left"></i>
+      </button>
+
+      <button type="button" class="perf-btn perf-btn-icon" data-perf-action="refresh" title="Refresh all tables">
+        <i class="fa-solid fa-arrows-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="perf-tabs">
+    <button type="button" class="perf-tab-btn {{#if isOverviewTab}}active{{/if}}" data-tab="overview">
+      <i class="fa-solid fa-heart-pulse"></i> Overview &amp; Health
+    </button>
+    <button type="button" class="perf-tab-btn {{#if isModulesTab}}active{{/if}}" data-tab="modules">
+      <i class="fa-solid fa-cubes"></i> Modules
+      {{#if flaggedCount}}<span class="perf-tab-badge warn">{{flaggedCount}}</span>{{/if}}
+    </button>
+    <button type="button" class="perf-tab-btn {{#if isHooksTab}}active{{/if}}" data-tab="hooks">
+      <i class="fa-solid fa-stopwatch"></i> Hooks &amp; Spikes
+      {{#if live.longTaskCount}}<span class="perf-tab-badge">{{live.longTaskCount}}</span>{{/if}}
+    </button>
+    <button type="button" class="perf-tab-btn {{#if isWorldTab}}active{{/if}}" data-tab="world">
+      <i class="fa-solid fa-globe"></i> World &amp; Canvas (PF2e)
+    </button>
+    <button type="button" class="perf-tab-btn {{#if isErrorsTab}}active{{/if}}" data-tab="errors">
+      <i class="fa-solid fa-bug"></i> Errors
+      <span class="perf-tab-badge {{#if hasErrors}}danger{{/if}}" data-live="error-badge">{{live.totalErrors}}</span>
+    </button>
+  </nav>
+
+  <!-- Tab Panels -->
+  <section class="perf-body">
+
+    {{!-- ================================================================= --}}
+    {{!-- TAB 1: OVERVIEW & HEALTH                                          --}}
+    {{!-- ================================================================= --}}
+    {{#if isOverviewTab}}
+      <div class="perf-metrics-grid">
+        <!-- FPS Card -->
+        <div class="perf-metric-card status-{{live.fpsClass}}">
+          <div class="metric-header">
+            <span class="metric-title"><i class="fa-solid fa-gauge-high"></i> Canvas FPS</span>
+            <span class="metric-sub" data-live="frame-ms">{{live.avgFrameMs}} ms avg</span>
+          </div>
+          <div class="metric-value" data-live="fps">{{live.fps}}</div>
+          <div class="metric-foot" data-live="fps-range">Avg {{live.avgFps}} · Min {{live.minFps}}</div>
+        </div>
+
+        <!-- JS Heap Memory Card -->
+        <div class="perf-metric-card status-{{live.memClass}}">
+          <div class="metric-header">
+            <span class="metric-title"><i class="fa-solid fa-memory"></i> JS Heap Memory</span>
+            {{#if live.memory.available}}
+              <span class="metric-sub">Peak {{live.memory.peakMB}} MB</span>
+            {{/if}}
+          </div>
+          {{#if live.memory.available}}
+            <div class="metric-value" data-live="heap-used">{{live.memory.usedMB}} MB</div>
+            <div class="metric-bar-track">
+              <div class="metric-bar-fill" data-live="heap-bar" style="width: {{live.memory.pct}}%;"></div>
+            </div>
+            <div class="metric-foot" data-live="heap-sub">{{live.memory.pct}}% of {{live.memory.limitMB}} MB · {{live.memory.trendLabel}}</div>
+          {{else}}
+            <div class="metric-value metric-na">N/A</div>
+            <div class="metric-foot">Requires Chromium / Foundry Desktop</div>
+          {{/if}}
+        </div>
+
+        <!-- Long Tasks / Spikes Card -->
+        <div class="perf-metric-card status-{{live.spikeClass}}">
+          <div class="metric-header">
+            <span class="metric-title"><i class="fa-solid fa-bolt"></i> Freezes (&gt;50ms)</span>
+            <span class="metric-sub">Main Thread</span>
+          </div>
+          <div class="metric-value" data-live="spikes">{{live.longTaskCount}}</div>
+          <div class="metric-foot" data-live="spikes-sub">Severe: {{live.severeSpikeCount}} · Peak {{live.maxFrameMs}} ms</div>
+        </div>
+
+        <!-- DOM & Windows Card -->
+        <div class="perf-metric-card status-{{live.domClass}}">
+          <div class="metric-header">
+            <span class="metric-title"><i class="fa-solid fa-code"></i> UI &amp; DOM Nodes</span>
+            <span class="metric-sub">Browser Layout</span>
+          </div>
+          <div class="metric-value" data-live="dom-nodes">{{live.domNodes}}</div>
+          <div class="metric-foot" data-live="open-windows">{{live.openWindows}} open windows</div>
+        </div>
+      </div>
+
+      <!-- 60-Second Live FPS Sparkline -->
+      <div class="perf-panel">
+        <div class="perf-panel-header">
+          <h4><i class="fa-solid fa-chart-area"></i> Live 60-Second FPS Timeline</h4>
+          <span class="perf-hint-inline">Updates every 1s · Watch for dips while panning, moving tokens, or rolling</span>
+        </div>
+        <div class="perf-sparkline-wrap">
+          <svg viewBox="0 0 360 56" preserveAspectRatio="none" class="perf-sparkline-svg">
+            <defs>
+              <linearGradient id="pf2ePerfGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#d4af37" stop-opacity="0.45" />
+                <stop offset="100%" stop-color="#d4af37" stop-opacity="0.02" />
+              </linearGradient>
+            </defs>
+            <line x1="0" y1="28" x2="360" y2="28" stroke="rgba(255,255,255,0.08)" stroke-dasharray="3 3" />
+            <polygon id="perf-sparkline-area" points="{{sparkline.areaPoints}}" fill="url(#pf2ePerfGrad)" />
+            <polyline id="perf-sparkline-line" points="{{sparkline.linePoints}}" fill="none" stroke="#e6c55d" stroke-width="1.75" />
+          </svg>
+        </div>
+      </div>
+
+      <!-- Automated PF2e Health Diagnostics -->
+      <div class="perf-panel">
+        <div class="perf-panel-header">
+          <h4><i class="fa-solid fa-stethoscope"></i> Detected Issues &amp; PF2e Recommendations</h4>
+          <div class="perf-panel-actions">
+            {{#if isGM}}
+              <button type="button" class="perf-btn perf-btn-sm" data-perf-action="manage-modules">
+                <i class="fa-solid fa-sliders"></i> Manage Modules
+              </button>
+            {{/if}}
+          </div>
+        </div>
+        <div class="perf-issues-list">
+          {{#each health.issues}}
+            <div class="perf-issue-card severity-{{this.severity}}">
+              <div class="issue-icon"><i class="{{this.icon}}"></i></div>
+              <div class="issue-content">
+                <div class="issue-top">
+                  <span class="issue-category">{{this.category}}</span>
+                  <strong class="issue-title">{{this.title}}</strong>
+                </div>
+                <p class="issue-detail">{{this.detail}}</p>
+                <p class="issue-suggestion"><i class="fa-solid fa-lightbulb"></i> {{this.suggestion}}</p>
+              </div>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    {{/if}}
+
+    {{!-- ================================================================= --}}
+    {{!-- TAB 2: MODULES LEADERBOARD                                        --}}
+    {{!-- ================================================================= --}}
+    {{#if isModulesTab}}
+      <div class="perf-filter-bar">
+        <div class="perf-search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="perf-module-search" value="{{moduleQuery}}" placeholder="Filter modules by title or ID..." />
+        </div>
+
+        <label class="perf-sort-label">
+          Sort:
+          <select id="perf-module-sort">
+            <option value="impact" {{#if (eq moduleSort "impact")}}selected{{/if}}>Impact Score</option>
+            <option value="hookMs" {{#if (eq moduleSort "hookMs")}}selected{{/if}}>Hook CPU Time</option>
+            <option value="errors" {{#if (eq moduleSort "errors")}}selected{{/if}}>Errors Count</option>
+            <option value="assets" {{#if (eq moduleSort "assets")}}selected{{/if}}>Asset Size (MB)</option>
+            <option value="loadMs" {{#if (eq moduleSort "loadMs")}}selected{{/if}}>Asset Load Time</option>
+            <option value="storage" {{#if (eq moduleSort "storage")}}selected{{/if}}>Stored Data (Flags/Settings)</option>
+            <option value="hooks" {{#if (eq moduleSort "hooks")}}selected{{/if}}>Registered Hooks</option>
+            <option value="name" {{#if (eq moduleSort "name")}}selected{{/if}}>Module Name</option>
+          </select>
+        </label>
+
+        <label class="perf-check-label">
+          <input type="checkbox" id="perf-flagged-only" {{#if flaggedOnly}}checked{{/if}} />
+          Flagged Only
+        </label>
+
+        {{#if isGM}}
+          <button type="button" class="perf-btn perf-btn-gold" data-perf-action="manage-modules" title="Open Foundry's Manage Modules window to disable troublesome modules">
+            <i class="fa-solid fa-sliders"></i> Manage Modules
+          </button>
+        {{/if}}
+      </div>
+
+      {{#unless startupAttributed}}
+        <div class="perf-info-banner">
+          <i class="fa-solid fa-circle-info"></i>
+          <span><strong>Tip:</strong> You enabled the Performance Checker mid-session. Leave it ON and reload once (<code>F5</code>) to capture 100% accurate startup hook attribution for all modules. Click <strong>Deep Audit</strong> to measure module settings &amp; document flag sizes.</span>
+        </div>
+      {{/unless}}
+
+      <div class="perf-table-scroll">
+        <table class="perf-table">
+          <thead>
+            <tr>
+              <th>Package / Module</th>
+              <th class="col-center">Impact</th>
+              <th class="col-num">Errors</th>
+              <th class="col-num">Hook CPU</th>
+              <th class="col-num">Max Spike</th>
+              <th class="col-num">Hooks</th>
+              <th class="col-num">Assets Size</th>
+              <th class="col-num">Load Time</th>
+              <th class="col-num">Stored Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each modules}}
+              <tr class="perf-mod-row impact-{{this.impactLevel}}" data-id="{{this.id}}" data-title="{{this.title}}">
+                <td class="col-pkg">
+                  <div class="pkg-name">
+                    {{this.title}}
+                    {{#if this.isSystem}}<span class="pkg-tag system">SYSTEM</span>{{/if}}
+                    {{#if this.isCore}}<span class="pkg-tag core">CORE</span>{{/if}}
+                    {{#if this.isSelf}}<span class="pkg-tag self">THIS</span>{{/if}}
+                  </div>
+                  <div class="pkg-id">{{this.id}}{{#if this.version}} · v{{this.version}}{{/if}}</div>
+                </td>
+                <td class="col-center">
+                  <span class="impact-badge level-{{this.impactLevel}}">{{this.impactLabel}}</span>
+                </td>
+                <td class="col-num {{#if this.hasErrors}}text-danger strong{{/if}}">{{this.errors}}</td>
+                <td class="col-num" title="{{this.hookCalls}} hook calls">{{this.hookTotalFormatted}}</td>
+                <td class="col-num" title="{{#if this.slowestHook}}Slowest: {{this.slowestHook}}{{/if}}">{{this.hookMaxFormatted}}</td>
+                <td class="col-num">{{this.hookCount}}</td>
+                <td class="col-num" title="{{this.assetCount}} loaded files">{{this.assetSizeFormatted}}</td>
+                <td class="col-num">{{this.assetLoadFormatted}}</td>
+                <td class="col-num" title="{{this.storageTooltip}}">{{this.storageFormatted}}</td>
+              </tr>
+            {{else}}
+              <tr>
+                <td colspan="9" class="perf-empty-cell">No modules match the current filter.</td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+    {{/if}}
+
+    {{!-- ================================================================= --}}
+    {{!-- TAB 3: HOOKS & SPIKES                                             --}}
+    {{!-- ================================================================= --}}
+    {{#if isHooksTab}}
+      <div class="perf-filter-bar">
+        <div class="perf-inline-note">
+          <i class="fa-solid fa-stopwatch"></i>
+          {{#if live.hookProfiling}}
+            <span>Hook Profiler is <strong>ACTIVE</strong> — interact with tokens, sheets, or combat to measure live hook CPU times.</span>
+          {{else}}
+            <span>Click <strong>10s Burst Profile</strong> or <strong>Live Profiler</strong> above to measure exact millisecond CPU cost per Foundry hook.</span>
+          {{/if}}
+        </div>
+
+        <label class="perf-sort-label">
+          Sort Hooks:
+          <select id="perf-hook-sort">
+            <option value="totalMs" {{#if (eq hookSort "totalMs")}}selected{{/if}}>Total CPU (ms)</option>
+            <option value="maxMs" {{#if (eq hookSort "maxMs")}}selected{{/if}}>Max Single Spike</option>
+            <option value="avgMs" {{#if (eq hookSort "avgMs")}}selected{{/if}}>Average (ms)</option>
+            <option value="calls" {{#if (eq hookSort "calls")}}selected{{/if}}>Call Count</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="perf-split-vertical">
+        <div class="perf-panel">
+          <div class="perf-panel-header">
+            <h4><i class="fa-solid fa-fire"></i> Hottest Foundry Hooks</h4>
+          </div>
+          <div class="perf-table-scroll perf-table-md">
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Hook Event</th>
+                  <th class="col-num">Calls</th>
+                  <th class="col-num">Total CPU</th>
+                  <th class="col-num">Avg</th>
+                  <th class="col-num">Max Spike</th>
+                  <th class="col-num">Listeners</th>
+                  <th>Attributed Packages</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each hotHooks}}
+                  <tr class="{{#if this.isSlow}}row-slow{{/if}}">
+                    <td class="mono strong">{{this.hook}}</td>
+                    <td class="col-num">{{this.calls}}</td>
+                    <td class="col-num strong">{{this.totalFormatted}}</td>
+                    <td class="col-num">{{this.avgFormatted}}</td>
+                    <td class="col-num {{#if this.isSlow}}text-warn strong{{/if}}">{{this.maxFormatted}}</td>
+                    <td class="col-num">{{this.listeners}}</td>
+                    <td class="col-mods-list">{{this.modulesText}}</td>
+                  </tr>
+                {{else}}
+                  <tr>
+                    <td colspan="7" class="perf-empty-cell">No hook timings captured yet. Click <strong>10s Burst Profile</strong> or <strong>Live Profiler</strong> to begin measuring.</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="perf-panel">
+          <div class="perf-panel-header">
+            <h4><i class="fa-solid fa-bolt"></i> Recent Main-Thread Freezes &amp; Frame Spikes (&gt;50ms)</h4>
+            <span class="perf-hint-inline">
+              {{#if loafSupported}}
+                LoAF Script Attribution Active · Correlates scripts, layout/paint, hooks, assets &amp; GC
+              {{else}}
+                Correlates hooks, UI/canvas activity, assets &amp; GC · Run 10s Burst Profile for exact hook times
+              {{/if}}
+            </span>
+          </div>
+          <div class="perf-table-scroll perf-table-sm">
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th class="col-num">Duration</th>
+                  <th>Severity</th>
+                  <th>Likely Cause / Culprit</th>
+                  <th>Details (Script, Hook, or Activity)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each longTasks}}
+                  <tr>
+                    <td class="mono">{{this.timeStr}}</td>
+                    <td class="col-num strong">{{this.durationMs}} ms</td>
+                    <td><span class="impact-badge level-{{this.severity}}">{{this.severity}}</span></td>
+                    <td class="perf-cause-cell">
+                      <span class="perf-cause-cat">{{this.category}}</span>
+                      <strong class="perf-cause-culprit">{{this.culprit}}</strong>
+                    </td>
+                    <td class="perf-cause-details">{{this.details}}</td>
+                  </tr>
+                {{else}}
+                  <tr>
+                    <td colspan="5" class="perf-empty-cell">No freezes over 50ms recorded yet.</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {{/if}}
+
+    {{!-- ================================================================= --}}
+    {{!-- TAB 4: WORLD & CANVAS (PF2e)                                      --}}
+    {{!-- ================================================================= --}}
+    {{#if isWorldTab}}
+      {{#unless hasAudit}}
+        <div class="perf-audit-prompt">
+          <i class="fa-solid fa-magnifying-glass-chart"></i>
+          <h3>Deep World, PF2e Actor &amp; Canvas Audit</h3>
+          <p>Run an on-demand scan to measure World collection sizes, find bloated PF2e Actors (high item/rule counts), inspect heavy Scenes, WebGL texture cache, and per-module Settings/Flags storage.</p>
+          <button type="button" class="perf-btn perf-btn-gold perf-btn-lg" data-perf-action="run-audit">
+            <i class="fa-solid fa-magnifying-glass-chart"></i> Run Deep Audit Now
+          </button>
+        </div>
+      {{else}}
+        <div class="perf-audit-meta">
+          <span><i class="fa-solid fa-clock"></i> Last scanned at <strong>{{audit.timeStr}}</strong> (took {{audit.scanMs}} ms) · Total World Payload: <strong>{{audit.totalWorldFormatted}}</strong> · Compendium Packs: <strong>{{audit.compendiumCount}}</strong></span>
+          <button type="button" class="perf-btn perf-btn-sm" data-perf-action="run-audit">
+            <i class="fa-solid fa-arrows-rotate"></i> Re-Scan
+          </button>
+        </div>
+
+        <!-- Active Scene & GPU Panel -->
+        <div class="perf-panel">
+          <div class="perf-panel-header">
+            <h4><i class="fa-solid fa-map"></i> Active Scene &amp; WebGL Renderer: {{audit.canvasInfo.sceneName}}</h4>
+            <span class="perf-hint-inline">{{audit.canvasInfo.dimensions}} ({{audit.canvasInfo.megapixels}} MP) · Perf Mode: {{audit.canvasInfo.perfModeLabel}} ({{audit.canvasInfo.maxFPS}} FPS cap)</span>
+          </div>
+          <div class="perf-canvas-chips">
+            <div class="canvas-stat"><span>Tokens</span><strong>{{audit.canvasInfo.tokens}}</strong></div>
+            <div class="canvas-stat"><span>Walls</span><strong>{{audit.canvasInfo.walls}}</strong></div>
+            <div class="canvas-stat"><span>Lights</span><strong>{{audit.canvasInfo.lights}}</strong></div>
+            <div class="canvas-stat"><span>Tiles</span><strong>{{audit.canvasInfo.tiles}}</strong></div>
+            <div class="canvas-stat"><span>Sounds</span><strong>{{audit.canvasInfo.sounds}}</strong></div>
+            <div class="canvas-stat"><span>Notes</span><strong>{{audit.canvasInfo.notes}}</strong></div>
+            <div class="canvas-stat"><span>Regions</span><strong>{{audit.canvasInfo.regions}}</strong></div>
+            <div class="canvas-stat"><span>Cached Textures</span><strong>{{audit.canvasInfo.cachedTextures}}</strong></div>
+          </div>
+          <div class="perf-gpu-line">
+            <i class="fa-solid fa-microchip"></i> <strong>GPU:</strong> {{audit.canvasInfo.gpuRenderer}} · <strong>Max Texture:</strong> {{audit.canvasInfo.maxTextureSize}}px
+          </div>
+        </div>
+
+        <!-- World Collections Breakdown -->
+        <div class="perf-two-col">
+          <div class="perf-panel">
+            <div class="perf-panel-header">
+              <h4><i class="fa-solid fa-database"></i> World Collections Weight</h4>
+            </div>
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Collection</th>
+                  <th class="col-num">Count</th>
+                  <th class="col-num">Est. Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each audit.collections}}
+                  <tr>
+                    <td><i class="{{this.icon}} perf-row-icon"></i> {{this.label}}</td>
+                    <td class="col-num">{{this.count}}</td>
+                    <td class="col-num strong">{{this.sizeFormatted}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Top Heavy PF2e Actors -->
+          <div class="perf-panel">
+            <div class="perf-panel-header">
+              <h4><i class="fa-solid fa-user-shield"></i> Heaviest PF2e Actors</h4>
+            </div>
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Actor</th>
+                  <th class="col-num">Items</th>
+                  <th class="col-num">Rules</th>
+                  <th class="col-num">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each audit.heavyActors}}
+                  <tr class="{{#if this.isHeavy}}row-slow{{/if}}">
+                    <td>{{this.name}} <span class="pkg-id">({{this.type}})</span></td>
+                    <td class="col-num {{#if this.isHeavy}}text-warn strong{{/if}}">{{this.itemCount}}</td>
+                    <td class="col-num">{{this.ruleCount}}</td>
+                    <td class="col-num strong">{{this.sizeFormatted}}</td>
+                  </tr>
+                {{else}}
+                  <tr><td colspan="4" class="perf-empty-cell">No world actors found.</td></tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Top Heavy Scenes -->
+        <div class="perf-panel">
+          <div class="perf-panel-header">
+            <h4><i class="fa-solid fa-layer-group"></i> Heaviest World Scenes</h4>
+          </div>
+          <div class="perf-table-scroll perf-table-sm">
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Scene</th>
+                  <th>Dimensions</th>
+                  <th class="col-num">Walls</th>
+                  <th class="col-num">Lights</th>
+                  <th class="col-num">Tokens</th>
+                  <th class="col-num">Tiles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each audit.heavyScenes}}
+                  <tr class="{{#if this.isHeavy}}row-slow{{/if}}">
+                    <td>
+                      {{this.name}}
+                      {{#if this.active}}<span class="pkg-tag system">ACTIVE</span>{{/if}}
+                    </td>
+                    <td class="mono">{{this.dimensions}} ({{this.megapixels}} MP)</td>
+                    <td class="col-num">{{this.walls}}</td>
+                    <td class="col-num">{{this.lights}}</td>
+                    <td class="col-num">{{this.tokens}}</td>
+                    <td class="col-num">{{this.tiles}}</td>
+                  </tr>
+                {{else}}
+                  <tr><td colspan="6" class="perf-empty-cell">No world scenes found.</td></tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Largest / Slowest Loaded Assets -->
+        <div class="perf-panel">
+          <div class="perf-panel-header">
+            <h4><i class="fa-solid fa-file-arrow-down"></i> Largest / Slowest Loaded Assets ({{totalAssetsCount}} total · {{totalAssetsFormatted}})</h4>
+          </div>
+          <div class="perf-table-scroll perf-table-sm">
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Asset Path</th>
+                  <th>Package</th>
+                  <th>Type</th>
+                  <th class="col-num">Size</th>
+                  <th class="col-num">Load Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each heavyAssets}}
+                  <tr>
+                    <td class="mono" title="{{this.url}}">{{this.shortName}}</td>
+                    <td>{{this.moduleTitle}}</td>
+                    <td>{{this.type}}</td>
+                    <td class="col-num strong">{{this.sizeFormatted}}</td>
+                    <td class="col-num">{{this.durationMs}} ms</td>
+                  </tr>
+                {{else}}
+                  <tr><td colspan="5" class="perf-empty-cell">No large (&gt;100 KB) or slow (&gt;200 ms) assets recorded.</td></tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {{/unless}}
+    {{/if}}
+
+    {{!-- ================================================================= --}}
+    {{!-- TAB 5: ERRORS LOG                                                 --}}
+    {{!-- ================================================================= --}}
+    {{#if isErrorsTab}}
+      <div class="perf-filter-bar">
+        <div class="perf-inline-note">
+          <i class="fa-solid fa-bug"></i>
+          <span>Captures uncaught JavaScript exceptions, Foundry Hook crashes, and unhandled Promise rejections attributed by stack trace.</span>
+        </div>
+        <button type="button" class="perf-btn perf-btn-sm" data-perf-action="reset-stats">
+          <i class="fa-solid fa-trash-can"></i> Clear Log
+        </button>
+      </div>
+
+      <div class="perf-errors-list">
+        {{#each errors}}
+          <article class="perf-error-card">
+            <div class="perf-error-header">
+              <div class="perf-error-left">
+                <span class="impact-badge level-critical">{{this.moduleTitle}}</span>
+                <span class="perf-error-source">{{this.source}}</span>
+                {{#if this.hasMultiple}}
+                  <span class="perf-error-count">{{this.count}}×</span>
+                {{/if}}
+              </div>
+              <div class="perf-error-right">
+                <span class="mono">{{this.timeStr}}</span>
+                {{#if this.stack}}
+                  <button type="button" class="perf-btn perf-btn-xs perf-error-toggle">Stack</button>
+                {{/if}}
+              </div>
+            </div>
+            <div class="perf-error-msg">{{this.message}}</div>
+            {{#if this.stack}}
+              <pre class="perf-error-stack">{{this.stack}}</pre>
+            {{/if}}
+          </article>
+        {{else}}
+          <div class="perf-empty-state">
+            <i class="fa-solid fa-shield-check"></i>
+            <p>No runtime errors or hook crashes captured this session.</p>
+          </div>
+        {{/each}}
+      </div>
+    {{/if}}
+
+  </section>
+</div>

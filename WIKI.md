@@ -13,8 +13,9 @@ Welcome to the complete documentation for **PF2e Awesome GM Utilities**, an all-
 6. [Party Placement Tool](#6-party-placement-tool)
 7. [Interactive Map Pins & Scene Links](#7-interactive-map-pins--scene-links)
 8. [Advanced Journal Editor & AP Styler](#8-advanced-journal-editor--ap-styler)
-9. [Module Settings & Configuration](#9-module-settings--configuration)
-10. [Macro & Developer JavaScript API](#10-macro--developer-javascript-api)
+9. [Performance Checker & Module Profiler](#9-performance-checker--module-profiler)
+10. [Module Settings & Configuration](#10-module-settings--configuration)
+11. [Macro & Developer JavaScript API](#11-macro--developer-javascript-api)
 
 ---
 
@@ -238,7 +239,21 @@ Generate rich, clickable display cards for documents in your world:
 
 ---
 
-## 9. Module Settings & Configuration
+## 9. Performance Checker & Module Profiler
+
+An opt-in diagnostic utility built to help Game Masters identify laggy, memory-heavy, bloated, or error-throwing modules in **Foundry VTT v14 + Pathfinder 2e**.
+
+- **Default OFF & Strictly GM-Only (Zero Overhead):** Disabled by default in **Module Settings &rarr; Enable Performance Checker & Module Profiler (GM Only)**. World-scoped so players never see the setting, never get the button or API, and never run a single line of telemetry code. When turned ON by the GM, a gauge icon button immediately appears in the **PF2e GM Utilities** sidebar menu (or press `Shift + P`).
+- **Overview & Health Tab:** Computes a 0–100 Health Score alongside live Canvas FPS, average/peak frame time, 60-second FPS timeline sparkline, Chromium/Electron JS Heap memory usage & leak trend (`MB/min`), main-thread freezes (>50ms), DOM node counts, and automated PF2e recommendations.
+- **Modules Leaderboard Tab:** Lists every active module sorted by composite Impact Score, Hook CPU time, LoAF freeze spikes, Errors, Asset Size/Load Time, Registered Hooks, or Stored Settings/Flags size, with a quick **Manage Modules** shortcut.
+- **Hooks & Spikes Tab:** Includes a **10s Burst Profile** and continuous **Live Hook Profiler** that safely wraps and times Foundry Hook callbacks (cleanly restoring every original callback when stopped), plus a timestamped log of >50ms main-thread stutters showing the likely culprit and details via Long Animation Frames (LoAF), Hook overlap, UI/Canvas activity breadcrumbs, asset decode correlation, and GC detection.
+- **World & Canvas (PF2e) Tab:** On-demand **Deep Audit** scanning world collection payloads, PF2e chat log bloat, heaviest PF2e actors (embedded item & rule-element counts), heaviest scenes (walls, lights, tokens, tiles, megapixels), WebGL renderer/texture cache, and largest loaded assets.
+- **Errors Log Tab:** Automatically attributes uncaught exceptions, Foundry Hook crashes, and unhandled Promise rejections to the offending module via stack trace.
+- **Compact Mini HUD & Report Export:** Float a tiny draggable live pill (`FPS | ms | Heap MB | Spikes | Errors`) over the canvas, or copy a Markdown diagnostic report to clipboard with one click.
+
+---
+
+## 10. Module Settings & Configuration
 
 Access module settings via **Game Settings &rarr; Configure Settings &rarr; PF2e Awesome GM Utilities**:
 
@@ -255,10 +270,11 @@ Access module settings via **Game Settings &rarr; Configure Settings &rarr; PF2e
 | **Scene Link Default Action** | Choice | `Prompt Dialog` | Choose default behavior when clicking map pins: `Prompt Dialog`, `View Scene (GM Only)`, or `Activate Scene`. |
 | **Default Map Pin Icon** | Text | Castle icon | Default icon path applied when dragging a scene onto the map to create a pin. |
 | **Single-Click Map Pin Transition** | Boolean | `false` | When enabled, single-clicking a scene map pin transitions immediately rather than requiring a double-click. |
+| **Enable Performance Checker & Module Profiler (GM Only)** | Boolean | `false` | World-scoped GM-only toggle to enable the Performance Checker button in the GM Utilities menu and live telemetry. Zero overhead when off; never runs on player clients. |
 
 ---
 
-## 10. Macro & Developer JavaScript API
+## 11. Macro & Developer JavaScript API
 
 All utilities expose comprehensive JavaScript methods under `game.pf2eAwesomeGmUtilities` for macro creation, stream deck integrations, and custom module hooks.
 

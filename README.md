@@ -52,6 +52,13 @@ A publishing and styling toolkit integrated into Foundry's ProseMirror journal e
 - **Skill Check Tables:** Generate formatted DC tables with all four degrees of success (Critical Success, Success, Failure, Critical Failure) or compact inline check tags.
 - **Drag-and-Drop Publishing:** Drag formatted cards or templates directly from the utility window into open journal pages at your cursor position.
 
+### 7. Performance Checker & Module Profiler (GM Only, Opt-In)
+An opt-in, strictly GM-only diagnostic suite (disabled by default for zero overhead, and never active on player clients) to help GMs pinpoint slow, memory-heavy, or error-prone modules in Foundry v14 + PF2e.
+- **Live Telemetry & Mini HUD:** Tracks real-time canvas FPS, frame times, 60-second FPS timeline, JS heap memory with leak trend monitoring, and main-thread freezes (>50ms) with LoAF script/layout/paint/hook/GC root-cause attribution, plus an optional compact floating HUD pill.
+- **Module Impact Leaderboard:** Ranks all active modules by runtime errors, hook CPU timings, LoAF freeze spikes, browser asset download weight/load time, and stored Settings/Document Flags size, with a quick button to open Manage Modules.
+- **Live & 10-Second Burst Hook Profiler:** Time Foundry hook callbacks on demand to catch exactly which hook and module spikes during token movement, sheet opens, or combat.
+- **PF2e World & Canvas Deep Audit:** On-demand audit detecting PF2e chat log bloat, heavy scenes (walls/lights/tokens/dimensions), bloated PF2e actors (high item/rule element counts), WebGL texture cache, and oversized assets.
+
 ---
 
 ## Quick Access & Keybindings
@@ -65,6 +72,7 @@ A publishing and styling toolkit integrated into Foundry's ProseMirror journal e
 | Party Placement Tool | GM Utilities Layer | None | Macro / Control Button |
 | Place Scene Link Pin | GM Utilities Layer | Canvas Drag & Drop | Macro / Control Button |
 | AP Journal Editor & Styler | GM Utilities Layer | ProseMirror Editor Toolbar | Feather Icon on Toolbar |
+| Performance Checker (GM Only, Opt-In) | GM Utilities Layer (GM only, when enabled) | None (Enable in Module Settings) | Shift + P (GM only, when enabled) |
 
 ---
 

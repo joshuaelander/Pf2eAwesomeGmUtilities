@@ -1,0 +1,40 @@
+<div class="pf2e-perf-hud-pill">
+  <div class="perf-hud-drag" title="Drag to reposition Performance HUD">
+    <span class="perf-hud-led {{overallClass}}"></span>
+    <i class="fa-solid fa-grip-vertical perf-hud-grip"></i>
+  </div>
+
+  <div class="perf-hud-metrics" data-hud-action="open-dashboard" title="Click to open full Performance Checker &amp; Module Profiler">
+    <span class="perf-hud-item">
+      <strong data-hud="fps">{{live.fps}} FPS</strong>
+      <small data-hud="frame">{{live.avgFrameMs}}ms</small>
+    </span>
+
+    {{#if live.memory.available}}
+      <span class="perf-hud-sep"></span>
+      <span class="perf-hud-item" title="JS Heap Memory">
+        <i class="fa-solid fa-memory"></i>
+        <strong data-hud="mem">{{live.memory.usedMB}} MB</strong>
+      </span>
+    {{/if}}
+
+    <span class="perf-hud-sep"></span>
+    <span class="perf-hud-item" title="Main-Thread Freezes (&gt;50ms)">
+      <i class="fa-solid fa-bolt"></i>
+      <strong data-hud="spikes">{{live.longTaskCount}}</strong>
+    </span>
+
+    <span class="perf-hud-item perf-hud-err-chip {{#if live.totalErrors}}has-errors{{/if}}" title="Captured Module Errors">
+      <i class="fa-solid fa-bug"></i>
+      <strong data-hud="errors">{{live.totalErrors}}</strong>
+    </span>
+
+    <span class="perf-hud-rec-chip" style="display: {{#if live.hookProfiling}}inline-flex{{else}}none{{/if}};" title="Hook Profiler Active">
+      <i class="fa-solid fa-circle-dot fa-fade"></i>
+    </span>
+  </div>
+
+  <button type="button" class="perf-hud-close" data-hud-action="close-hud" title="Hide Compact Performance HUD">
+    <i class="fa-solid fa-xmark"></i>
+  </button>
+</div>

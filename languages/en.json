@@ -316,6 +316,10 @@
       "DragToJournal": "Drag to Journal",
       "FooterHint": "Drag any item/card into your journal or click Insert."
     },
+    "PerformanceMonitor": {
+      "Title": "Performance Checker & Module Profiler",
+      "MenuTooltip": "Performance Checker & Module Profiler (Show/Hide Statistics)"
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -360,6 +364,10 @@
       "SceneLinkSingleClick": {
         "Name": "Single-Click Map Pin Transition",
         "Hint": "When enabled, single-clicking a scene map pin transitions immediately rather than requiring a double-click."
+      },
+      "EnablePerformanceMonitor": {
+        "Name": "Enable Performance Checker & Module Profiler (GM Only)",
+        "Hint": "GM-only diagnostic tool. Enables the Performance Checker button in the GM Utilities menu to monitor FPS, JS heap memory, freezes (with LoAF script cause attribution), module errors, hook CPU timings, and PF2e world bloat. Default OFF (zero overhead when disabled; never runs on player clients)."
       }
     }
   }

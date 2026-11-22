@@ -34,11 +34,14 @@ import { ResourceWidgetApp } from "./resource-widget-app.js";
 import { PartyPlacement } from "./party-placement.js";
 import { SceneLinks } from "./scene-links.js";
 import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
+import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./performance-monitor.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
 let resourceTrackerInstance = null;
 let resourceWidgetInstance = null;
+let performanceMonitorInstance = null;
+let performanceHudInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -66,6 +69,27 @@ function getResourceWidget() {
     resourceWidgetInstance = new ResourceWidgetApp();
   }
   return resourceWidgetInstance;
+}
+
+function getPerformanceHud() {
+  if (!performanceHudInstance) {
+    performanceHudInstance = new PerformanceHudApp({
+      onOpenDashboard: () => {
+        const app = getPerformanceMonitor();
+        app.render({ force: true });
+      }
+    });
+  }
+  return performanceHudInstance;
+}
+
+function getPerformanceMonitor() {
+  if (!performanceMonitorInstance) {
+    performanceMonitorInstance = new PerformanceMonitorApp({
+      onToggleHud: () => getPerformanceHud().toggle()
+    });
+  }
+  return performanceMonitorInstance;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -233,16 +257,6 @@ function registerSettings() {
     default: 1.0
   });
 
-  // Auto-sync macros
-  game.settings.register(MODULE_ID, "autoSyncMacros", {
-    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadHotbarMacro.Name"),
-    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadHotbarMacro.Hint"),
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true
-  });
-
   // Scene Link Default Action
   game.settings.register(MODULE_ID, "sceneLinkDefaultAction", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkDefaultAction.Name"),
@@ -277,6 +291,113 @@ function registerSettings() {
     type: Boolean,
     default: false
   });
+
+  // Auto-sync macros
+  game.settings.register(MODULE_ID, "autoSyncMacros", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadHotbarMacro.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadHotbarMacro.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
+  // Performance Checker & Module Profiler Master Switch (GM-Only World Setting, Default OFF)
+  game.settings.register(MODULE_ID, "enablePerformanceMonitor", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.EnablePerformanceMonitor.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.EnablePerformanceMonitor.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: (enabled) => {
+      if (!game.user?.isGM) return;
+      if (enabled) {
+        performanceMonitor.activate();
+        ui.notifications?.info("Performance Checker enabled (GM Only)! Open it from the GM Utilities menu (or press Shift+P). Reload once (F5) for full startup hook attribution.");
+      } else {
+        performanceMonitor.deactivate();
+        if (performanceMonitorInstance?.rendered) performanceMonitorInstance.close();
+        if (performanceHudInstance?.rendered) performanceHudInstance.close();
+        ui.notifications?.info("Performance Checker disabled (all background telemetry stopped).");
+      }
+      ui.controls?.render?.({ reset: true });
+    }
+  });
+
+  // Compact Performance HUD Position (Client)
+  game.settings.register(MODULE_ID, "perfHudPosition", {
+    name: "Performance HUD Position",
+    scope: "client",
+    config: false,
+    type: Object,
+    default: { left: 110, top: 14 }
+  });
+}
+
+/**
+ * Injects clean plain-text section headers (no icons) into the module's Configure Settings tab.
+ * Works safely with both ApplicationV2 (HTMLElement) and legacy jQuery renderSettingsConfig hooks.
+ * @param {HTMLElement|jQuery} html
+ */
+function injectSettingsSectionHeaders(html) {
+  const root = html instanceof HTMLElement
+    ? html
+    : (html?.[0] instanceof HTMLElement ? html[0] : null);
+  if (!root) return;
+
+  const sections = [
+    {
+      id: "pf2e-gm-hdr-soundpad",
+      title: "Music & SFX Sound Pad",
+      keys: ["autoStopOtherMusic", "defaultFadeDuration", "soundPadDefaultVolume", "soundPadUseTrackVolume", "soundPadOpacity"]
+    },
+    {
+      id: "pf2e-gm-hdr-sceneswitcher",
+      title: "Session Scene Switcher",
+      keys: ["sceneSwitcherOpacity"]
+    },
+    {
+      id: "pf2e-gm-hdr-resourcetracker",
+      title: "Resource & Subsystem Tracker",
+      keys: ["resourceTrackerOpacity"]
+    },
+    {
+      id: "pf2e-gm-hdr-scenelinks",
+      title: "Scene Links & Map Pins",
+      keys: ["sceneLinkDefaultAction", "sceneLinkDefaultIcon", "sceneLinkSingleClick"]
+    },
+    {
+      id: "pf2e-gm-hdr-macros",
+      title: "Macros & General",
+      keys: ["autoSyncMacros"]
+    },
+    {
+      id: "pf2e-gm-hdr-performance",
+      title: "Performance Checker (GM Only)",
+      keys: ["enablePerformanceMonitor"]
+    }
+  ];
+
+  for (const sec of sections) {
+    if (root.querySelector(`#${sec.id}`)) continue;
+    let firstGroup = null;
+    for (const key of sec.keys) {
+      const target = root.querySelector(`[name="${MODULE_ID}.${key}"]`)
+        || root.querySelector(`[data-setting-id="${MODULE_ID}.${key}"]`);
+      if (target) {
+        firstGroup = target.closest(".form-group") || target;
+        if (firstGroup) break;
+      }
+    }
+    if (!firstGroup) continue;
+
+    const header = document.createElement("h4");
+    header.id = sec.id;
+    header.className = "pf2e-gm-settings-header";
+    header.textContent = sec.title;
+    firstGroup.before(header);
+  }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -348,6 +469,21 @@ function registerKeybindings() {
       return true;
     },
     restricted: false,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
+
+  game.keybindings.register(MODULE_ID, "togglePerformanceMonitor", {
+    name: "Toggle Performance Checker (GM Only)",
+    hint: "Open or close the GM Performance Checker & Module Profiler (requires the Performance Checker setting to be enabled).",
+    editable: [
+      { key: "KeyP", modifiers: ["Shift"] }
+    ],
+    onDown: () => {
+      if (!game.user?.isGM || !performanceMonitor.isEnabled()) return false;
+      getPerformanceMonitor().toggle();
+      return true;
+    },
+    restricted: true,
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
 }
@@ -507,6 +643,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openPerformanceMonitorTool = {
+    name: "pf2e-performance-monitor",
+    title: "Performance Checker & Profiler",
+    icon: "fa-solid fa-gauge-high",
+    visible: true,
+    button: true,
+    onClick: () => {
+      getPerformanceMonitor().toggle();
+    }
+  };
+
   // GM-only tools added to Foundry built-in control groups
   if (isGM) {
     if (scenesControl) {
@@ -515,9 +662,10 @@ function registerSceneControls(controls) {
     }
   }
 
-  // Primary Utilities control group
+  // Primary Utilities control group (Performance Checker is strictly GM-only)
+  const perfEnabled = isGM && performanceMonitor.isEnabled();
   const activeTools = isGM
-    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, panicToolData]
+    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
     : [openResourceWidgetTool];
 
   const activeToolsObj = {};
@@ -793,6 +941,7 @@ Hooks.once("init", () => {
     document.body.classList.toggle("is-player", !game.user?.isGM);
   }
   registerSettings();
+  performanceMonitor.onInit();
   registerKeybindings();
   SceneLinks._patchNotePlaceables();
   patchTokenHover();
@@ -815,6 +964,10 @@ Hooks.on("renderPlaylistDirectory", (app, html) => {
 
 Hooks.on("renderSceneDirectory", (app, html) => {
   registerSceneSidebarHeaderButton(app, html);
+});
+
+Hooks.on("renderSettingsConfig", (app, html) => {
+  injectSettingsSectionHeaders(html);
 });
 
 Hooks.once("ready", async () => {
@@ -896,6 +1049,34 @@ Hooks.once("ready", async () => {
   game.pf2eAwesomeGmUtilities.journalEditor = {
     open: (options) => JournalTemplateDialog.open(options)
   };
+
+  // Performance Checker & Module Profiler API (Strictly GM-Only; zero execution for players)
+  performanceMonitor.onReady();
+  if (game.user.isGM) {
+    game.pf2eAwesomeGmUtilities.performanceMonitor = {
+      engine: performanceMonitor,
+      get app() { return getPerformanceMonitor(); },
+      get hud() { return getPerformanceHud(); },
+      toggle: () => {
+        if (!game.user?.isGM) return;
+        if (!performanceMonitor.isEnabled()) {
+          ui.notifications?.warn("Enable 'Performance Checker & Module Profiler' in Module Settings first.");
+          return;
+        }
+        getPerformanceMonitor().toggle();
+      },
+      toggleHud: () => {
+        if (!game.user?.isGM) return;
+        if (!performanceMonitor.isEnabled()) {
+          ui.notifications?.warn("Enable 'Performance Checker & Module Profiler' in Module Settings first.");
+          return;
+        }
+        getPerformanceHud().toggle();
+      },
+      runAudit: () => (game.user?.isGM ? performanceMonitor.runDeepAudit() : null),
+      exportReport: () => (game.user?.isGM ? performanceMonitor.generateReportText() : "")
+    };
+  }
 
   // Helper function to re-sync or recreate macros on demand
   game.pf2eAwesomeGmUtilities.syncMacros = async () => await syncMacros();
