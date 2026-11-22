@@ -320,6 +320,10 @@
       "Title": "Performance Checker & Module Profiler",
       "MenuTooltip": "Performance Checker & Module Profiler (Show/Hide Statistics)"
     },
+    "CharacterChecker": {
+      "Title": "PF2e Character Completeness Checker",
+      "MenuTooltip": "Inspect party characters for missing feats, skills, boosts, and auto-create spellcasting entries"
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -368,6 +372,14 @@
       "EnablePerformanceMonitor": {
         "Name": "Enable Performance Checker & Module Profiler (GM Only)",
         "Hint": "GM-only diagnostic tool. Enables the Performance Checker button in the GM Utilities menu to monitor FPS, JS heap memory, freezes (with LoAF script cause attribution), module errors, hook CPU timings, and PF2e world bloat. Default OFF (zero overhead when disabled; never runs on player clients)."
+      },
+      "ShowCharacterSheetGuides": {
+        "Name": "Show Character Sheet Completeness Guides",
+        "Hint": "Displays compact PF2e build completeness guides on Character Sheets (Skills & Skill Increases counts, expected Spellcasting slots & 1-click entry creator, and empty Feat slots) for GMs and character owners. Works with Dual Class and Free Archetype."
+      },
+      "AllowPlayerAutoSpellcasting": {
+        "Name": "Allow Players to Auto-Add & Sync Spellcasting Entries",
+        "Hint": "Allows players who own a character sheet to click 'Add Entry' and 'Sync Slots' on their Spellcasting tab and in the Character Completeness Checker. When disabled, only the GM sees the auto-create buttons."
       }
     }
   }

@@ -57,7 +57,13 @@ An opt-in, strictly GM-only diagnostic suite (disabled by default for zero overh
 - **Live Telemetry & Mini HUD:** Tracks real-time canvas FPS, frame times, 60-second FPS timeline, JS heap memory with leak trend monitoring, and main-thread freezes (>50ms) with LoAF script/layout/paint/hook/GC root-cause attribution, plus an optional compact floating HUD pill.
 - **Module Impact Leaderboard:** Ranks all active modules by runtime errors, hook CPU timings, LoAF freeze spikes, browser asset download weight/load time, and stored Settings/Document Flags size, with a quick button to open Manage Modules.
 - **Live & 10-Second Burst Hook Profiler:** Time Foundry hook callbacks on demand to catch exactly which hook and module spikes during token movement, sheet opens, or combat.
-- **PF2e World & Canvas Deep Audit:** On-demand audit detecting PF2e chat log bloat, heavy scenes (walls/lights/tokens/dimensions), bloated PF2e actors (high item/rule element counts), WebGL texture cache, and oversized assets.
+- **PF2e World & Canvas Deep Audit:** Non-blocking background audit detecting PF2e chat log bloat, heavy scenes (walls/lights/tokens/dimensions), bloated PF2e actors (high item/rule element counts), WebGL texture cache, and oversized assets.
+
+### 8. PF2e Character Completeness Checker
+A build auditor and character sheet assistant that helps GMs and players verify every part of a PF2e character—with native support for Dual Class (PF2e Awesome Variant Rules), Free Archetype, Ancestry Paragon, and Gradual Ability Boosts.
+- **Party & Character Audit Dashboard:** Review every PC in the party for missing Ancestry, Heritage, Background, Class/Dual Class, Deity, Languages, Attribute Boosts per level tier, empty Feat slots, missing Trained Skills/Skill Increases, and missing Spellcasting Entries—then whisper the checklist directly to the owning player with one click.
+- **Inline Character Sheet Guides:** Displays native parchment guides directly on the Character, Skills, Spellcasting, and Feats tabs showing expected Trained Skills (Class/Dual Class + Background + Overlap + INT), Skill Increases (including Rogue/Investigator fast progression), Languages, and empty Feat slots.
+- **One-Click Spellcasting Entry Creator & Slot Sync:** Detects spellcasting feats from Primary Class, Dual Class, and Multiclass/Free Archetype dedications (Basic, Expert, Master, Breadth, Divine Font, Arcane School, Flexible Spellcaster, Animist Prepared + Apparition, and Impossible Magic 2-slot Magus, Summoner, and Necromancer progressions), creates properly configured PF2e spellcasting entries with exact level-scaled slots, and syncs slot counts on level-up without erasing prepared spells.
 
 ---
 
@@ -72,6 +78,7 @@ An opt-in, strictly GM-only diagnostic suite (disabled by default for zero overh
 | Party Placement Tool | GM Utilities Layer | None | Macro / Control Button |
 | Place Scene Link Pin | GM Utilities Layer | Canvas Drag & Drop | Macro / Control Button |
 | AP Journal Editor & Styler | GM Utilities Layer | ProseMirror Editor Toolbar | Feather Icon on Toolbar |
+| PF2e Character Completeness Checker | GM Utilities Layer | Character Sheet Guides & Checklist Button | Macro / Control Button |
 | Performance Checker (GM Only, Opt-In) | GM Utilities Layer (GM only, when enabled) | None (Enable in Module Settings) | Shift + P (GM only, when enabled) |
 
 ---

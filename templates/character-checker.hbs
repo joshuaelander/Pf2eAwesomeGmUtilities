@@ -1,0 +1,322 @@
+<div class="pf2e-cc-container">
+
+  <!-- Left Party / Character Roster Sidebar -->
+  <aside class="pf2e-cc-sidebar">
+    <div class="pf2e-cc-sidebar-head">
+      <h3><i class="fa-solid fa-users"></i> Characters</h3>
+      <button type="button" class="pf2e-cc-btn pf2e-cc-btn-icon" data-cc-action="refresh" title="Refresh character checks">
+        <i class="fa-solid fa-arrows-rotate"></i>
+      </button>
+    </div>
+
+    {{#if isGM}}
+      <label class="pf2e-cc-toggle-all">
+        <input type="checkbox" id="pf2e-cc-show-all" {{#if showAllWorldPCs}}checked{{/if}} />
+        <span>Show All World PCs</span>
+      </label>
+    {{/if}}
+
+    <div class="pf2e-cc-roster-list">
+      {{#each roster}}
+        <button type="button" class="pf2e-cc-roster-item {{#if this.isSelected}}is-selected{{/if}}" data-cc-action="select-actor" data-actor-id="{{this.id}}">
+          <img src="{{this.img}}" alt="" class="pf2e-cc-roster-img" />
+          <div class="pf2e-cc-roster-info">
+            <div class="pf2e-cc-roster-name">{{this.name}}</div>
+            <div class="pf2e-cc-roster-sub">Lv {{this.level}} · {{this.classDisplay}}</div>
+          </div>
+          <span class="pf2e-cc-status-pill status-{{this.status}}">{{this.statusLabel}}</span>
+        </button>
+      {{else}}
+        <div class="pf2e-cc-empty-sidebar">
+          <i class="fa-solid fa-user-slash"></i>
+          <p>No character actors found.</p>
+        </div>
+      {{/each}}
+    </div>
+  </aside>
+
+  <!-- Right Detailed Audit Panel -->
+  <main class="pf2e-cc-main">
+    {{#if hasReport}}
+
+      <!-- Character Hero Header -->
+      <header class="pf2e-cc-hero">
+        <div class="pf2e-cc-hero-left">
+          <img src="{{report.actorImg}}" alt="" class="pf2e-cc-hero-img" />
+          <div class="pf2e-cc-hero-meta">
+            <div class="pf2e-cc-hero-title-row">
+              <h2>{{report.actorName}}</h2>
+              <span class="pf2e-cc-level-badge">Level {{report.level}}</span>
+              <span class="pf2e-cc-pct-badge status-{{report.status}}">{{report.completenessPct}}% Complete</span>
+            </div>
+            <div class="pf2e-cc-hero-sub">
+              <span>{{report.classDisplay}}</span>
+              <span>· INT {{report.skills.intModSigned}}</span>
+              {{#if report.hasVariantBadges}}
+                {{#each report.activeVariantBadges}}
+                  <span class="pf2e-cc-variant-chip">{{this}}</span>
+                {{/each}}
+              {{/if}}
+            </div>
+          </div>
+        </div>
+
+        <div class="pf2e-cc-hero-actions">
+          <button type="button" class="pf2e-cc-btn" data-cc-action="open-sheet" title="Open Character Sheet">
+            <i class="fa-solid fa-id-card"></i> Sheet
+          </button>
+          {{#if isGM}}
+            <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold" data-cc-action="whisper-player" title="Whisper missing items checklist directly to the owning player">
+              <i class="fa-solid fa-paper-plane"></i> Whisper Player
+            </button>
+          {{/if}}
+          <button type="button" class="pf2e-cc-btn" data-cc-action="post-chat" title="Post completeness checklist to Chat">
+            <i class="fa-solid fa-comment-dots"></i> Chat
+          </button>
+        </div>
+      </header>
+
+      <!-- Scrollable Diagnostic Body -->
+      <div class="pf2e-cc-scroll">
+
+        <!-- 1. Missing Items / Action Summary -->
+        <section class="pf2e-cc-panel">
+          <div class="pf2e-cc-panel-head">
+            <h4><i class="fa-solid fa-list-check"></i> Missing Items &amp; Build Checklist</h4>
+            <span class="pf2e-cc-hint">
+              {{#if report.actionableMissingCount}}
+                {{report.actionableMissingCount}} actionable item(s) to finish
+              {{else}}
+                No missing build requirements detected
+              {{/if}}
+            </span>
+          </div>
+          {{#if report.hasIssues}}
+            <div class="pf2e-cc-issues-list">
+              {{#each report.allIssues}}
+                <div class="pf2e-cc-issue-row sev-{{this.severity}}">
+                  <span class="pf2e-cc-issue-cat">{{this.category}}</span>
+                  <div class="pf2e-cc-issue-body">
+                    <strong>{{this.title}}</strong>
+                    <span>{{this.detail}}</span>
+                  </div>
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <div class="pf2e-cc-all-clear">
+              <i class="fa-solid fa-circle-check"></i>
+              <span><strong>All Clear!</strong> {{report.actorName}} has all core build choices, boosts, skills, feat slots, and spellcasting entries accounted for at Level {{report.level}}.</span>
+            </div>
+          {{/if}}
+        </section>
+
+        <!-- 2. Spellcasting Entries & Expected Slots (with 1-Click Auto-Create / Sync) -->
+        <section class="pf2e-cc-panel">
+          <div class="pf2e-cc-panel-head">
+            <h4><i class="fa-solid fa-hat-wizard"></i> Spellcasting Entries &amp; Expected Spells</h4>
+            <div class="pf2e-cc-panel-actions">
+              {{#if report.hasActionableSpells}}
+                <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-sm" data-cc-action="sync-all-spells">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i> Create / Sync All Entries
+                </button>
+              {{/if}}
+            </div>
+          </div>
+
+          {{#if report.spellcasting.hasExpectedSources}}
+            <div class="pf2e-cc-spells-grid">
+              {{#each report.spellcasting.sources}}
+                <div class="pf2e-cc-spell-card status-{{this.status}}">
+                  <div class="pf2e-cc-spell-top">
+                    <div class="pf2e-cc-spell-title-wrap">
+                      <strong>{{this.title}}</strong>
+                      <span class="pf2e-cc-badge-source">{{this.sourceBadge}}</span>
+                      <span class="pf2e-cc-badge-meta">{{this.castingTypeLabel}} · {{this.traditionLabel}} · {{this.abilityLabel}}</span>
+                    </div>
+                    <span class="pf2e-cc-status-pill status-{{this.status}}">{{this.statusLabel}}</span>
+                  </div>
+
+                  <div class="pf2e-cc-spell-stats">
+                    {{#if this.hasCantrips}}
+                      <span><strong>Cantrips:</strong> {{#if this.entryExists}}{{this.currentCantrips}} / {{/if}}{{this.cantrips}}</span>
+                    {{/if}}
+                    <span><strong>Expected Slots (Lv {{../report.level}}):</strong> {{this.slotsSummary}}</span>
+                    {{#if this.entryExists}}
+                      <span><strong>Current Entry:</strong> {{this.matchedEntryName}} ({{this.currentLeveledSpells}} leveled spell(s))</span>
+                    {{/if}}
+                  </div>
+
+                  <div class="pf2e-cc-spell-note">{{this.expectedSpellsNote}}</div>
+
+                  {{#if this.isOutdated}}
+                    <div class="pf2e-cc-spell-diff">
+                      <i class="fa-solid fa-triangle-exclamation"></i> Slot differences: {{this.slotDiffText}}
+                    </div>
+                  {{/if}}
+
+                  {{#if ../report.canModifySpells}}
+                    {{#if this.isMissing}}
+                      <div class="pf2e-cc-spell-actions">
+                        {{#if this.traditionMissing}}
+                          <label class="pf2e-cc-inline-field">
+                            Tradition:
+                            <select class="pf2e-cc-trad-select">
+                              {{#each this.traditionOptions}}
+                                <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                              {{/each}}
+                            </select>
+                          </label>
+                        {{/if}}
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-sm" data-cc-action="create-spell-entry" data-source-key="{{this.key}}">
+                          <i class="fa-solid fa-plus"></i> Add Spellcasting Entry
+                        </button>
+                      </div>
+                    {{/if}}
+
+                    {{#if this.isOutdated}}
+                      <div class="pf2e-cc-spell-actions">
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-sm" data-cc-action="sync-spell-entry" data-source-key="{{this.key}}" data-entry-id="{{this.entryId}}">
+                          <i class="fa-solid fa-arrows-rotate"></i> Sync Slots to Level {{../report.level}}
+                        </button>
+                      </div>
+                    {{/if}}
+                  {{/if}}
+                </div>
+              {{/each}}
+            </div>
+          {{else}}
+            <div class="pf2e-cc-muted-note">
+              No class or archetype spellcasting feats detected on {{report.actorName}}.
+              {{#if report.spellcasting.focusCount}}
+                ({{report.spellcasting.focusCount}} Focus spellcasting entry found.)
+              {{/if}}
+            </div>
+          {{/if}}
+        </section>
+
+        <!-- 3. Skills & Skill Increases Breakdown -->
+        <section class="pf2e-cc-panel">
+          <div class="pf2e-cc-panel-head">
+            <h4><i class="fa-solid fa-graduation-cap"></i> Skills &amp; Skill Increases</h4>
+            <span class="pf2e-cc-hint">Based on Class{{#if report.isDualClass}} + Dual Class{{/if}}, Background &amp; INT ({{report.skills.intModSigned}})</span>
+          </div>
+
+          <div class="pf2e-cc-two-col">
+            <div class="pf2e-cc-stat-box {{#if report.skills.isTrainedMissing}}is-warning{{else}}is-good{{/if}}">
+              <div class="pf2e-cc-stat-head">
+                <span>Trained Skills</span>
+                <strong>{{report.skills.currentTrained}} / {{report.skills.expectedTrained}}</strong>
+              </div>
+              <div class="pf2e-cc-stat-detail">{{report.skills.formulaText}}</div>
+              <div class="pf2e-cc-stat-sub">
+                Core Trained: {{report.skills.trainedCoreCount}}/16 · Lore Items: {{report.skills.loreCount}} ({{report.skills.bgLoreCount}} Background Lore)
+              </div>
+            </div>
+
+            <div class="pf2e-cc-stat-box {{#if report.skills.isIncreasesMissing}}is-warning{{else}}is-good{{/if}}">
+              <div class="pf2e-cc-stat-head">
+                <span>Skill Increases (E / M / L)</span>
+                <strong>{{report.skills.spentIncreases}} / {{report.skills.expectedIncreases}}</strong>
+              </div>
+              <div class="pf2e-cc-stat-detail">
+                Unlocked at level(s): <strong>{{report.skills.increaseLevelsText}}</strong>
+                {{#if report.skills.isFastProgression}}(Fast Progression){{/if}}
+              </div>
+              <div class="pf2e-cc-stat-sub">
+                Current Ranks: T:{{report.skills.rankCounts.trained}} · E:{{report.skills.rankCounts.expert}} · M:{{report.skills.rankCounts.master}} · L:{{report.skills.rankCounts.legendary}}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Feats & Feat Slots + Core Identity / Boosts -->
+        <div class="pf2e-cc-two-col">
+          <!-- Feat Groups -->
+          <section class="pf2e-cc-panel">
+            <div class="pf2e-cc-panel-head">
+              <h4><i class="fa-solid fa-star"></i> Feat Slots ({{report.feats.filledSlots}} / {{report.feats.totalSlots}})</h4>
+              {{#if report.canSyncDualClass}}
+                <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-sm" data-cc-action="sync-dual-class">
+                  <i class="fa-solid fa-arrows-rotate"></i> Sync Dual Features
+                </button>
+              {{/if}}
+            </div>
+            <div class="pf2e-cc-kv-list">
+              {{#each report.feats.groups}}
+                <div class="pf2e-cc-kv-row {{#if this.complete}}is-ok{{else}}is-warn{{/if}}">
+                  <span class="pf2e-cc-kv-label">{{this.label}}</span>
+                  <span class="pf2e-cc-kv-val">
+                    <strong>{{this.filled}} / {{this.total}}</strong>
+                    {{#unless this.complete}}
+                      <em class="pf2e-cc-kv-miss">(Empty: Lv {{this.emptyLevelsText}})</em>
+                    {{/unless}}
+                  </span>
+                </div>
+              {{else}}
+                <div class="pf2e-cc-muted-note">No slotted feat groups found.</div>
+              {{/each}}
+            </div>
+          </section>
+
+          <!-- Core Identity & Attribute Boosts -->
+          <section class="pf2e-cc-panel">
+            <div class="pf2e-cc-panel-head">
+              <h4><i class="fa-solid fa-user-shield"></i> Core Build &amp; Attribute Boosts</h4>
+            </div>
+            <div class="pf2e-cc-kv-list">
+              {{#each report.coreItems}}
+                <div class="pf2e-cc-kv-row {{#if this.present}}is-ok{{else}}is-crit{{/if}}">
+                  <span class="pf2e-cc-kv-label">{{this.label}}</span>
+                  <span class="pf2e-cc-kv-val">
+                    {{#if this.present}}{{this.value}}{{else}}<strong>Missing</strong>{{/if}}
+                  </span>
+                </div>
+              {{/each}}
+
+              <div class="pf2e-cc-kv-row {{#if report.languages.complete}}is-ok{{else}}is-warn{{/if}}">
+                <span class="pf2e-cc-kv-label">Languages</span>
+                <span class="pf2e-cc-kv-val">{{report.languages.current}} / {{report.languages.expected}}</span>
+              </div>
+
+              {{#if report.attributes.manual}}
+                <div class="pf2e-cc-kv-row is-ok">
+                  <span class="pf2e-cc-kv-label">Attribute Boosts</span>
+                  <span class="pf2e-cc-kv-val">Manual Entry Mode</span>
+                </div>
+              {{else}}
+                {{#each report.attributes.tiers}}
+                  <div class="pf2e-cc-kv-row {{#if this.complete}}is-ok{{else}}is-warn{{/if}}">
+                    <span class="pf2e-cc-kv-label">{{this.label}} Boosts</span>
+                    <span class="pf2e-cc-kv-val"><strong>{{this.selected}} / {{this.expected}}</strong></span>
+                  </div>
+                {{/each}}
+              {{/if}}
+            </div>
+          </section>
+        </div>
+
+        {{#if report.hasReadinessNotes}}
+          <section class="pf2e-cc-panel">
+            <div class="pf2e-cc-panel-head">
+              <h4><i class="fa-solid fa-shield-halved"></i> Equipment Readiness Notes</h4>
+            </div>
+            <ul class="pf2e-cc-notes-list">
+              {{#each report.readinessNotes}}
+                <li>{{this}}</li>
+              {{/each}}
+            </ul>
+          </section>
+        {{/if}}
+
+      </div>
+    {{else}}
+      <div class="pf2e-cc-empty-main">
+        <i class="fa-solid fa-clipboard-check"></i>
+        <h3>No Character Selected</h3>
+        <p>Select a player character from the sidebar to check missing feats, skills, boosts, and spellcasting entries.</p>
+      </div>
+    {{/if}}
+  </main>
+
+</div>

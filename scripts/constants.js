@@ -26,6 +26,9 @@ export const PLACE_PARTY_MACRO_ICON = "icons/svg/target.svg";
 export const PLACE_SCENE_LINK_MACRO_NAME = "Place Scene Link Pin";
 export const PLACE_SCENE_LINK_MACRO_ICON = "icons/svg/direction.svg";
 
+export const CHARACTER_CHECKER_MACRO_NAME = "PF2e Character Completeness Checker";
+export const CHARACTER_CHECKER_MACRO_ICON = "icons/svg/book.svg";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#8b1e1e";
 

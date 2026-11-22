@@ -19,6 +19,8 @@ import {
   PLACE_PARTY_MACRO_ICON,
   PLACE_SCENE_LINK_MACRO_NAME,
   PLACE_SCENE_LINK_MACRO_ICON,
+  CHARACTER_CHECKER_MACRO_NAME,
+  CHARACTER_CHECKER_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   GM_UTILITIES_MENU_ICON,
@@ -35,6 +37,8 @@ import { PartyPlacement } from "./party-placement.js";
 import { SceneLinks } from "./scene-links.js";
 import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
 import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./performance-monitor.js";
+import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character-checker-app.js";
+import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character-checker-engine.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -42,6 +46,7 @@ let resourceTrackerInstance = null;
 let resourceWidgetInstance = null;
 let performanceMonitorInstance = null;
 let performanceHudInstance = null;
+let characterCheckerInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -90,6 +95,32 @@ function getPerformanceMonitor() {
     });
   }
   return performanceMonitorInstance;
+}
+
+function getCharacterChecker() {
+  if (!characterCheckerInstance) {
+    characterCheckerInstance = new CharacterCheckerApp();
+  }
+  return characterCheckerInstance;
+}
+
+function rerenderOpenCharacterSheets() {
+  const apps = new Set();
+  if (ui?.windows) {
+    for (const app of Object.values(ui.windows)) apps.add(app);
+  }
+  if (foundry?.applications?.instances) {
+    for (const app of foundry.applications.instances.values()) apps.add(app);
+  }
+  for (const app of apps) {
+    const appActor = app?.actor ?? app?.document;
+    if (!appActor || appActor.type !== "character") continue;
+    try {
+      app.render({ force: false });
+    } catch {
+      try { app.render(); } catch { /* ignore */ }
+    }
+  }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -333,6 +364,35 @@ function registerSettings() {
     type: Object,
     default: { left: 110, top: 14 }
   });
+
+  // Character Completeness Checker: Inline Character Sheet Guides
+  game.settings.register(MODULE_ID, "showCharacterSheetGuides", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.ShowCharacterSheetGuides.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.ShowCharacterSheetGuides.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => {
+      rerenderOpenCharacterSheets();
+    }
+  });
+
+  // Character Completeness Checker: Allow Players to Auto-Add & Sync Spellcasting Entries
+  game.settings.register(MODULE_ID, "allowPlayerAutoSpellcasting", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.AllowPlayerAutoSpellcasting.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.AllowPlayerAutoSpellcasting.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => {
+      rerenderOpenCharacterSheets();
+      if (characterCheckerInstance?.rendered) {
+        characterCheckerInstance.render({ force: false });
+      }
+    }
+  });
 }
 
 /**
@@ -376,6 +436,11 @@ function injectSettingsSectionHeaders(html) {
       id: "pf2e-gm-hdr-performance",
       title: "Performance Checker (GM Only)",
       keys: ["enablePerformanceMonitor"]
+    },
+    {
+      id: "pf2e-gm-hdr-characterchecker",
+      title: "Character Completeness Checker",
+      keys: ["showCharacterSheetGuides", "allowPlayerAutoSpellcasting"]
     }
   ];
 
@@ -654,6 +719,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openCharacterCheckerTool = {
+    name: "pf2e-character-checker",
+    title: "PF2e Character Completeness Checker",
+    icon: "fa-solid fa-clipboard-check",
+    visible: true,
+    button: true,
+    onClick: () => {
+      getCharacterChecker().toggle();
+    }
+  };
+
   // GM-only tools added to Foundry built-in control groups
   if (isGM) {
     if (scenesControl) {
@@ -665,7 +741,7 @@ function registerSceneControls(controls) {
   // Primary Utilities control group (Performance Checker is strictly GM-only)
   const perfEnabled = isGM && performanceMonitor.isEnabled();
   const activeTools = isGM
-    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
+    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
     : [openResourceWidgetTool];
 
   const activeToolsObj = {};
@@ -856,6 +932,11 @@ const DESIRED_MACROS = [
     name: PLACE_SCENE_LINK_MACRO_NAME,
     icon: PLACE_SCENE_LINK_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.placeSceneLink();`
+  },
+  {
+    name: CHARACTER_CHECKER_MACRO_NAME,
+    icon: CHARACTER_CHECKER_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.characterChecker.toggle();`
   }
 ];
 
@@ -1048,6 +1129,16 @@ Hooks.once("ready", async () => {
   // Advanced Journal Editor API
   game.pf2eAwesomeGmUtilities.journalEditor = {
     open: (options) => JournalTemplateDialog.open(options)
+  };
+
+  // PF2e Character Completeness Checker API & Character Sheet Integration
+  registerCharacterSheetCheckerIntegration((actor) => getCharacterChecker().openForActor(actor));
+  game.pf2eAwesomeGmUtilities.characterChecker = {
+    get app() { return getCharacterChecker(); },
+    toggle: () => getCharacterChecker().toggle(),
+    open: (actorOrId) => getCharacterChecker().openForActor(actorOrId),
+    analyze: (actor) => analyzeCharacter(actor),
+    syncSpellcasting: (actor) => createOrSyncAllSpellcastingEntries(actor)
   };
 
   // Performance Checker & Module Profiler API (Strictly GM-Only; zero execution for players)
