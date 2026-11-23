@@ -434,6 +434,9 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 /* 2. CHARACTER SHEET INLINE GUIDES (PF2e Parchment Aesthetic)               */
 /* ------------------------------------------------------------------------- */
 
+/** Tracks which character sheets currently have the Spellcasting tab guide expanded */
+const expandedSpellGuideActors = new Set();
+
 /**
  * Registers the `renderCharacterSheetPF2e` hook that injects helpful, native parchment-styled
  * completeness guides directly onto the Character, Skills, Spellcasting, and Feats tabs.
@@ -560,13 +563,24 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
     }
 
     // ---------------------------------------------------------------------
-    // C. Spellcasting Tab: Expected Spells/Slots & 1-Click Entry Creator
+    // C. Spellcasting Tab: Collapsible Expected Spells/Slots & 1-Click Creator
     // ---------------------------------------------------------------------
     const spellTab = root.querySelector('.tab[data-tab="spellcasting"]');
     if (spellTab && report.spellcasting.hasExpectedSources && !spellTab.querySelector(".pf2e-cc-sheet-spells-bar")) {
       const sp = report.spellcasting;
+      const isExpanded = expandedSpellGuideActors.has(actor.id);
       const panel = document.createElement("div");
-      panel.className = `pf2e-cc-sheet-spells-bar status-${sp.missingEntryCount > 0 ? "critical" : (sp.outdatedSlotCount > 0 ? "warning" : "complete")}`;
+      panel.className = `pf2e-cc-sheet-spells-bar status-${sp.missingEntryCount > 0 ? "critical" : (sp.outdatedSlotCount > 0 ? "warning" : "complete")} ${isExpanded ? "" : "is-collapsed"}`;
+
+      const summaryParts = [];
+      if (sp.missingEntryCount > 0) summaryParts.push(`${sp.missingEntryCount} Missing`);
+      if (sp.outdatedSlotCount > 0) summaryParts.push(`${sp.outdatedSlotCount} Outdated`);
+      const totalSources = sp.sources.length;
+      const readyCount = sp.sources.filter(s => s.status === "complete").length;
+      const statusPillCls = sp.missingEntryCount > 0 ? "is-missing" : (sp.outdatedSlotCount > 0 ? "is-warn" : "is-ok");
+      const statusSummaryText = summaryParts.length > 0
+        ? summaryParts.join(" · ")
+        : `${readyCount}/${totalSources} Ready`;
 
       const rowsHtml = sp.sources.map(src => {
         const tradLabel = TRADITION_LABELS[src.tradition] || "Select Tradition";
@@ -637,8 +651,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
 
       panel.innerHTML = `
         <div class="pf2e-cc-sheet-spells-header">
-          <span>
-            <strong>Expected Spellcasting (Level ${report.level})</strong>
+          <span class="pf2e-cc-sheet-spells-title-toggle" data-cc-toggle-spells="1" title="Click to show or hide expected spellcasting details">
+            <strong>Spellcasting Guide (Lv ${report.level})</strong>
+            <span class="pf2e-cc-sheet-pill ${statusPillCls}">${esc(statusSummaryText)}</span>
           </span>
           <div class="pf2e-cc-sheet-header-btns">
             ${isEditable && sp.needsActionCount > 0 ? `
@@ -646,6 +661,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
                 Auto-Add / Sync All
               </button>
             ` : ""}
+            <button type="button" class="pf2e-cc-sheet-btn" data-cc-toggle-spells="1" data-cc-toggle-label="1" title="Expand or collapse expected spellcasting breakdown">
+              ${isExpanded ? "Hide" : `Details (${totalSources})`}
+            </button>
             <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
               Full Check
             </button>
@@ -655,6 +673,25 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
           ${rowsHtml}
         </div>
       `;
+
+      const toggleSpellGuide = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const nowCollapsed = panel.classList.toggle("is-collapsed");
+        if (nowCollapsed) {
+          expandedSpellGuideActors.delete(actor.id);
+        } else {
+          expandedSpellGuideActors.add(actor.id);
+        }
+        const toggleBtn = panel.querySelector('[data-cc-toggle-label="1"]');
+        if (toggleBtn) {
+          toggleBtn.textContent = nowCollapsed ? `Details (${totalSources})` : "Hide";
+        }
+      };
+
+      panel.querySelectorAll('[data-cc-toggle-spells="1"]').forEach(el => {
+        el.addEventListener("click", toggleSpellGuide);
+      });
 
       panel.querySelector('[data-cc-open="1"]')?.addEventListener("click", (ev) => {
         ev.preventDefault();

@@ -870,10 +870,10 @@
   border-radius: 3px;
 }
 
-/* Spellcasting Tab Inline Panel */
+/* Spellcasting Tab Inline Panel (Collapsible) */
 .pf2e-cc-sheet-spells-bar {
-  margin: 4px 0 10px 0;
-  padding: 7px 10px;
+  margin: 4px 0 8px 0;
+  padding: 5px 9px;
   background: rgba(253, 250, 243, 0.92);
   border: 1px solid rgba(124, 26, 26, 0.38);
   border-left: 3px solid #7c1a1a;
@@ -899,10 +899,36 @@
   color: #5e0000;
 }
 
+.pf2e-cc-sheet-spells-bar.is-collapsed .pf2e-cc-sheet-spells-header {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.pf2e-cc-sheet-spells-title-toggle {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pf2e-cc-sheet-spells-title-toggle:hover strong {
+  text-decoration: underline;
+}
+
 .pf2e-cc-sheet-spells-list {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.pf2e-cc-sheet-spells-bar.is-collapsed .pf2e-cc-sheet-spells-list {
+  display: none;
 }
 
 .pf2e-cc-sheet-spell-row {
@@ -910,7 +936,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 7px;
+  padding: 4px 7px;
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 3px;
