@@ -200,9 +200,78 @@ function extractActorAncestryTraits(actor) {
   return Array.from(traits);
 }
 
+function makeDedicationDescriptor(name, slug = "") {
+  const cleanName = String(name || "").trim();
+  const shortLabel = cleanName.replace(/\s+Dedication$/i, "").trim() || cleanName;
+  return {
+    name: cleanName,
+    nameLower: cleanName.toLowerCase(),
+    shortLabel,
+    shortSlug: normalizeSlug(shortLabel),
+    slug: normalizeSlug(slug || cleanName)
+  };
+}
+
 /**
- * Extracts authoritative class feat traits for a primary or dual class FeatGroup.
+ * Computes the set of Feat UUIDs belonging to one or more Archetype Dedications
+ * using an iterative prerequisite closure (so chained follow-ups like
+ * Basic -> Expert -> Master Spellcasting or Mature -> Incredible -> Specialized Companion
+ * are all included automatically, while unrelated archetypes are excluded!).
+ *
+ * @param {Array<object>} allFeats - Lightweight feat index array
+ * @param {Array<object>} dedications - Dedication descriptors from `slot.dedications`
+ * @returns {Set<string>}
  */
+export function computeMatchingArchetypeFeatUuids(allFeats, dedications = []) {
+  const matchedUuids = new Set();
+  if (!Array.isArray(allFeats) || !Array.isArray(dedications) || dedications.length === 0) {
+    return matchedUuids;
+  }
+
+  const seedNames = new Set();
+  const shortSlugs = new Set();
+  for (const d of dedications) {
+    if (d?.nameLower && d.nameLower.length >= 5) seedNames.add(d.nameLower);
+    if (d?.shortSlug && d.shortSlug.length >= 3) shortSlugs.add(d.shortSlug);
+  }
+
+  const archetypeFeats = allFeats.filter(f =>
+    f.traits.includes("archetype")
+    && !f.traits.includes("dedication")
+    && f.category !== "classfeature"
+    && f.category !== "ancestryfeature"
+  );
+
+  const prereqMatches = (prereqs, nameSet) => {
+    for (const rawP of prereqs || []) {
+      const p = String(rawP || "").toLowerCase().trim();
+      if (!p) continue;
+      if (nameSet.has(p)) return true;
+      for (const known of nameSet) {
+        if (known.length >= 5 && p.includes(known)) return true;
+      }
+    }
+    return false;
+  };
+
+  for (let pass = 0; pass < 4; pass++) {
+    let addedAny = false;
+    for (const f of archetypeFeats) {
+      if (matchedUuids.has(f.uuid)) continue;
+      const matchesPrereq = prereqMatches(f.prerequisites, seedNames);
+      const matchesTrait = pass === 0 && f.traits.some(t => shortSlugs.has(t));
+      if (matchesPrereq || matchesTrait) {
+        matchedUuids.add(f.uuid);
+        const fLower = String(f.name || "").toLowerCase().trim();
+        if (fLower.length >= 5) seedNames.add(fLower);
+        addedAny = true;
+      }
+    }
+    if (!addedAny) break;
+  }
+
+  return matchedUuids;
+}
 function extractActorClassTraits(actor, groupId, fallbackSlug) {
   const traits = new Set();
   const ff = actor?.feats?.get?.(groupId)?.featFilter;
@@ -535,8 +604,15 @@ export function buildLevelRoadmap(actor) {
   // 3. Index live slotted feats currently on the actor (for Levels 1..currentLevel)
   const liveFeatsBySlotKey = new Map();
   const knownFeatNamesLower = new Set();
+  const knownDedicationsMap = new Map();
   for (const feat of actor.itemTypes?.feat || []) {
-    knownFeatNamesLower.add(String(feat.name || "").toLowerCase().trim());
+    const fName = String(feat.name || "").trim();
+    knownFeatNamesLower.add(fName.toLowerCase());
+    const fTraits = toStringArray(feat.system?.traits?.value).map(normalizeSlug);
+    if (fTraits.includes("dedication") || /\bdedication\b/i.test(fName)) {
+      const desc = makeDedicationDescriptor(fName, feat.slug || feat.system?.slug);
+      if (desc.nameLower) knownDedicationsMap.set(desc.nameLower, desc);
+    }
     const loc = feat.system?.location;
     if (typeof loc === "string" && loc) {
       liveFeatsBySlotKey.set(loc, feat);
@@ -582,7 +658,7 @@ export function buildLevelRoadmap(actor) {
   }
 
   // Helper to build a feat slot descriptor
-  const buildFeatSlot = (groupId, groupLabel, category, traits, slotLevel, isFuture, levelPlanData) => {
+  const buildFeatSlot = (groupId, groupLabel, category, traits, slotLevel, isFuture, levelPlanData, activeDedications = []) => {
     const slotKey = `${groupId}-${slotLevel}`;
     const liveFeat = liveFeatsBySlotKey.get(slotKey) || null;
     const plannedFeat = levelPlanData?.feats?.[slotKey] || null;
@@ -594,6 +670,7 @@ export function buildLevelRoadmap(actor) {
         groupLabel,
         category,
         traits,
+        dedications: activeDedications,
         level: slotLevel,
         isFuture: false,
         filled: Boolean(liveFeat),
@@ -619,6 +696,7 @@ export function buildLevelRoadmap(actor) {
       groupLabel,
       category,
       traits,
+      dedications: activeDedications,
       level: slotLevel,
       isFuture: true,
       filled: Boolean(plannedFeat),
@@ -743,28 +821,41 @@ export function buildLevelRoadmap(actor) {
     }
 
     // C. Feat Slots at this level
+    // Snapshot dedications already active (live on sheet or planned at earlier levels)
+    const activeDedications = Array.from(knownDedicationsMap.values());
     const featSlots = [];
 
     if (ancestryLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("ancestry", "Ancestry Feat", "ancestry", actorAncestryTraits, lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("ancestry", "Ancestry Feat", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications));
     }
     if (ancestryParagonLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("ancestryparagon", "Ancestry Paragon", "ancestry", actorAncestryTraits, lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("ancestryparagon", "Ancestry Paragon", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications));
     }
     if (classFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("class", `${primaryName} Feat`, "class", actorPrimaryClassTraits, lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("class", `${primaryName} Feat`, "class", actorPrimaryClassTraits, lvl, isFuture, lp, activeDedications));
     }
     if (dualClassFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("dualclass", `${dualName} Feat (Dual)`, "class", actorDualClassTraits, lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("dualclass", `${dualName} Feat (Dual)`, "class", actorDualClassTraits, lvl, isFuture, lp, activeDedications));
     }
     if (freeArchetypeLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("archetype", "Free Archetype", "class", ["archetype"], lvl, isFuture, lp));
+      const archBrowserTraits = activeDedications.length > 0 ? ["archetype"] : ["dedication"];
+      featSlots.push(buildFeatSlot("archetype", "Free Archetype", "class", archBrowserTraits, lvl, isFuture, lp, activeDedications));
     }
     if (skillFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("skill", "Skill Feat", "skill", [], lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("skill", "Skill Feat", "skill", [], lvl, isFuture, lp, activeDedications));
     }
     if (generalFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("general", "General Feat", "general", [], lvl, isFuture, lp));
+      featSlots.push(buildFeatSlot("general", "General Feat", "general", [], lvl, isFuture, lp, activeDedications));
+    }
+
+    // Record any newly planned Dedication feats at this level for subsequent future levels (lvl+1..20)
+    if (isFuture) {
+      for (const s of featSlots) {
+        if (s.feat?.name && (s.feat.isDedication || /\bdedication\b/i.test(s.feat.name))) {
+          const desc = makeDedicationDescriptor(s.feat.name);
+          if (desc.nameLower) knownDedicationsMap.set(desc.nameLower, desc);
+        }
+      }
     }
 
     // D. Class Features unlocked at this level
@@ -1042,8 +1133,9 @@ export async function openNativeBrowserForFeatSlot(slotSpec) {
     }
 
     // 2. Category checkboxes (ancestry, class, skill, general)
+    // Free Archetype slots filter strictly to `class` + archetype/dedication trait (matching native PF2e)
     const targetCats = slotSpec.groupId === "archetype"
-      ? ["class", "skill"]
+      ? ["class"]
       : (slotSpec.category === "general"
         ? ["general", "skill"]
         : (slotSpec.category ? [slotSpec.category] : []));
@@ -1067,7 +1159,13 @@ export async function openNativeBrowserForFeatSlot(slotSpec) {
     let selectedTraits = [];
     if (traitSelect) {
       const rawTraits = Array.isArray(slotSpec.traits) ? slotSpec.traits.filter(Boolean) : [];
-      const validOpts = Array.isArray(traitSelect.options) ? traitSelect.options : [];
+      const rawOpts = traitSelect.options;
+      const validOpts = Array.isArray(rawOpts)
+        ? rawOpts
+        : (rawOpts && typeof rawOpts === "object"
+          ? Object.entries(rawOpts).map(([k, v]) => (typeof v === "string" ? { value: k, label: v } : { value: v?.value || k, label: v?.label || capitalize(k) }))
+          : []);
+
       for (const t of rawTraits) {
         if (validOpts.length > 0) {
           const match = validOpts.find(o => o?.value === t);
@@ -1172,7 +1270,11 @@ export async function getLightweightFeatIndex() {
   if (_featIndexCache) return _featIndexCache;
 
   const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.feat?.indexData;
-  if (Array.isArray(browserIndex) && browserIndex.length > 0) {
+  const browserHasPrereqs = Array.isArray(browserIndex)
+    && browserIndex.length > 0
+    && browserIndex.some(e => toStringArray(e.prerequisites ?? e.system?.prerequisites?.value).length > 0);
+
+  if (browserHasPrereqs) {
     _featIndexCache = browserIndex.map(e => ({
       uuid: e.uuid,
       name: e.name,

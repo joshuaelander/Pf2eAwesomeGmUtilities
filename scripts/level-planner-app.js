@@ -20,6 +20,7 @@ import {
   applyPlannedLevelUp,
   buildLevelRoadmap,
   clearActorLevelPlan,
+  computeMatchingArchetypeFeatUuids,
   getLightweightFeatIndex,
   getLightweightSpellIndex,
   isLevelPlannerEnabled,
@@ -789,9 +790,16 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
+    const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
+    const hasDedications = slotDedications.length > 0;
+    const dedShortNames = slotDedications.map(d => d.shortLabel).filter(Boolean).join(", ");
+    const myArchLabel = slotDedications.length > 1
+      ? `My Archetypes (${dedShortNames})`
+      : `My Archetype (${dedShortNames})`;
+
     const defaultScope = slot.groupId === "archetype"
-      ? "archetype"
-      : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-and-archetype" : "slot");
+      ? (hasDedications ? "my-archetypes" : "archetype-dedications")
+      : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot");
 
     const traitDisplayList = (slot.traits || [])
       .filter(Boolean)
@@ -801,14 +809,22 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     let scopeOptionsHtml = "";
     if (slot.groupId === "class" || slot.groupId === "dualclass") {
       scopeOptionsHtml = `
-        <option value="class-only" ${defaultScope === "class-only" ? "selected" : ""}>Class Feats Only${esc(traitSummary)}</option>
-        <option value="class-and-archetype" selected>Class + Archetypes</option>
-        <option value="archetype">Archetype Feats Only</option>
+        <option value="class-only" selected>Class Feats Only${esc(traitSummary)}</option>
+        ${hasDedications ? `<option value="my-archetypes">${esc(myArchLabel)}</option>` : ""}
+        <option value="class-and-archetype">Class + Archetypes</option>
+        <option value="archetype-dedications">Archetype Dedications</option>
+        <option value="archetype">All Archetype Feats</option>
         <option value="all">All Feats (Unfiltered)</option>
       `;
     } else if (slot.groupId === "archetype") {
+      const perDedOptions = slotDedications.length > 1
+        ? slotDedications.map((d, idx) => `<option value="ded:${idx}">Only: ${esc(d.shortLabel)}</option>`).join("")
+        : "";
       scopeOptionsHtml = `
-        <option value="archetype" selected>Archetype Feats</option>
+        ${hasDedications ? `<option value="my-archetypes" selected>${esc(myArchLabel)}</option>` : ""}
+        ${perDedOptions}
+        <option value="archetype-dedications" ${!hasDedications ? "selected" : ""}>Archetype Dedications</option>
+        <option value="archetype">All Archetype Feats &amp; Dedications</option>
         <option value="all">All Feats (Unfiltered)</option>
       `;
     } else if (slot.category === "ancestry") {
@@ -886,6 +902,12 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       const allFeats = await getLightweightFeatIndex();
       const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
+      const myArchetypeUuids = hasDedications
+        ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications)
+        : new Set();
+      const perDedicationUuids = slotDedications.length > 1
+        ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
+        : [];
 
       const renderList = () => {
         const query = (searchInput?.value || "").trim().toLowerCase();
@@ -904,6 +926,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const isMyClass = f.category === "class" && (slotTraits.length === 0 || slotTraits.some(t => f.traits.includes(t)));
             const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
             if (!isMyClass && !isArchetype) continue;
+          } else if (scope === "my-archetypes") {
+            if (!myArchetypeUuids.has(f.uuid)) continue;
+          } else if (scope.startsWith("ded:")) {
+            const dIdx = Number(scope.slice(4));
+            const set = perDedicationUuids[dIdx];
+            if (!set || !set.has(f.uuid)) continue;
+          } else if (scope === "archetype-dedications") {
+            if (!f.traits.includes("dedication")) continue;
           } else if (scope === "archetype") {
             const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
             if (!isArchetype) continue;
