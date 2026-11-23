@@ -1,24 +1,39 @@
 /**
  * PF2e Awesome GM Utilities - Scene Links & World Map Pins Styles
+ * All colors reference the shared palette in `styles/theme.css`.
  */
 
 /* ------------------------------------------------------------------------- */
 /* 1. SCENE TRANSITION POPUP MODAL                                           */
 /* ------------------------------------------------------------------------- */
 
+.pf2e-scene-transition-modal {
+  background: var(--pf2e-gm-bg-window) !important;
+  border: 1px solid var(--pf2e-gm-border-window) !important;
+  box-shadow: var(--pf2e-gm-shadow-window) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.pf2e-scene-transition-modal .window-header {
+  background: var(--pf2e-gm-header-bg) !important;
+  border-bottom: 1px solid var(--pf2e-gm-border-window) !important;
+  color: var(--pf2e-gm-text-header) !important;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+
 .pf2e-scene-transition-modal .window-content {
   padding: 0 !important;
-  background: #111317 !important;
-  border: 1px solid rgba(229, 169, 60, 0.35) !important;
-  border-radius: 8px !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.8), 0 0 20px rgba(229, 169, 60, 0.15) !important;
+  background: var(--pf2e-gm-bg-window) !important;
+  border: none !important;
   overflow: hidden !important;
 }
 
 .pf2e-scene-transition-dialog {
   display: flex;
   flex-direction: column;
-  color: #e0e4eb;
+  color: var(--pf2e-gm-text-primary);
   font-family: var(--font-primary, "Signika", sans-serif);
 }
 
@@ -28,8 +43,8 @@
   height: 125px;
   background-size: cover;
   background-position: center;
-  background-color: #1a1c23;
-  border-bottom: 2px solid rgba(229, 169, 60, 0.5);
+  background-color: var(--pf2e-gm-bg-sidebar);
+  border-bottom: 2px solid var(--pf2e-gm-border-red-strong);
   display: flex;
   align-items: flex-end;
 }
@@ -40,7 +55,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(to bottom, rgba(10, 12, 16, 0.4) 0%, rgba(12, 14, 18, 0.95) 100%);
+  background: linear-gradient(to bottom, rgba(15, 15, 18, 0.35) 0%, rgba(10, 10, 13, 0.96) 100%);
   pointer-events: none;
 }
 
@@ -55,8 +70,8 @@
   margin: 0 0 6px 0;
   font-size: 1.35rem;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9), 0 0 10px rgba(229, 169, 60, 0.5);
+  color: var(--pf2e-gm-text-white);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.92);
   font-family: var(--font-primary, "Signika", sans-serif);
   white-space: nowrap;
   overflow: hidden;
@@ -80,21 +95,21 @@
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  background: rgba(25, 29, 36, 0.85);
-  color: #c0c6d0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--pf2e-gm-bg-overlay);
+  color: var(--pf2e-gm-text-label);
+  border: 1px solid var(--pf2e-gm-border-input);
 }
 
 .banner-pills .status-pill.active-pill {
-  background: rgba(30, 110, 50, 0.85);
-  color: #7aff96;
-  border-color: #2ecc71;
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.2);
+  color: var(--pf2e-gm-yellow-bright);
+  border-color: var(--pf2e-gm-yellow);
 }
 
 .banner-pills .status-pill.viewing-pill {
-  background: rgba(30, 80, 150, 0.85);
-  color: #8ac0ff;
-  border-color: #3498db;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  color: var(--pf2e-gm-cyan-bright);
+  border-color: var(--pf2e-gm-cyan);
 }
 
 /* Actions List */
@@ -103,6 +118,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
+  background: var(--pf2e-gm-bg-main);
 }
 
 .transition-btn {
@@ -110,64 +126,84 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: #181b22;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--pf2e-gm-bg-card);
+  border: 1px solid var(--pf2e-gm-border-card);
   border-radius: 6px;
-  color: #e0e4eb;
+  color: var(--pf2e-gm-text-primary);
   cursor: pointer;
   text-align: left;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .transition-btn:hover {
-  background: #222631;
-  border-color: rgba(229, 169, 60, 0.6);
+  background: var(--pf2e-gm-bg-btn-hover);
+  border-color: var(--pf2e-gm-border-bright);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px rgba(229, 169, 60, 0.2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65);
 }
 
 .transition-btn .btn-icon {
   width: 38px;
   height: 38px;
   border-radius: 6px;
-  background: #252a36;
+  background: var(--pf2e-gm-bg-inset);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.15rem;
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.22);
 }
 
 .transition-btn.btn-view .btn-icon {
-  color: #5dade2;
-  background: rgba(41, 128, 185, 0.2);
-  border-color: rgba(52, 152, 219, 0.4);
+  color: var(--pf2e-gm-cyan);
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.14);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.55);
+}
+
+.transition-btn.btn-view:hover {
+  border-color: var(--pf2e-gm-cyan);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px rgba(var(--pf2e-gm-cyan-rgb), 0.26);
 }
 
 .transition-btn.btn-activate .btn-icon {
-  color: #2ecc71;
-  background: rgba(46, 204, 113, 0.2);
-  border-color: rgba(46, 204, 113, 0.4);
+  color: var(--pf2e-gm-yellow);
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.15);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.55);
+}
+
+.transition-btn.btn-activate:hover {
+  border-color: var(--pf2e-gm-yellow);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px rgba(var(--pf2e-gm-yellow-rgb), 0.25);
 }
 
 .transition-btn.btn-party .btn-icon {
-  color: #e5a93c;
-  background: rgba(229, 169, 60, 0.2);
-  border-color: rgba(229, 169, 60, 0.4);
+  color: var(--pf2e-gm-pink-bright);
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.18);
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.55);
+}
+
+.transition-btn.btn-party:hover {
+  border-color: var(--pf2e-gm-pink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px rgba(var(--pf2e-gm-pink-rgb), 0.3);
 }
 
 .transition-btn.btn-journal .btn-icon {
-  color: #a569bd;
-  background: rgba(165, 105, 189, 0.2);
-  border-color: rgba(165, 105, 189, 0.4);
+  color: var(--pf2e-gm-purple-soft);
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.18);
+  border-color: rgba(var(--pf2e-gm-purple-rgb), 0.55);
+}
+
+.transition-btn.btn-journal:hover {
+  border-color: var(--pf2e-gm-purple);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.65), 0 0 10px rgba(var(--pf2e-gm-purple-rgb), 0.28);
 }
 
 .transition-btn.btn-config .btn-icon {
-  color: #bdc3c7;
-  background: rgba(189, 195, 199, 0.15);
-  border-color: rgba(189, 195, 199, 0.3);
+  color: var(--pf2e-gm-text-cream);
+  background: rgba(var(--pf2e-gm-cream-rgb), 0.1);
+  border-color: var(--pf2e-gm-border-btn);
 }
 
 .transition-btn .btn-text {
@@ -179,45 +215,45 @@
 .transition-btn .btn-heading {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--pf2e-gm-text-white);
   margin-bottom: 2px;
 }
 
 .transition-btn .btn-description {
   font-size: 0.76rem;
-  color: #9aa2b0;
+  color: var(--pf2e-gm-text-muted);
   line-height: 1.3;
 }
 
 .transition-btn .btn-badge {
   font-size: 0.72rem;
   font-weight: 600;
-  color: #8b94a0;
+  color: var(--pf2e-gm-text-subtle);
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .transition-btn .btn-badge kbd {
-  background: #252a36;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--pf2e-gm-bg-sidebar);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.45);
   border-radius: 3px;
   padding: 1px 4px;
   font-family: inherit;
   font-size: 0.7rem;
-  color: #e5a93c;
+  color: var(--pf2e-gm-yellow);
 }
 
 .transition-btn.current-state {
-  border-color: rgba(229, 169, 60, 0.8);
-  background: rgba(229, 169, 60, 0.08);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.8);
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.08);
 }
 
 /* Footer shortcut tip */
 .transition-footer {
   padding: 10px 16px 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  background: #0e1014;
+  border-top: 1px solid var(--pf2e-gm-border-red);
+  background: var(--pf2e-gm-bg-sidebar);
 }
 
 .shortcut-tip {
@@ -225,19 +261,19 @@
   align-items: center;
   gap: 8px;
   font-size: 0.75rem;
-  color: #8b94a0;
+  color: var(--pf2e-gm-text-subtle);
 }
 
 .shortcut-tip i {
-  color: #e5a93c;
+  color: var(--pf2e-gm-yellow);
 }
 
 .shortcut-tip kbd {
-  background: #1e222b;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--pf2e-gm-bg-card);
+  border: 1px solid var(--pf2e-gm-border-input);
   border-radius: 3px;
   padding: 1px 5px;
-  color: #ffc107;
+  color: var(--pf2e-gm-yellow);
   font-weight: 600;
 }
 
@@ -245,9 +281,24 @@
 /* 2. PLACEMENT PICKER DIALOG                                                */
 /* ------------------------------------------------------------------------- */
 
+.pf2e-scene-link-picker-window {
+  background: var(--pf2e-gm-bg-window) !important;
+  border: 1px solid var(--pf2e-gm-border-window) !important;
+  box-shadow: var(--pf2e-gm-shadow-window) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.pf2e-scene-link-picker-window .window-header {
+  background: var(--pf2e-gm-header-bg) !important;
+  border-bottom: 1px solid var(--pf2e-gm-border-window) !important;
+  color: var(--pf2e-gm-text-header) !important;
+  font-weight: 700;
+}
+
 .pf2e-scene-link-picker-window .window-content {
-  background: #14171d !important;
-  color: #e0e4eb !important;
+  background: var(--pf2e-gm-bg-main) !important;
+  color: var(--pf2e-gm-text-primary) !important;
   padding: 14px 16px !important;
 }
 
@@ -262,10 +313,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #1a1d24;
+  background: var(--pf2e-gm-bg-card);
   padding: 10px 12px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--pf2e-gm-border-subtle);
 }
 
 .pf2e-scene-link-picker .section-label {
@@ -274,9 +325,13 @@
   gap: 8px;
   font-size: 0.88rem;
   font-weight: 700;
-  color: #e5a93c;
-  border-bottom: 1px solid rgba(229, 169, 60, 0.2);
+  color: var(--pf2e-gm-text-cream);
+  border-bottom: 1px solid var(--pf2e-gm-border-red);
   padding-bottom: 4px;
+}
+
+.pf2e-scene-link-picker .section-label i {
+  color: var(--pf2e-gm-cyan);
 }
 
 .filter-wrapper {
@@ -288,18 +343,28 @@
 .filter-wrapper .filter-icon {
   position: absolute;
   left: 10px;
-  color: #8b94a0;
+  color: var(--pf2e-gm-text-cream);
   pointer-events: none;
 }
 
 .filter-wrapper .scene-filter-input {
   width: 100%;
   padding-left: 32px;
-  background: #101216;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--pf2e-gm-bg-input);
+  border: 1px solid var(--pf2e-gm-border-input);
   border-radius: 4px;
-  color: #fff;
+  color: var(--pf2e-gm-text-white);
   height: 30px;
+}
+
+.filter-wrapper .scene-filter-input::placeholder {
+  color: var(--pf2e-gm-text-dim);
+}
+
+.filter-wrapper .scene-filter-input:focus {
+  outline: none;
+  border-color: var(--pf2e-gm-cyan);
+  box-shadow: 0 0 8px rgba(var(--pf2e-gm-cyan-rgb), 0.35);
 }
 
 /* Scene picker grid */
@@ -317,22 +382,22 @@
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  background: #20242e;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
   border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .scene-picker-card:hover {
-  background: #282e3b;
-  border-color: rgba(229, 169, 60, 0.5);
+  background: var(--pf2e-gm-bg-btn-hover);
+  border-color: rgba(var(--pf2e-gm-cream-rgb), 0.45);
 }
 
 .scene-picker-card.selected {
-  background: rgba(229, 169, 60, 0.15);
-  border-color: #e5a93c;
-  box-shadow: 0 0 8px rgba(229, 169, 60, 0.3);
+  background: linear-gradient(90deg, rgba(var(--pf2e-gm-pink-rgb), 0.2) 0%, rgba(var(--pf2e-gm-purple-rgb), 0.18) 100%);
+  border-color: var(--pf2e-gm-pink-bright);
+  box-shadow: 0 0 10px rgba(var(--pf2e-gm-pink-rgb), 0.32);
 }
 
 .picker-thumb {
@@ -340,8 +405,8 @@
   height: 28px;
   object-fit: cover;
   border-radius: 3px;
-  background: #000;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--pf2e-gm-bg-input);
+  border: 1px solid var(--pf2e-gm-border-input);
   flex-shrink: 0;
 }
 
@@ -355,7 +420,7 @@
 .picker-name {
   font-size: 0.82rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--pf2e-gm-text-white);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -363,14 +428,14 @@
 
 .picker-folder {
   font-size: 0.68rem;
-  color: #8b94a0;
+  color: var(--pf2e-gm-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .picker-badge.active {
-  color: #2ecc71;
+  color: var(--pf2e-gm-cyan);
   font-size: 0.8rem;
 }
 
@@ -391,34 +456,34 @@
   justify-content: center;
   gap: 3px;
   padding: 6px 4px;
-  background: #20242e;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-card);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .btn-pin-icon:hover {
-  background: #292f3c;
-  border-color: rgba(229, 169, 60, 0.4);
+  background: var(--pf2e-gm-bg-btn-hover);
+  border-color: rgba(var(--pf2e-gm-cream-rgb), 0.45);
 }
 
 .btn-pin-icon.selected {
-  background: rgba(229, 169, 60, 0.2);
-  border-color: #e5a93c;
-  box-shadow: 0 0 6px rgba(229, 169, 60, 0.4);
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.18);
+  border-color: var(--pf2e-gm-cyan);
+  box-shadow: 0 0 8px rgba(var(--pf2e-gm-cyan-rgb), 0.38);
 }
 
 .btn-pin-icon img {
   width: 24px;
   height: 24px;
   object-fit: contain;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
 }
 
 .btn-pin-icon span {
   font-size: 0.62rem;
-  color: #c0c6d0;
+  color: var(--pf2e-gm-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -434,18 +499,24 @@
 .form-group-compact label {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #c0c6d0;
+  color: var(--pf2e-gm-text-cream);
 }
 
 .form-group-compact input[type="text"],
 .form-group-compact select {
-  background: #101216;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--pf2e-gm-bg-input);
+  border: 1px solid var(--pf2e-gm-border-input);
   border-radius: 4px;
-  color: #fff;
+  color: var(--pf2e-gm-text-white);
   height: 28px;
   padding: 2px 8px;
   font-size: 0.82rem;
+}
+
+.form-group-compact input[type="text"]:focus,
+.form-group-compact select:focus {
+  outline: none;
+  border-color: var(--pf2e-gm-cyan);
 }
 
 .file-picker-row {
@@ -463,11 +534,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #252a36;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--pf2e-gm-bg-btn);
+  border: 1px solid var(--pf2e-gm-border-btn);
   border-radius: 4px;
-  color: #e5a93c;
+  color: var(--pf2e-gm-text-btn);
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-file-picker:hover {
+  background: var(--pf2e-gm-bg-btn-hover);
+  border-color: var(--pf2e-gm-cyan);
+  color: var(--pf2e-gm-cyan-mid);
 }
 
 .settings-grid {
@@ -486,11 +564,16 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
+  color: var(--pf2e-gm-text-primary);
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--pf2e-gm-pink);
 }
 
 .hint-text {
   font-size: 0.7rem;
-  color: #8b94a0;
+  color: var(--pf2e-gm-text-muted);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -498,26 +581,28 @@
 /* ------------------------------------------------------------------------- */
 
 .pf2e-scene-link-hud-btn {
-  background: rgba(229, 169, 60, 0.25) !important;
-  border-color: #e5a93c !important;
-  color: #ffc107 !important;
+  background: var(--pf2e-gm-bg-overlay) !important;
+  border-color: var(--pf2e-gm-cyan) !important;
+  color: var(--pf2e-gm-cyan-bright) !important;
 }
 
 .pf2e-scene-link-hud-btn:hover {
-  background: rgba(229, 169, 60, 0.5) !important;
-  box-shadow: 0 0 10px rgba(229, 169, 60, 0.6) !important;
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.38) !important;
+  border-color: var(--pf2e-gm-pink-bright) !important;
+  color: var(--pf2e-gm-text-white) !important;
+  box-shadow: 0 0 12px rgba(var(--pf2e-gm-pink-rgb), 0.55) !important;
 }
 
 .pf2e-scene-link-fieldset {
   margin-top: 10px;
   padding: 8px 12px;
-  border: 1px solid rgba(229, 169, 60, 0.4);
+  border: 1px solid var(--pf2e-gm-border-input);
   border-radius: 5px;
-  background: rgba(229, 169, 60, 0.05);
+  background: rgba(15, 15, 18, 0.75);
 }
 
 .pf2e-scene-link-fieldset legend {
   font-weight: 700;
-  color: #e5a93c;
+  color: var(--pf2e-gm-text-cream);
   padding: 0 6px;
 }

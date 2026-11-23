@@ -92,7 +92,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
    * @param {string} color Hex or theme color for filled slices
    * @returns {Array<object>} Slice objects with path data
    */
-  static _generateClockSlices(totalSegments, filledSegments, color = "#d4af37") {
+  static _generateClockSlices(totalSegments, filledSegments, color = "#38e8ff") {
     const slices = [];
     const cx = 50;
     const cy = 50;
@@ -930,7 +930,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
       bodyHtml = `
         <div class="pf2e-resource-clock-stat" style="text-align: center; margin: 6px 0;">
           <div class="pips-row">${pips}</div>
-          <div class="pips-legend" style="font-size: 0.85em; color: #d4af37; margin-top: 4px;">
+          <div class="pips-legend" style="font-size: 0.85em; color: var(--pf2e-gm-text-cream); margin-top: 4px;">
             <strong>${val}</strong> of <strong>${total}</strong> Segments Filled
           </div>
         </div>
@@ -963,7 +963,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
           <div style="font-size: 1.35em; font-weight: 800; color: ${tier.color}; margin-bottom: 3px;">
             ${formattedVal} &mdash; ${tier.label}
           </div>
-          <div style="font-size: 0.82em; color: #cbd5e1; margin-bottom: 6px;">
+          <div style="font-size: 0.82em; color: var(--pf2e-gm-text-secondary); margin-bottom: 6px;">
             ${tier.description}
           </div>
           <div style="display: flex; justify-content: center; gap: 4px; flex-wrap: wrap;">
@@ -983,7 +983,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
           <div style="display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 1.25em; font-weight: 800; color: ${att.color}; margin-bottom: 4px;">
             <i class="${att.icon}"></i> <span>${att.label}</span>
           </div>
-          <div style="font-size: 0.85em; color: #cbd5e1; text-align: center; background: rgba(0,0,0,0.3); border-left: 3px solid ${att.color}; padding: 6px 8px; border-radius: 3px;">
+          <div style="font-size: 0.85em; color: var(--pf2e-gm-text-secondary); text-align: center; background: rgba(0,0,0,0.3); border-left: 3px solid ${att.color}; padding: 6px 8px; border-radius: 3px;">
             ${att.description}
           </div>
         </div>
@@ -993,27 +993,27 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     // Notes
     let notesHtml = "";
     if (tracker.notes) {
-      notesHtml = `<div class="chat-card-notes" style="font-size: 0.82em; color: #aaa; margin-top: 6px; font-style: italic; border-top: 1px dotted rgba(255,255,255,0.15); padding-top: 4px;">${tracker.notes}</div>`;
+      notesHtml = `<div class="chat-card-notes" style="font-size: 0.82em; color: var(--pf2e-gm-text-muted); margin-top: 6px; font-style: italic; border-top: 1px dotted var(--pf2e-gm-border-card); padding-top: 4px;">${tracker.notes}</div>`;
     }
 
     // Linked Actor Badge
     let actorBadgeHtml = "";
     if (actor) {
       actorBadgeHtml = `
-        <div class="chat-card-actor" style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px; background: rgba(0,0,0,0.25); padding: 3px 6px; border-radius: 4px;">
-          <img src="${actorImg}" style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #d4af37; object-fit: cover;" />
-          <span style="font-size: 0.85em; font-weight: bold; color: #d4af37;">${actor.name}</span>
+        <div class="chat-card-actor" style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px; background: rgba(var(--pf2e-gm-yellow-rgb), 0.1); border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.38); padding: 3px 6px; border-radius: 4px;">
+          <img src="${actorImg}" style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--pf2e-gm-yellow); object-fit: cover;" />
+          <span style="font-size: 0.85em; font-weight: bold; color: var(--pf2e-gm-yellow-bright);">${actor.name}</span>
         </div>
       `;
     }
 
     const content = `
-      <div class="pf2e chat-card pf2e-resource-chat-card" style="border: 1px solid ${theme.border}; border-radius: 6px; overflow: hidden; background: #1c202a; color: #f0f0f0;">
-        <header class="card-header" style="background: linear-gradient(135deg, ${theme.color} 0%, #151820 100%); padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid ${theme.border};">
+      <div class="pf2e chat-card pf2e-resource-chat-card" style="border: 1px solid ${theme.border}; border-radius: 6px; overflow: hidden; background: var(--pf2e-gm-bg-card); color: var(--pf2e-gm-text-primary); box-shadow: var(--pf2e-gm-shadow-card);">
+        <header class="card-header" style="background: linear-gradient(135deg, ${theme.color} 0%, var(--pf2e-gm-bg-inset) 100%); padding: 8px 10px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid ${theme.border};">
           ${iconHtml}
           <div style="flex: 1;">
-            <h3 style="margin: 0; font-size: 1.05em; color: #fff; font-family: 'Signika', sans-serif;">${tracker.name}</h3>
-            <span style="font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.7);">${tracker.category} &bull; ${tracker.type}</span>
+            <h3 style="margin: 0; font-size: 1.05em; color: var(--pf2e-gm-text-white); font-family: 'Signika', sans-serif;">${tracker.name}</h3>
+            <span style="font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; color: var(--pf2e-gm-text-cream);">${tracker.category} &bull; ${tracker.type}</span>
           </div>
         </header>
         <div class="card-content" style="padding: 10px;">

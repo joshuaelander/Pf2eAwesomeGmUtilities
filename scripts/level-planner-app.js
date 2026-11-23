@@ -1697,7 +1697,7 @@ export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
         const esc = foundry.utils.escapeHTML;
         const levelBlocks = inspection.levels.map(ls => {
           const heading = targetLevels.length > 1
-            ? `<div style="font-weight:700;margin-top:6px;color:#e6c55d;">Level ${ls.level}</div>`
+            ? `<div style="font-weight:700;margin-top:6px;color:var(--pf2e-gm-text-cream);">Level ${ls.level}</div>`
             : "";
 
           const plannedList = ls.plannedItems.length > 0

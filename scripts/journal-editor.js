@@ -232,7 +232,7 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
 
     if (this.activeTab === "entities") {
       if (!selectedEntity || !selectedEntity.doc) {
-        return "<p style='color: #64748b;'>Select an entity on the left to preview.</p>";
+        return "<p style='color: var(--pf2e-gm-text-muted);'>Select an entity on the left to preview.</p>";
       }
       return this._generateEntityHtml(selectedEntity.doc, this.entityFormat);
     }

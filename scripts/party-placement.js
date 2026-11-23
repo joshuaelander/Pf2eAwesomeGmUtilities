@@ -284,7 +284,7 @@ class PartyPlacementSession {
 
       // Visual ping at center point
       if (typeof canvas.ping === "function") {
-        canvas.ping(centerPoint, { color: "#d4af37", duration: 800 });
+        canvas.ping(centerPoint, { color: "#38e8ff", duration: 800 });
       }
 
       // Select placed tokens

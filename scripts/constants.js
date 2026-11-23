@@ -30,7 +30,7 @@ export const CHARACTER_CHECKER_MACRO_NAME = "PF2e Character Completeness Checker
 export const CHARACTER_CHECKER_MACRO_ICON = "icons/svg/book.svg";
 
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
-export const MACRO_FOLDER_COLOR = "#8b1e1e";
+export const MACRO_FOLDER_COLOR = "#7a0b0b";
 
 export const GM_UTILITIES_MENU_ICON = "fa-solid fa-dragon";
 
@@ -242,13 +242,13 @@ export const DEFAULT_RESOURCE_TRACKERS = [
  * Reference: https://2e.aonprd.com/Rules.aspx?ID=3072
  */
 export const REPUTATION_TIERS = [
-  { key: "hunted", label: "Hunted", min: -50, max: -30, threshold: -30, color: "#c084fc", border: "#a855f7", class: "rep-hunted", description: "Actively hunted down by the faction as a mortal enemy." },
-  { key: "hated", label: "Hated", min: -29, max: -15, threshold: -15, color: "#f87171", border: "#ef4444", class: "rep-hated", description: "Ostracized, despised, and treated with active hostility." },
-  { key: "disliked", label: "Disliked", min: -14, max: -5, threshold: -5, color: "#fb923c", border: "#f97316", class: "rep-disliked", description: "Distrusted, treated with cold suspicion and reluctance." },
-  { key: "ignored", label: "Ignored", min: -4, max: 4, threshold: 0, color: "#94a3b8", border: "#64748b", class: "rep-ignored", description: "Unknown or neutral newcomer; standard baseline standing." },
-  { key: "liked", label: "Liked", min: 5, max: 14, threshold: 5, color: "#4ade80", border: "#22c55e", class: "rep-liked", description: "Well regarded; members are friendly and grant minor favors." },
-  { key: "admired", label: "Admired", min: 15, max: 29, threshold: 15, color: "#38bdf8", border: "#0ea5e9", class: "rep-admired", description: "Highly respected; access to major faction resources and allies." },
-  { key: "revered", label: "Revered", min: 30, max: 50, threshold: 30, color: "#facc15", border: "#eab308", class: "rep-revered", description: "Legendary paragon of the faction with highest authority." }
+  { key: "hunted", label: "Hunted", min: -50, max: -30, threshold: -30, color: "#d9485b", border: "#9e1b2d", class: "rep-hunted", description: "Actively hunted down by the faction as a mortal enemy." },
+  { key: "hated", label: "Hated", min: -29, max: -15, threshold: -15, color: "#e86b7a", border: "#c43849", class: "rep-hated", description: "Ostracized, despised, and treated with active hostility." },
+  { key: "disliked", label: "Disliked", min: -14, max: -5, threshold: -5, color: "#9c7ce8", border: "#6b4cb8", class: "rep-disliked", description: "Distrusted, treated with cold suspicion and reluctance." },
+  { key: "ignored", label: "Ignored", min: -4, max: 4, threshold: 0, color: "#b0a698", border: "#7d756b", class: "rep-ignored", description: "Unknown or neutral newcomer; standard baseline standing." },
+  { key: "liked", label: "Liked", min: 5, max: 14, threshold: 5, color: "#7ba8ff", border: "#4d7de0", class: "rep-liked", description: "Well regarded; members are friendly and grant minor favors." },
+  { key: "admired", label: "Admired", min: 15, max: 29, threshold: 15, color: "#c8b6ff", border: "#8e6ce6", class: "rep-admired", description: "Highly respected; access to major faction resources and allies." },
+  { key: "revered", label: "Revered", min: 30, max: 50, threshold: 30, color: "#efd080", border: "#d8aa4b", class: "rep-revered", description: "Legendary paragon of the faction with highest authority." }
 ];
 
 export function getReputationTier(value) {
@@ -272,8 +272,8 @@ export const NPC_ATTITUDES = [
     key: "hostile",
     label: "Hostile",
     icon: "fa-solid fa-face-angry",
-    color: "#ef4444",
-    border: "#dc2626",
+    color: "#d9485b",
+    border: "#9e1b2d",
     class: "att-hostile",
     description: "Actively works against you—and might attack you just because of their dislike."
   },
@@ -282,8 +282,8 @@ export const NPC_ATTITUDES = [
     key: "unfriendly",
     label: "Unfriendly",
     icon: "fa-solid fa-face-frown",
-    color: "#f97316",
-    border: "#ea580c",
+    color: "#9c7ce8",
+    border: "#6b4cb8",
     class: "att-unfriendly",
     description: "Dislikes you and doesn’t want to help you."
   },
@@ -292,8 +292,8 @@ export const NPC_ATTITUDES = [
     key: "indifferent",
     label: "Indifferent",
     icon: "fa-solid fa-face-meh",
-    color: "#94a3b8",
-    border: "#64748b",
+    color: "#b0a698",
+    border: "#7d756b",
     class: "att-indifferent",
     description: "Doesn’t care about you either way. (Most NPCs start out indifferent.)"
   },
@@ -302,8 +302,8 @@ export const NPC_ATTITUDES = [
     key: "friendly",
     label: "Friendly",
     icon: "fa-solid fa-face-smile",
-    color: "#38bdf8",
-    border: "#0284c7",
+    color: "#7ba8ff",
+    border: "#4d7de0",
     class: "att-friendly",
     description: "Has a good attitude toward you, but won’t necessarily stick their neck out to help you."
   },
@@ -312,8 +312,8 @@ export const NPC_ATTITUDES = [
     key: "helpful",
     label: "Helpful",
     icon: "fa-solid fa-face-laugh-beam",
-    color: "#22c55e",
-    border: "#16a34a",
+    color: "#efd080",
+    border: "#d8aa4b",
     class: "att-helpful",
     description: "Willing to help you and responds favorably to your requests."
   }
@@ -325,14 +325,14 @@ export function getAttitudeInfo(value) {
 }
 
 export const COLOR_THEMES = {
-  crimson: { label: "Crimson (Combat)", color: "#8b1e1e", border: "#c93b3b", glow: "rgba(201, 59, 59, 0.45)" },
-  gold: { label: "Pathfinder Gold", color: "#997300", border: "#d4af37", glow: "rgba(212, 175, 55, 0.45)" },
-  amber: { label: "Amber (Tavern)", color: "#92400e", border: "#d97706", glow: "rgba(217, 119, 6, 0.45)" },
-  nature: { label: "Forest Green (Nature)", color: "#1e5239", border: "#2d6a4f", glow: "rgba(45, 106, 79, 0.45)" },
-  ocean: { label: "Ocean Blue (Calm)", color: "#1b436e", border: "#2563eb", glow: "rgba(37, 99, 235, 0.45)" },
-  arcane: { label: "Arcane Violet (Magic)", color: "#542577", border: "#8b5cf6", glow: "rgba(139, 92, 246, 0.45)" },
-  shadow: { label: "Shadow Slate (Dungeon)", color: "#27272a", border: "#52525b", glow: "rgba(82, 82, 91, 0.45)" },
-  fire: { label: "Inferno Orange (Danger)", color: "#9a3412", border: "#ea580c", glow: "rgba(234, 88, 12, 0.45)" }
+  crimson: { label: "Pathfinder Crimson (Combat)", color: "#6e0808", border: "#d9485b", glow: "rgba(217, 72, 91, 0.45)" },
+  gold: { label: "Pathfinder Gold (Spotlight)", color: "#785a1c", border: "#d8aa4b", glow: "rgba(216, 170, 75, 0.45)" },
+  amber: { label: "Warm Parchment (Town)", color: "#5c4a32", border: "#e6d2a8", glow: "rgba(230, 210, 168, 0.42)" },
+  nature: { label: "Steel Azure (Exploration)", color: "#1d386b", border: "#7ba8ff", glow: "rgba(123, 168, 255, 0.45)" },
+  ocean: { label: "Pathfinder Royal Blue (Calm)", color: "#1c2d6e", border: "#5c8ef2", glow: "rgba(92, 142, 242, 0.45)" },
+  arcane: { label: "Expert Purple (Arcane)", color: "#3c257a", border: "#9c7ce8", glow: "rgba(156, 124, 232, 0.45)" },
+  shadow: { label: "Obsidian Cream (Dark)", color: "#1c1c22", border: "#e6d8be", glow: "rgba(242, 232, 208, 0.38)" },
+  fire: { label: "Ruby Ember (Danger)", color: "#7d1424", border: "#ea6c7d", glow: "rgba(234, 108, 125, 0.45)" }
 };
 
 export const DEFAULT_BANKS = [
