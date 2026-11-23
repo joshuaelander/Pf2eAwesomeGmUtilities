@@ -128,6 +128,8 @@ function rerenderOpenCharacterSheets() {
 /* ------------------------------------------------------------------------- */
 
 function registerSettings() {
+  const isGM = performanceMonitor.isUserGM();
+
   // Soundboard Banks & Slots Data (World)
   game.settings.register(MODULE_ID, "soundboardData", {
     name: "Soundboard Data",
@@ -185,12 +187,12 @@ function registerSettings() {
     default: true
   });
 
-  // Sound Pad Window Opacity
+  // Sound Pad Window Opacity (GM-only client preference)
   game.settings.register(MODULE_ID, "soundPadOpacity", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadOpacity.Name"),
     hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SoundPadOpacity.Hint"),
     scope: "client",
-    config: true,
+    config: isGM,
     type: Number,
     range: { min: 40, max: 100, step: 5 },
     default: 100,
@@ -200,12 +202,12 @@ function registerSettings() {
     }
   });
 
-  // Scene Switcher Window Opacity
+  // Scene Switcher Window Opacity (GM-only client preference)
   game.settings.register(MODULE_ID, "sceneSwitcherOpacity", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneSwitcherOpacity.Name"),
     hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneSwitcherOpacity.Hint"),
     scope: "client",
-    config: true,
+    config: isGM,
     type: Number,
     range: { min: 40, max: 100, step: 5 },
     default: 100,
@@ -264,12 +266,12 @@ function registerSettings() {
     default: false
   });
 
-  // Resource Tracker Window Opacity (Client)
+  // Resource Tracker Window Opacity (GM-only client preference)
   game.settings.register(MODULE_ID, "resourceTrackerOpacity", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.ResourceTrackerOpacity.Name"),
     hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.ResourceTrackerOpacity.Hint"),
     scope: "client",
-    config: true,
+    config: isGM,
     type: Number,
     range: { min: 40, max: 100, step: 5 },
     default: 100,
@@ -313,12 +315,12 @@ function registerSettings() {
     default: "icons/svg/castle.svg"
   });
 
-  // Scene Link Single-Click Activation
+  // Scene Link Single-Click Activation (GM-only client preference)
   game.settings.register(MODULE_ID, "sceneLinkSingleClick", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkSingleClick.Name"),
     hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.SceneLinkSingleClick.Hint"),
     scope: "client",
-    config: true,
+    config: isGM,
     type: Boolean,
     default: false
   });
@@ -406,45 +408,54 @@ function injectSettingsSectionHeaders(html) {
     : (html?.[0] instanceof HTMLElement ? html[0] : null);
   if (!root) return;
 
+  const isGM = Boolean(game.user?.isGM);
   const sections = [
     {
       id: "pf2e-gm-hdr-soundpad",
       title: "Music & SFX Sound Pad",
+      gmOnly: true,
       keys: ["autoStopOtherMusic", "defaultFadeDuration", "soundPadDefaultVolume", "soundPadUseTrackVolume", "soundPadOpacity"]
     },
     {
       id: "pf2e-gm-hdr-sceneswitcher",
       title: "Session Scene Switcher",
+      gmOnly: true,
       keys: ["sceneSwitcherOpacity"]
     },
     {
       id: "pf2e-gm-hdr-resourcetracker",
       title: "Resource & Subsystem Tracker",
+      gmOnly: true,
       keys: ["resourceTrackerOpacity"]
     },
     {
       id: "pf2e-gm-hdr-scenelinks",
       title: "Scene Links & Map Pins",
+      gmOnly: true,
       keys: ["sceneLinkDefaultAction", "sceneLinkDefaultIcon", "sceneLinkSingleClick"]
     },
     {
       id: "pf2e-gm-hdr-macros",
       title: "Macros & General",
+      gmOnly: true,
       keys: ["autoSyncMacros"]
     },
     {
       id: "pf2e-gm-hdr-performance",
       title: "Performance Checker (GM Only)",
+      gmOnly: true,
       keys: ["enablePerformanceMonitor"]
     },
     {
       id: "pf2e-gm-hdr-characterchecker",
       title: "Character Completeness Checker",
+      gmOnly: true,
       keys: ["showCharacterSheetGuides", "allowPlayerAutoSpellcasting"]
     }
   ];
 
   for (const sec of sections) {
+    if (sec.gmOnly && !isGM) continue;
     if (root.querySelector(`#${sec.id}`)) continue;
     let firstGroup = null;
     for (const key of sec.keys) {
@@ -1055,6 +1066,11 @@ Hooks.once("ready", async () => {
   if (typeof document !== "undefined" && document.body) {
     document.body.classList.toggle("is-gm", Boolean(game.user?.isGM));
     document.body.classList.toggle("is-player", !game.user?.isGM);
+  }
+  // Ensure GM-only client settings are strictly hidden from non-GM players in Configure Settings
+  for (const key of ["soundPadOpacity", "sceneSwitcherOpacity", "resourceTrackerOpacity", "sceneLinkSingleClick"]) {
+    const reg = game.settings?.settings?.get?.(`${MODULE_ID}.${key}`);
+    if (reg) reg.config = Boolean(game.user?.isGM);
   }
   patchTokenHover();
   // Global API namespace
