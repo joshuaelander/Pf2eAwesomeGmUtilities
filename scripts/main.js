@@ -39,6 +39,8 @@ import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
 import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./performance-monitor.js";
 import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character-checker-app.js";
 import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character-checker-engine.js";
+import { LevelPlannerApp } from "./level-planner-app.js";
+import { applyPlannedLevelUp, buildLevelRoadmap, isLevelPlannerEnabled } from "./level-planner-engine.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -47,6 +49,7 @@ let resourceWidgetInstance = null;
 let performanceMonitorInstance = null;
 let performanceHudInstance = null;
 let characterCheckerInstance = null;
+let levelPlannerInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -99,9 +102,20 @@ function getPerformanceMonitor() {
 
 function getCharacterChecker() {
   if (!characterCheckerInstance) {
-    characterCheckerInstance = new CharacterCheckerApp();
+    characterCheckerInstance = new CharacterCheckerApp({
+      onOpenLevelPlanner: (actor) => getLevelPlanner().openForActor(actor)
+    });
   }
   return characterCheckerInstance;
+}
+
+function getLevelPlanner() {
+  if (!levelPlannerInstance) {
+    levelPlannerInstance = new LevelPlannerApp({
+      onOpenChecker: (actor) => getCharacterChecker().openForActor(actor)
+    });
+  }
+  return levelPlannerInstance;
 }
 
 function rerenderOpenCharacterSheets() {
@@ -395,6 +409,33 @@ function registerSettings() {
       }
     }
   });
+
+  // Level 1-20 Build Planner & Guided Level-Up (Opt-In World Setting, Default OFF)
+  game.settings.register(MODULE_ID, "enableLevelPlanner", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.EnableLevelPlanner.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.EnableLevelPlanner.Hint"),
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: (enabled) => {
+      if (!enabled && levelPlannerInstance?.rendered) {
+        levelPlannerInstance.close();
+      }
+      rerenderOpenCharacterSheets();
+      if (characterCheckerInstance?.rendered) {
+        characterCheckerInstance.render({ force: false });
+      }
+      ui.controls?.render?.({ reset: true });
+      if (game.user?.isGM) {
+        ui.notifications?.info(
+          enabled
+            ? "Level 1-20 Build Planner enabled! GMs and players can now plan future levels and apply guided level-ups from Character Sheets."
+            : "Level 1-20 Build Planner disabled (zero sheet or menu overhead)."
+        );
+      }
+    }
+  });
 }
 
 /**
@@ -451,6 +492,12 @@ function injectSettingsSectionHeaders(html) {
       title: "Character Completeness Checker",
       gmOnly: true,
       keys: ["showCharacterSheetGuides", "allowPlayerAutoSpellcasting"]
+    },
+    {
+      id: "pf2e-gm-hdr-levelplanner",
+      title: "Level 1-20 Build Planner & Guided Level-Up",
+      gmOnly: true,
+      keys: ["enableLevelPlanner"]
     }
   ];
 
@@ -741,6 +788,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openLevelPlannerTool = {
+    name: "pf2e-level-planner",
+    title: "PF2e Level 1-20 Build Planner",
+    icon: "fa-solid fa-stairs",
+    visible: true,
+    button: true,
+    onClick: () => {
+      getLevelPlanner().toggle();
+    }
+  };
+
   // GM-only tools added to Foundry built-in control groups
   if (isGM) {
     if (scenesControl) {
@@ -749,11 +807,12 @@ function registerSceneControls(controls) {
     }
   }
 
-  // Primary Utilities control group (Performance Checker is strictly GM-only)
+  // Primary Utilities control group (Performance Checker is strictly GM-only; Level Planner is opt-in)
   const perfEnabled = isGM && performanceMonitor.isEnabled();
+  const plannerEnabled = isLevelPlannerEnabled();
   const activeTools = isGM
-    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
-    : [openResourceWidgetTool];
+    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(plannerEnabled ? [openLevelPlannerTool] : []), ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
+    : [openResourceWidgetTool, ...(plannerEnabled ? [openLevelPlannerTool] : [])];
 
   const activeToolsObj = {};
   for (const t of activeTools) {
@@ -1147,14 +1206,25 @@ Hooks.once("ready", async () => {
     open: (options) => JournalTemplateDialog.open(options)
   };
 
-  // PF2e Character Completeness Checker API & Character Sheet Integration
-  registerCharacterSheetCheckerIntegration((actor) => getCharacterChecker().openForActor(actor));
+  // PF2e Character Completeness Checker & Opt-In Level 1-20 Build Planner API
+  registerCharacterSheetCheckerIntegration(
+    (actor) => getCharacterChecker().openForActor(actor),
+    (actor) => getLevelPlanner().openForActor(actor)
+  );
   game.pf2eAwesomeGmUtilities.characterChecker = {
     get app() { return getCharacterChecker(); },
     toggle: () => getCharacterChecker().toggle(),
     open: (actorOrId) => getCharacterChecker().openForActor(actorOrId),
     analyze: (actor) => analyzeCharacter(actor),
     syncSpellcasting: (actor) => createOrSyncAllSpellcastingEntries(actor)
+  };
+  game.pf2eAwesomeGmUtilities.levelPlanner = {
+    get app() { return getLevelPlanner(); },
+    isEnabled: () => isLevelPlannerEnabled(),
+    toggle: () => getLevelPlanner().toggle(),
+    open: (actorOrId, focusLevel) => getLevelPlanner().openForActor(actorOrId, focusLevel),
+    buildRoadmap: (actor) => buildLevelRoadmap(actor),
+    applyLevelUp: (actor) => applyPlannedLevelUp(actor)
   };
 
   // Performance Checker & Module Profiler API (Strictly GM-Only; zero execution for players)

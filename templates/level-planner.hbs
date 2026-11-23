@@ -1,0 +1,582 @@
+<div class="pf2e-lp-container">
+
+  <!-- Left Sidebar: Character Selector, Level 1-20 Navigation & Lv 20 Projections -->
+  <aside class="pf2e-lp-sidebar">
+    <div class="pf2e-lp-sidebar-head">
+      <h3><i class="fa-solid fa-stairs"></i> Build Roadmap</h3>
+    </div>
+
+    {{#if hasMultipleActors}}
+      <div class="pf2e-lp-actor-picker">
+        <select id="pf2e-lp-actor-select" title="Select Character">
+          {{#each actorOptions}}
+            <option value="{{this.id}}" {{#if this.selected}}selected{{/if}}>{{this.name}} (Lv {{this.level}})</option>
+          {{/each}}
+        </select>
+        {{#if isGM}}
+          <label class="pf2e-lp-check-inline">
+            <input type="checkbox" id="pf2e-lp-show-all" {{#if showAllWorldPCs}}checked{{/if}} />
+            <span>Show All World PCs</span>
+          </label>
+        {{/if}}
+      </div>
+    {{/if}}
+
+    {{#if hasRoadmap}}
+      <div class="pf2e-lp-nav-controls">
+        <label class="pf2e-lp-check-inline">
+          <input type="checkbox" id="pf2e-lp-hide-past" {{#if hidePastLevels}}checked{{/if}} />
+          <span>Hide Past Levels</span>
+        </label>
+      </div>
+
+      <div class="pf2e-lp-level-list">
+        {{#each navLevels}}
+          <button
+            type="button"
+            class="pf2e-lp-level-item {{#if this.isSelected}}is-selected{{/if}} {{#if this.isCurrent}}is-current-row{{/if}} {{#if this.isNextLevel}}is-next-row{{/if}} {{#if this.isPast}}is-past-row{{/if}}"
+            data-lp-action="select-level"
+            data-level="{{this.level}}"
+          >
+            <span class="pf2e-lp-lvl-num">Lv {{this.level}}</span>
+            <span class="pf2e-lp-lvl-icons">
+              {{#if this.hasBoosts}}<span class="pf2e-lp-dot is-boost" title="Attribute Boost">B</span>{{/if}}
+              {{#if this.hasSkillIncrease}}<span class="pf2e-lp-dot is-skill" title="Skill Increase">S</span>{{/if}}
+              {{#if this.hasSpellMilestones}}<span class="pf2e-lp-dot is-spell" title="New Spell Rank / Slots">M</span>{{/if}}
+            </span>
+            <span class="pf2e-lp-lvl-pill {{this.pillClass}}">{{this.pillText}}</span>
+          </button>
+        {{/each}}
+      </div>
+
+      <!-- Compact Level 20 Projected Attributes Footer -->
+      <div class="pf2e-lp-proj-footer">
+        <div class="pf2e-lp-proj-title">Projected Lv 20 Attributes</div>
+        <div class="pf2e-lp-proj-attrs">
+          {{#each roadmap.finalProjectedAttrs}}
+            <div class="pf2e-lp-proj-attr">
+              <span class="pf2e-lp-proj-lbl">{{this.label}}</span>
+              <strong>{{this.mod}}</strong>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    {{else}}
+      <div class="pf2e-lp-empty-side">
+        <i class="fa-solid fa-user-slash"></i>
+        <p>No character actors available.</p>
+      </div>
+    {{/if}}
+  </aside>
+
+  <!-- Right Main Workspace -->
+  <main class="pf2e-lp-main">
+    {{#if hasRoadmap}}
+
+      <!-- Hero Bar -->
+      <header class="pf2e-lp-hero">
+        <div class="pf2e-lp-hero-left">
+          <img src="{{roadmap.actorImg}}" alt="" class="pf2e-lp-hero-img" />
+          <div class="pf2e-lp-hero-meta">
+            <div class="pf2e-lp-hero-title-row">
+              <h2>{{roadmap.actorName}}</h2>
+              <span class="pf2e-lp-level-badge">Level {{roadmap.currentLevel}}</span>
+              {{#if roadmap.canLevelUp}}
+                <span class="pf2e-lp-next-badge" title="Planned choices filled for Level {{roadmap.nextLevel}}">
+                  Next Lv {{roadmap.nextLevel}}: {{nextLevelReadyCount}}/{{nextLevelTotalCount}}
+                </span>
+              {{/if}}
+            </div>
+            <div class="pf2e-lp-hero-sub">
+              <span>{{roadmap.classDisplay}}</span>
+              {{#if roadmap.hasVariantBadges}}
+                {{#each roadmap.activeVariantBadges}}
+                  <span class="pf2e-lp-variant-chip">{{this}}</span>
+                {{/each}}
+              {{/if}}
+            </div>
+          </div>
+        </div>
+
+        <div class="pf2e-lp-hero-actions">
+          {{#if canApplyLevelUp}}
+            <button type="button" class="pf2e-lp-btn pf2e-lp-btn-gold" data-lp-action="apply-level-up" title="Apply planned Level {{roadmap.nextLevel}} choices directly to {{roadmap.actorName}}">
+              <i class="fa-solid fa-angles-up"></i> Apply Level Up (Lv {{roadmap.currentLevel}} &rarr; {{roadmap.nextLevel}})
+            </button>
+          {{/if}}
+          {{#if hasCheckerCallback}}
+            <button type="button" class="pf2e-lp-btn" data-lp-action="open-checker" title="Open Character Completeness Checker">
+              <i class="fa-solid fa-clipboard-check"></i> Checklist
+            </button>
+          {{/if}}
+          <button type="button" class="pf2e-lp-btn" data-lp-action="open-sheet" title="Open Character Sheet">
+            <i class="fa-solid fa-id-card"></i> Sheet
+          </button>
+          {{#if canEdit}}
+            <button type="button" class="pf2e-lp-btn pf2e-lp-btn-danger" data-lp-action="clear-plan" title="Clear all future planned levels">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          {{/if}}
+        </div>
+      </header>
+
+      <!-- View Switcher Subbar -->
+      <nav class="pf2e-lp-subbar">
+        <div class="pf2e-lp-tabs">
+          <button type="button" class="pf2e-lp-tab {{#if isViewFocus}}is-active{{/if}}" data-lp-action="set-view" data-view="focus">
+            <i class="fa-solid fa-sliders"></i> Level {{focusedLevel.level}} Focus
+          </button>
+          <button type="button" class="pf2e-lp-tab {{#if isViewOverview}}is-active{{/if}}" data-lp-action="set-view" data-view="overview">
+            <i class="fa-solid fa-table-list"></i> 1&ndash;20 Roadmap
+          </button>
+          <button type="button" class="pf2e-lp-tab {{#if isViewSummary}}is-active{{/if}}" data-lp-action="set-view" data-view="summary">
+            <i class="fa-solid fa-award"></i> Lv 20 Build Summary
+          </button>
+        </div>
+
+        {{#if isViewFocus}}
+          <div class="pf2e-lp-stepper">
+            <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm" data-lp-action="select-level" data-level="{{focusedLevel.prevLevel}}" {{#unless focusedLevel.canStepPrev}}disabled{{/unless}}>
+              <i class="fa-solid fa-chevron-left"></i> Lv {{focusedLevel.prevLevel}}
+            </button>
+            <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm" data-lp-action="select-level" data-level="{{focusedLevel.nextStepLevel}}" {{#unless focusedLevel.canStepNext}}disabled{{/unless}}>
+              Lv {{focusedLevel.nextStepLevel}} <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        {{/if}}
+      </nav>
+
+      <!-- Scrollable Workspace Body -->
+      <div class="pf2e-lp-scroll">
+
+        <!-- =============================================================== -->
+        <!-- TAB 1: SINGLE LEVEL FOCUS VIEW                                  -->
+        <!-- =============================================================== -->
+        {{#if isViewFocus}}
+          {{#if focusedLevel}}
+
+            <!-- Status Ribbon -->
+            <div class="pf2e-lp-level-banner {{#if focusedLevel.isNextLevel}}is-next{{else}}{{#if focusedLevel.isFuture}}is-future{{else}}{{#if focusedLevel.isCurrent}}is-current{{else}}is-past{{/if}}{{/if}}{{/if}}">
+              <div class="pf2e-lp-level-banner-left">
+                <h3>Level {{focusedLevel.level}}</h3>
+                {{#if focusedLevel.isNextLevel}}
+                  <span class="pf2e-lp-banner-tag is-next">Next Level-Up Target &mdash; Editable Plan</span>
+                {{else}}
+                  {{#if focusedLevel.isFuture}}
+                    <span class="pf2e-lp-banner-tag is-future">Future Planned Level &mdash; Editable</span>
+                  {{else}}
+                    {{#if focusedLevel.isCurrent}}
+                      <span class="pf2e-lp-banner-tag is-current">Current Character Level &mdash; Live Sheet</span>
+                    {{else}}
+                      <span class="pf2e-lp-banner-tag is-past">Past Level &mdash; Live Sheet (Read-Only)</span>
+                    {{/if}}
+                  {{/if}}
+                {{/if}}
+              </div>
+              <div class="pf2e-lp-level-banner-right">
+                {{#if focusedLevel.isFuture}}
+                  <span class="pf2e-lp-banner-hint">Drag &amp; drop feats or spells from PF2e Compendium Browser directly onto any slot below.</span>
+                {{else}}
+                  <span class="pf2e-lp-banner-hint">Showing active choices currently on the character sheet.</span>
+                {{/if}}
+              </div>
+            </div>
+
+            <!-- A. Class Features Unlocked at this Level -->
+            {{#if focusedLevel.hasClassFeatures}}
+              <section class="pf2e-lp-panel">
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-shield-halved"></i> Class Features Unlocked (Auto-Granted)</h4>
+                  <span class="pf2e-lp-hint">Click any feature to inspect its full rules</span>
+                </div>
+                <div class="pf2e-lp-feature-chips">
+                  {{#each focusedLevel.classFeatures}}
+                    <button
+                      type="button"
+                      class="pf2e-lp-feature-chip {{#if this.isDual}}is-dual{{/if}}"
+                      data-lp-action="inspect-uuid"
+                      data-uuid="{{this.uuid}}"
+                      title="Inspect {{this.name}} ({{this.sourceName}})"
+                    >
+                      <img src="{{this.img}}" alt="" />
+                      <span>{{this.name}}</span>
+                      <em class="pf2e-lp-chip-src">{{this.sourceName}}</em>
+                    </button>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
+
+            <!-- B. Attribute Boosts & Skill Increase Row -->
+            {{#if focusedLevel.hasBoosts}}
+              <section class="pf2e-lp-panel">
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-dumbbell"></i> Attribute Boosts</h4>
+                  <span class="pf2e-lp-hint">
+                    {{focusedLevel.boostInfo.selectedCount}} / {{focusedLevel.boostInfo.expected}} selected
+                    {{#if roadmap.variants.gradualBoostsEnabled}}&middot; Gradual Ability Boosts (1 per level){{/if}}
+                  </span>
+                </div>
+                <div class="pf2e-lp-boost-grid">
+                  {{#each focusedLevel.boostInfo.buttons}}
+                    <button
+                      type="button"
+                      class="pf2e-lp-boost-btn {{#if this.selected}}is-selected{{/if}}"
+                      data-lp-action="toggle-boost"
+                      data-level="{{../focusedLevel.level}}"
+                      data-attr="{{this.key}}"
+                      data-expected="{{../focusedLevel.boostInfo.expected}}"
+                      {{#if this.disabled}}disabled{{/if}}
+                    >
+                      <span class="pf2e-lp-boost-abbr">{{this.label}}</span>
+                      <span class="pf2e-lp-boost-mod">{{this.projectedMod}}</span>
+                    </button>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
+
+            {{#if focusedLevel.hasSkillIncrease}}
+              <section class="pf2e-lp-panel">
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-graduation-cap"></i> Skill Increase</h4>
+                  <span class="pf2e-lp-hint">Max legal proficiency at Lv {{focusedLevel.level}}: <strong>{{focusedLevel.skillIncreaseInfo.maxLegalLabel}}</strong></span>
+                </div>
+                {{#if focusedLevel.canEditThisLevel}}
+                  <div class="pf2e-lp-skill-row">
+                    <select id="pf2e-lp-skill-select" class="pf2e-lp-select" data-level="{{focusedLevel.level}}">
+                      <option value="">-- Choose Skill to Increase at Level {{focusedLevel.level}} --</option>
+                      {{#each focusedLevel.skillIncreaseInfo.options}}
+                        <option value="{{this.slug}}" {{#if this.selected}}selected{{/if}}>
+                          {{this.label}}{{#if this.invalid}} (Exceeds Lv Cap){{/if}}
+                        </option>
+                      {{/each}}
+                    </select>
+                    {{#unless focusedLevel.skillIncreaseInfo.chosenValid}}
+                      <span class="pf2e-lp-warn-inline">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Selected skill exceeds Level {{focusedLevel.level}} rank cap.
+                      </span>
+                    {{/unless}}
+                  </div>
+                {{else}}
+                  <div class="pf2e-lp-muted">Skill increase for Level {{focusedLevel.level}} is tracked directly on the live character sheet.</div>
+                {{/if}}
+              </section>
+            {{/if}}
+
+            <!-- C. Feat Slots -->
+            {{#if focusedLevel.hasFeatSlots}}
+              <section class="pf2e-lp-panel">
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-star"></i> Feat Slots</h4>
+                  <span class="pf2e-lp-hint">
+                    {{#if focusedLevel.canEditThisLevel}}
+                      Use Quick Pick, open PF2e Compendium Browser, or drag &amp; drop a feat onto any card
+                    {{else}}
+                      Live slotted feats from character sheet
+                    {{/if}}
+                  </span>
+                </div>
+
+                <div class="pf2e-lp-slots-grid">
+                  {{#each focusedLevel.featSlots}}
+                    <div
+                      class="pf2e-lp-slot-card {{#if this.filled}}is-filled{{else}}is-empty{{/if}} {{#if this.hasWarnings}}has-warn{{/if}}"
+                      {{#if ../focusedLevel.canEditThisLevel}}
+                        data-lp-drop-slot="1"
+                        data-level="{{../focusedLevel.level}}"
+                        data-slot-key="{{this.slotKey}}"
+                        data-slot-label="{{this.groupLabel}}"
+                      {{/if}}
+                    >
+                      <div class="pf2e-lp-slot-head">
+                        <span class="pf2e-lp-slot-type">{{this.groupLabel}}</span>
+                        <span class="pf2e-lp-slot-lvl">Lv {{this.level}}</span>
+                      </div>
+
+                      {{#if this.filled}}
+                        <div class="pf2e-lp-slot-chosen">
+                          <img src="{{this.feat.img}}" alt="" class="pf2e-lp-slot-img" />
+                          <div class="pf2e-lp-slot-chosen-info">
+                            <a class="pf2e-lp-slot-name" data-lp-action="inspect-uuid" data-uuid="{{this.feat.uuid}}" title="Open feat sheet">{{this.feat.name}}</a>
+                            <span class="pf2e-lp-slot-sub">Feat Lv {{this.feat.level}}</span>
+                          </div>
+                        </div>
+                      {{else}}
+                        <div class="pf2e-lp-slot-placeholder">
+                          {{#if ../focusedLevel.canEditThisLevel}}
+                            Drop a feat here or pick one below
+                          {{else}}
+                            Empty slot on character sheet
+                          {{/if}}
+                        </div>
+                      {{/if}}
+
+                      {{#if this.hasWarnings}}
+                        <div class="pf2e-lp-slot-warnings">
+                          {{#each this.warnings}}
+                            <div class="pf2e-lp-slot-warn-line"><i class="fa-solid fa-triangle-exclamation"></i> {{this}}</div>
+                          {{/each}}
+                        </div>
+                      {{/if}}
+
+                      {{#if ../focusedLevel.canEditThisLevel}}
+                        <div class="pf2e-lp-slot-actions">
+                          <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-btn-gold" data-lp-action="pick-feat" data-level="{{../focusedLevel.level}}" data-slot-key="{{this.slotKey}}">
+                            <i class="fa-solid fa-magnifying-glass"></i> Pick
+                          </button>
+                          <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm" data-lp-action="browse-feat" data-level="{{../focusedLevel.level}}" data-slot-key="{{this.slotKey}}" title="Open PF2e's native Compendium Browser filtered for this slot">
+                            <i class="fa-solid fa-compass"></i> Browse
+                          </button>
+                          {{#if this.filled}}
+                            <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-btn-danger" data-lp-action="clear-feat" data-level="{{../focusedLevel.level}}" data-slot-key="{{this.slotKey}}" title="Clear planned feat">
+                              <i class="fa-solid fa-xmark"></i>
+                            </button>
+                          {{/if}}
+                        </div>
+                      {{/if}}
+                    </div>
+                  {{/each}}
+                </div>
+              </section>
+            {{/if}}
+
+            <!-- D. Spellcasting Milestones & Planned Spells -->
+            {{#if focusedLevel.showSpellsPanel}}
+              <section
+                class="pf2e-lp-panel pf2e-lp-spells-panel"
+                {{#if focusedLevel.canEditThisLevel}}
+                  data-lp-drop-spell="1"
+                  data-level="{{focusedLevel.level}}"
+                  data-tradition="{{focusedLevel.defaultSpellTradition}}"
+                  data-entry-key="{{focusedLevel.defaultSpellEntryKey}}"
+                {{/if}}
+              >
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-hat-wizard"></i> Spellcasting &amp; Planned Spells</h4>
+                  {{#if focusedLevel.canEditThisLevel}}
+                    <div class="pf2e-lp-panel-actions">
+                      <button
+                        type="button"
+                        class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-btn-gold"
+                        data-lp-action="pick-spell"
+                        data-level="{{focusedLevel.level}}"
+                        data-tradition="{{focusedLevel.defaultSpellTradition}}"
+                        data-entry-key="{{focusedLevel.defaultSpellEntryKey}}"
+                        data-max-rank="{{focusedLevel.defaultSpellMaxRank}}"
+                        data-unlock-rank="{{focusedLevel.defaultSpellUnlockRank}}"
+                      >
+                        <i class="fa-solid fa-plus"></i> Pick Spells
+                      </button>
+                      <button
+                        type="button"
+                        class="pf2e-lp-btn pf2e-lp-btn-sm"
+                        data-lp-action="browse-spells"
+                        data-tradition="{{focusedLevel.defaultSpellTradition}}"
+                        data-max-rank="{{focusedLevel.defaultSpellMaxRank}}"
+                        data-unlock-rank="{{focusedLevel.defaultSpellUnlockRank}}"
+                        title="Open PF2e Compendium Browser filtered for this spell rank"
+                      >
+                        <i class="fa-solid fa-compass"></i> Browse Spells
+                      </button>
+                    </div>
+                  {{/if}}
+                </div>
+
+                {{#if focusedLevel.hasSpellMilestones}}
+                  <div class="pf2e-lp-milestone-list">
+                    {{#each focusedLevel.spellMilestones}}
+                      <div class="pf2e-lp-milestone-row">
+                        <div class="pf2e-lp-milestone-info">
+                          <strong>{{this.title}}</strong>
+                          <span class="pf2e-lp-milestone-delta">{{this.deltaText}}</span>
+                          <span class="pf2e-lp-milestone-full">({{this.traditionLabel}} &middot; Total Slots: {{this.fullSlotsText}})</span>
+                        </div>
+                        {{#if ../focusedLevel.canEditThisLevel}}
+                          <button
+                            type="button"
+                            class="pf2e-lp-btn pf2e-lp-btn-sm"
+                            data-lp-action="browse-spells"
+                            data-tradition="{{this.tradition}}"
+                            data-max-rank="{{this.maxRank}}"
+                            data-unlock-rank="{{this.unlockedNewRank}}"
+                          >
+                            <i class="fa-solid fa-compass"></i> Browse {{this.traditionLabel}}
+                          </button>
+                        {{/if}}
+                      </div>
+                    {{/each}}
+                  </div>
+                {{/if}}
+
+                {{#if focusedLevel.hasPlannedSpells}}
+                  <div class="pf2e-lp-planned-spells">
+                    {{#each focusedLevel.plannedSpellsDisplay}}
+                      <div class="pf2e-lp-spell-chip">
+                        <img src="{{this.img}}" alt="" />
+                        <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}" title="Open spell sheet">{{this.name}}</a>
+                        <span class="pf2e-lp-spell-rank">{{this.rankLabel}}</span>
+                        {{#if ../focusedLevel.canEditThisLevel}}
+                          <button
+                            type="button"
+                            class="pf2e-lp-chip-del"
+                            data-lp-action="remove-spell"
+                            data-level="{{../focusedLevel.level}}"
+                            data-spell-id="{{this.id}}"
+                            data-uuid="{{this.uuid}}"
+                            title="Remove planned spell"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        {{/if}}
+                      </div>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  {{#if focusedLevel.canEditThisLevel}}
+                    <div class="pf2e-lp-drop-hint">
+                      Click <strong>Pick Spells</strong> or drag &amp; drop spells from PF2e Compendium Browser here to bookmark them for Level {{focusedLevel.level}}.
+                    </div>
+                  {{/if}}
+                {{/if}}
+              </section>
+            {{/if}}
+
+          {{/if}}
+        {{/if}}
+
+        <!-- =============================================================== -->
+        <!-- TAB 2: FULL LEVEL 1-20 ROADMAP OVERVIEW                         -->
+        <!-- =============================================================== -->
+        {{#if isViewOverview}}
+          <section class="pf2e-lp-panel">
+            <div class="pf2e-lp-panel-head">
+              <h4><i class="fa-solid fa-table-list"></i> Level 1&ndash;20 Roadmap Overview</h4>
+              <span class="pf2e-lp-hint">Click any level row to edit its boosts, skills, feats, and spells</span>
+            </div>
+
+            <div class="pf2e-lp-overview-table">
+              <div class="pf2e-lp-ov-head">
+                <span>Lv</span>
+                <span>Feats</span>
+                <span>Boosts / Skill</span>
+                <span>Class Features &amp; Spells</span>
+              </div>
+              {{#each overviewLevels}}
+                <div
+                  class="pf2e-lp-ov-row {{#if this.isCurrent}}is-current{{/if}} {{#if this.isNextLevel}}is-next{{/if}} {{#if this.isPast}}is-past{{/if}} {{#if this.isSelected}}is-selected{{/if}}"
+                  data-lp-action="select-level"
+                  data-level="{{this.level}}"
+                >
+                  <div class="pf2e-lp-ov-lvl">
+                    <strong>{{this.level}}</strong>
+                    {{#if this.isCurrent}}<span class="pf2e-lp-mini-tag is-current">Now</span>{{/if}}
+                    {{#if this.isNextLevel}}<span class="pf2e-lp-mini-tag is-next">Next</span>{{/if}}
+                  </div>
+
+                  <div class="pf2e-lp-ov-feats">
+                    {{#each this.featsSummary}}
+                      <span class="pf2e-lp-ov-chip {{#if this.filled}}is-filled{{else}}is-empty{{/if}} {{#if this.hasWarnings}}has-warn{{/if}}">
+                        <em>{{this.slotLabel}}:</em>
+                        {{#if this.filled}}<strong>{{this.featName}}</strong>{{else}}Unplanned{{/if}}
+                      </span>
+                    {{else}}
+                      <span class="pf2e-lp-muted">&mdash;</span>
+                    {{/each}}
+                  </div>
+
+                  <div class="pf2e-lp-ov-bs">
+                    <div><strong>Boosts:</strong> {{this.boostsText}}</div>
+                    <div><strong>Skill:</strong> {{this.skillText}}</div>
+                  </div>
+
+                  <div class="pf2e-lp-ov-extra">
+                    <div class="pf2e-lp-ov-cf">{{this.classFeaturesText}}</div>
+                    {{#if this.plannedSpellsCount}}
+                      <div class="pf2e-lp-ov-sp">{{this.plannedSpellsCount}} planned spell(s)</div>
+                    {{/if}}
+                  </div>
+                </div>
+              {{/each}}
+            </div>
+          </section>
+        {{/if}}
+
+        <!-- =============================================================== -->
+        <!-- TAB 3: LEVEL 20 BUILD SUMMARY                                   -->
+        <!-- =============================================================== -->
+        {{#if isViewSummary}}
+          <div class="pf2e-lp-summary-grid">
+            <section class="pf2e-lp-panel">
+              <div class="pf2e-lp-panel-head">
+                <h4><i class="fa-solid fa-dumbbell"></i> Final Level 20 Projected Attributes</h4>
+                <span class="pf2e-lp-hint">* indicates a PF2e partial boost</span>
+              </div>
+              <div class="pf2e-lp-summary-attrs">
+                {{#each roadmap.finalProjectedAttrs}}
+                  <div class="pf2e-lp-summary-attr-card">
+                    <span>{{this.label}}</span>
+                    <strong>{{this.mod}}</strong>
+                  </div>
+                {{/each}}
+              </div>
+            </section>
+
+            <section class="pf2e-lp-panel">
+              <div class="pf2e-lp-panel-head">
+                <h4><i class="fa-solid fa-graduation-cap"></i> Final Projected Skill Proficiencies</h4>
+                <span class="pf2e-lp-hint">Live skills + planned Lv 1&ndash;20 increases</span>
+              </div>
+              <div class="pf2e-lp-summary-skills">
+                {{#each roadmap.finalProjectedSkills}}
+                  <div class="pf2e-lp-skill-badge rank-{{this.rankShort}}">
+                    <span>{{this.label}}</span>
+                    <strong>{{this.rankFull}}</strong>
+                  </div>
+                {{/each}}
+              </div>
+            </section>
+          </div>
+
+          <section class="pf2e-lp-panel">
+            <div class="pf2e-lp-panel-head">
+              <h4><i class="fa-solid fa-star"></i> Complete Feat Progression (Live &amp; Planned)</h4>
+              <span class="pf2e-lp-hint">Click any feat to open its sheet</span>
+            </div>
+            {{#if hasSummaryFeats}}
+              <div class="pf2e-lp-summary-feats">
+                {{#each summaryFeats}}
+                  <div class="pf2e-lp-summary-feat-row {{#if this.isFuture}}is-planned{{/if}} {{#if this.hasWarnings}}has-warn{{/if}}">
+                    <span class="pf2e-lp-sf-lvl">Lv {{this.level}}</span>
+                    <span class="pf2e-lp-sf-slot">{{this.groupLabel}}</span>
+                    <img src="{{this.img}}" alt="" />
+                    <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}">{{this.name}}</a>
+                    {{#if this.isFuture}}
+                      <span class="pf2e-lp-mini-tag is-future">Planned</span>
+                    {{else}}
+                      <span class="pf2e-lp-mini-tag is-past">Live</span>
+                    {{/if}}
+                    {{#if this.hasWarnings}}
+                      <span class="pf2e-lp-warn-inline" title="{{this.warningText}}"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                    {{/if}}
+                  </div>
+                {{/each}}
+              </div>
+            {{else}}
+              <div class="pf2e-lp-muted">No live or planned feats recorded yet.</div>
+            {{/if}}
+          </section>
+        {{/if}}
+
+      </div>
+
+    {{else}}
+      <div class="pf2e-lp-empty-main">
+        <i class="fa-solid fa-stairs"></i>
+        <h3>No Character Selected</h3>
+        <p>Create or select a player character to plan Levels 1&ndash;20 and apply guided level-ups.</p>
+      </div>
+    {{/if}}
+  </main>
+
+</div>

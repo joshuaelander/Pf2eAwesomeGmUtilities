@@ -62,6 +62,11 @@
         </div>
 
         <div class="pf2e-cc-hero-actions">
+          {{#if levelPlannerEnabled}}
+            <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold" data-cc-action="open-level-planner" title="Open Level 1-20 Build Planner & Guided Level-Up">
+              <i class="fa-solid fa-stairs"></i> Level Planner
+            </button>
+          {{/if}}
           <button type="button" class="pf2e-cc-btn" data-cc-action="open-sheet" title="Open Character Sheet">
             <i class="fa-solid fa-id-card"></i> Sheet
           </button>

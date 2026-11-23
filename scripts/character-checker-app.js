@@ -21,6 +21,7 @@ import {
   postChecklistToChat,
   syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
+import { isLevelPlannerEnabled } from "./level-planner-engine.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -103,6 +104,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
     super(options);
     this._selectedActorId = options.actorId || null;
     this._showAllWorldPCs = false;
+    this._onOpenLevelPlanner = typeof options.onOpenLevelPlanner === "function" ? options.onOpenLevelPlanner : null;
     this._hookIds = [];
     this._refreshTimer = null;
     this._onKeyDownBound = null;
@@ -235,6 +237,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
     return {
       isGM,
       showAllWorldPCs: this._showAllWorldPCs,
+      levelPlannerEnabled: Boolean(isLevelPlannerEnabled() && this._onOpenLevelPlanner),
       roster,
       hasRoster: roster.length > 0,
       report: selectedReport,
@@ -339,6 +342,12 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         if (actor?.sheet) actor.sheet.render(true);
         break;
 
+      case "open-level-planner":
+        if (actor && this._onOpenLevelPlanner) {
+          this._onOpenLevelPlanner(actor);
+        }
+        break;
+
       case "whisper-player":
         if (!actor || !game.user?.isGM) return;
         await postChecklistToChat(actor, { whisperToOwners: true });
@@ -439,22 +448,53 @@ const expandedSpellGuideActors = new Set();
 
 /**
  * Registers the `renderCharacterSheetPF2e` hook that injects helpful, native parchment-styled
- * completeness guides directly onto the Character, Skills, Spellcasting, and Feats tabs.
+ * completeness guides directly onto the Character, Skills, Spellcasting, and Feats tabs,
+ * plus an optional plain-text Level Planner button when `enableLevelPlanner` is ON.
  *
  * @param {(actor: Actor) => void} onOpenCheckerForActor
+ * @param {(actor: Actor) => void} [onOpenLevelPlannerForActor]
  */
-export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) {
+export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, onOpenLevelPlannerForActor = null) {
   Hooks.on("renderCharacterSheetPF2e", (sheet, html) => {
-    if (!isSheetGuidesEnabled()) return;
+    const guidesEnabled = isSheetGuidesEnabled();
+    const plannerEnabled = isLevelPlannerEnabled() && typeof onOpenLevelPlannerForActor === "function";
+    if (!guidesEnabled && !plannerEnabled) return;
 
     const actor = sheet?.actor ?? sheet?.document;
     if (!actor || actor.type !== "character") return;
 
-    // Only show build guides to GM or character owners (not observer/limited party members)
+    // Only show build guides / planner to GM or character owners (not observer/limited party members)
     if (!game.user?.isGM && !actor.isOwner) return;
 
     const root = html instanceof HTMLElement ? html : (html?.[0] ?? sheet?.element);
     if (!root || typeof root.querySelector !== "function") return;
+
+    // Lightweight fast path: if Completeness Guides are OFF but Level Planner is ON,
+    // inject ONLY a minimal plain-text Level Planner strip on the Character tab (zero icons, zero analysis).
+    if (!guidesEnabled) {
+      const charTabOnly = root.querySelector('.tab[data-tab="character"]');
+      if (charTabOnly && !charTabOnly.querySelector(".pf2e-cc-sheet-char-bar")) {
+        const bar = document.createElement("div");
+        bar.className = "pf2e-cc-sheet-banner pf2e-cc-sheet-char-bar";
+        bar.innerHTML = `
+          <div class="pf2e-cc-sheet-banner-main">
+            <div class="pf2e-cc-sheet-banner-text"><strong>Level 1-20 Build Planner:</strong> Plan future levels and apply guided level-ups.</div>
+          </div>
+          <div class="pf2e-cc-sheet-header-btns">
+            <button type="button" class="pf2e-cc-sheet-btn is-primary" data-lp-open="1" title="Open Level 1-20 Build Planner & Guided Level-Up">
+              Level Planner
+            </button>
+          </div>
+        `;
+        bar.querySelector('[data-lp-open="1"]')?.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          onOpenLevelPlannerForActor?.(actor);
+        });
+        charTabOnly.prepend(bar);
+      }
+      return;
+    }
 
     const report = analyzeCharacter(actor);
     if (!report) return;
@@ -484,10 +524,23 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
         <div class="pf2e-cc-sheet-banner-main">
           <div class="pf2e-cc-sheet-banner-text">${summaryHtml}</div>
         </div>
-        <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
-          Checklist
-        </button>
+        <div class="pf2e-cc-sheet-header-btns">
+          ${plannerEnabled ? `
+            <button type="button" class="pf2e-cc-sheet-btn is-primary" data-lp-open="1" title="Open Level 1-20 Build Planner & Guided Level-Up">
+              Level Planner
+            </button>
+          ` : ""}
+          <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
+            Checklist
+          </button>
+        </div>
       `;
+
+      bar.querySelector('[data-lp-open="1"]')?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onOpenLevelPlannerForActor?.(actor);
+      });
 
       bar.querySelector('[data-cc-open="1"]')?.addEventListener("click", (ev) => {
         ev.preventDefault();

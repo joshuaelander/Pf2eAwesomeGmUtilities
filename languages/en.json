@@ -324,6 +324,10 @@
       "Title": "PF2e Character Completeness Checker",
       "MenuTooltip": "Inspect party characters for missing feats, skills, boosts, and auto-create spellcasting entries"
     },
+    "LevelPlanner": {
+      "Title": "PF2e Level 1-20 Build Planner",
+      "MenuTooltip": "Plan future character levels (1-20) and apply guided level-ups"
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
@@ -380,6 +384,10 @@
       "AllowPlayerAutoSpellcasting": {
         "Name": "Allow Players to Auto-Add & Sync Spellcasting Entries",
         "Hint": "Allows players who own a character sheet to click 'Add Entry' and 'Sync Slots' on their Spellcasting tab and in the Character Completeness Checker. When disabled, only the GM sees the auto-create buttons."
+      },
+      "EnableLevelPlanner": {
+        "Name": "Enable Level 1-20 Build Planner & Guided Level-Up (Opt-In)",
+        "Hint": "Enables a lightweight PF2e Level 1-20 Build Planner and 1-click Guided Level-Up Assistant for GMs and players (on Character Sheets, the Character Completeness Checker, and the Utilities menu). Reads schedules directly from live PF2e class items and integrates with PF2e's native Compendium Browser. Default OFF (zero overhead when disabled)."
       }
     }
   }

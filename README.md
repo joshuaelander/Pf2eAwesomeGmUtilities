@@ -65,6 +65,13 @@ A build auditor and character sheet assistant that helps GMs and players verify 
 - **Inline Character Sheet Guides:** Displays native parchment guides directly on the Character, Skills, Spellcasting, and Feats tabs showing expected Trained Skills (Class/Dual Class + Background + Overlap + INT), Skill Increases (including Rogue/Investigator fast progression), Languages, and empty Feat slots.
 - **One-Click Spellcasting Entry Creator & Slot Sync:** Detects both slot-based and Focus spellcasting feats from Primary Class, Dual Class, and Multiclass/Free Archetype dedications (Basic, Expert, Master, Breadth, Divine Font, Arcane School, Flexible Spellcaster, Animist Prepared + Apparition, Impossible Magic 2-slot Magus, Summoner, and Necromancer progressions, plus Focus entries like Champion Devotion Spells, Magus Conflux Spells, Bard Composition Spells, Cleric Domain Spells, Druid Order Spells, Monk Qi Spells, Ranger Warden Spells, and Blessed One), creates properly configured PF2e spellcasting entries with exact level-scaled slots, and syncs slot counts on level-up without erasing prepared spells.
 
+### 9. PF2e Level 1-20 Build Planner & Guided Level-Up (Opt-In)
+A lightweight, opt-in character roadmap planner and guided level-up assistant (disabled by default for zero overhead when unused) that reads all class features, feat schedules, and rules natively from the PF2e system and compendiums rather than maintaining brittle hardcoded tables.
+- **Zero-Hardcoded-Data Roadmap (Levels 1-20):** Reads class features, feat slot schedules, skill increases, and boost tiers directly from each actor's live Class item(s), automatically supporting Dual Class (PF2e Awesome Variant Rules), Free Archetype, Ancestry Paragon, Gradual Ability Boosts, and homebrew content.
+- **Native PF2e Compendium Browser & Quick Pickers:** Open PF2e's built-in Compendium Browser pre-filtered for any feat slot or spell rank and drag-and-drop items directly onto future levels, or use the optional lazy-loaded inline Quick Pick modals to search and bookmark feats and spells rapidly.
+- **Live Attribute & Skill Projections:** Projects exact PF2e partial-boost attribute modifiers and U/T/E/M/L skill ranks across Levels 1-20 with soft prerequisite warnings for skill ranks, feat levels, and archetype dedications.
+- **Guided 1-Click Level-Up (Lv N to N+1):** Reviews all planned choices for the next level and applies them natively—updating level, attribute boosts, and skill increases, embedding planned feats into exact live sheet slots (allowing PF2e ChoiceSets to prompt cleanly), syncing spellcasting entry slots, adding planned spells, and reporting live Completeness Checker status afterward.
+
 ---
 
 ## Quick Access & Keybindings
@@ -79,6 +86,7 @@ A build auditor and character sheet assistant that helps GMs and players verify 
 | Place Scene Link Pin | GM Utilities Layer | Canvas Drag & Drop | Macro / Control Button |
 | AP Journal Editor & Styler | GM Utilities Layer | ProseMirror Editor Toolbar | Feather Icon on Toolbar |
 | PF2e Character Completeness Checker | GM Utilities Layer | Character Sheet Guides & Checklist Button | Macro / Control Button |
+| PF2e Level 1-20 Build Planner (Opt-In) | GM Utilities Layer (GM & Players, when enabled) | Character Sheet & Checker Button | Utilities Menu / Sheet Button |
 | Performance Checker (GM Only, Opt-In) | GM Utilities Layer (GM only, when enabled) | None (Enable in Module Settings) | Shift + P (GM only, when enabled) |
 
 ---

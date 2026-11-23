@@ -1,0 +1,1460 @@
+/**
+ * PF2e Awesome GM Utilities - Level 1-20 Build Planner & Guided Level-Up Styles
+ *
+ * Strictly scoped to `.pf2e-lp-window`, `.pf2e-lp-container`, and `.pf2e-lp-picker-dialog`
+ * so zero global Foundry or PF2e sheet styles are affected.
+ * Matches the Obsidian, Burgundy, and Pathfinder Gold dark theme of the GM Utilities suite.
+ */
+
+/* ------------------------------------------------------------------------- */
+/* 1. WINDOW CHROME & LAYOUT                                                 */
+/* ------------------------------------------------------------------------- */
+
+.app.pf2e-lp-window,
+.pf2e-lp-window {
+  background: #141720 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #c59b27 !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.8), 0 0 16px rgba(197, 155, 39, 0.22) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.pf2e-lp-window .window-header {
+  background: linear-gradient(180deg, #2a1515 0%, #171111 100%) !important;
+  border-bottom: 1px solid #c59b27 !important;
+  color: #e6c55d !important;
+  font-weight: 600;
+}
+
+.pf2e-lp-window .window-content {
+  padding: 0 !important;
+  background: #141720 !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.pf2e-lp-container {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-primary, "Signika", sans-serif);
+  color: #e2e8f0;
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 2. LEFT SIDEBAR (CHARACTER PICKER + LEVEL 1-20 NAV + PROJECTIONS)         */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-container .pf2e-lp-sidebar {
+  width: 235px;
+  flex: 0 0 235px;
+  display: flex;
+  flex-direction: column;
+  background: #10131c;
+  border-right: 1px solid rgba(197, 155, 39, 0.28);
+  min-height: 0;
+}
+
+.pf2e-lp-container .pf2e-lp-sidebar-head {
+  padding: 10px 12px 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pf2e-lp-container .pf2e-lp-sidebar-head h3 {
+  margin: 0;
+  font-size: 0.92em;
+  color: #e6c55d;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-actor-picker {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-actor-picker select,
+.pf2e-lp-container .pf2e-lp-select {
+  width: 100%;
+  height: 28px;
+  padding: 2px 7px;
+  background: #0c0f17;
+  color: #f8fafc;
+  border: 1px solid rgba(197, 155, 39, 0.45);
+  border-radius: 5px;
+  font-size: 0.84em;
+}
+
+.pf2e-lp-container .pf2e-lp-nav-controls {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pf2e-lp-container .pf2e-lp-check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78em;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.pf2e-lp-container .pf2e-lp-level-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  color: #cbd5e1;
+  font-size: 0.82em;
+  cursor: pointer;
+  line-height: 1.2;
+  height: auto;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(197, 155, 39, 0.45);
+  color: #ffffff;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item.is-selected {
+  background: rgba(197, 155, 39, 0.18);
+  border-color: #c59b27;
+  color: #fef3c7;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item.is-past-row {
+  opacity: 0.72;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item.is-next-row {
+  border-left: 3px solid #facc15;
+}
+
+.pf2e-lp-container .pf2e-lp-level-item.is-current-row {
+  border-left: 3px solid #38bdf8;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-num {
+  font-weight: 700;
+  min-width: 34px;
+  text-align: left;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1 1 auto;
+}
+
+.pf2e-lp-container .pf2e-lp-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
+.pf2e-lp-container .pf2e-lp-dot.is-boost {
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde047;
+  border: 1px solid rgba(250, 204, 21, 0.4);
+}
+
+.pf2e-lp-container .pf2e-lp-dot.is-skill {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.pf2e-lp-container .pf2e-lp-dot.is-spell {
+  background: rgba(168, 85, 247, 0.22);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill {
+  font-size: 0.78em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-current {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-next {
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde047;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-partial {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-past,
+.pf2e-lp-container .pf2e-lp-lvl-pill.is-empty {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+/* Projected Lv 20 Footer */
+.pf2e-lp-container .pf2e-lp-proj-footer {
+  padding: 8px 9px;
+  border-top: 1px solid rgba(197, 155, 39, 0.28);
+  background: #0c0f17;
+}
+
+.pf2e-lp-container .pf2e-lp-proj-title {
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #e6c55d;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.pf2e-lp-container .pf2e-lp-proj-attrs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.pf2e-lp-container .pf2e-lp-proj-attr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76em;
+}
+
+.pf2e-lp-container .pf2e-lp-proj-lbl {
+  color: #94a3b8;
+}
+
+.pf2e-lp-container .pf2e-lp-proj-attr strong {
+  color: #facc15;
+  font-family: monospace;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 3. MAIN PANEL, HERO HEADER & VIEW TABS                                    */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-container .pf2e-lp-main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.pf2e-lp-container .pf2e-lp-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 11px 14px;
+  background: linear-gradient(180deg, #1b1f2b 0%, #151822 100%);
+  border-bottom: 1px solid rgba(197, 155, 39, 0.3);
+}
+
+.pf2e-lp-container .pf2e-lp-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pf2e-lp-container .pf2e-lp-hero-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #c59b27;
+  flex: 0 0 44px;
+}
+
+.pf2e-lp-container .pf2e-lp-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pf2e-lp-container .pf2e-lp-hero-title-row h2 {
+  margin: 0;
+  font-size: 1.12em;
+  color: #f8fafc;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-level-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.74em;
+  font-weight: 700;
+  background: rgba(197, 155, 39, 0.2);
+  border: 1px solid rgba(197, 155, 39, 0.5);
+  color: #facc15;
+}
+
+.pf2e-lp-container .pf2e-lp-next-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.74em;
+  font-weight: 700;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+
+.pf2e-lp-container .pf2e-lp-hero-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 0.8em;
+  color: #cbd5e1;
+}
+
+.pf2e-lp-container .pf2e-lp-variant-chip {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 600;
+  background: rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  color: #d8b4fe;
+}
+
+.pf2e-lp-container .pf2e-lp-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Subbar Tabs & Stepper */
+.pf2e-lp-container .pf2e-lp-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #111520;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pf2e-lp-container .pf2e-lp-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto !important;
+  height: auto;
+}
+
+.pf2e-lp-container .pf2e-lp-tab:hover {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.pf2e-lp-container .pf2e-lp-tab.is-active {
+  background: rgba(197, 155, 39, 0.16);
+  border-color: rgba(197, 155, 39, 0.55);
+  color: #fde68a;
+}
+
+.pf2e-lp-container .pf2e-lp-stepper {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Buttons */
+.pf2e-lp-container .pf2e-lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  background: #232837;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+  width: auto !important;
+  height: auto;
+  flex: 0 0 auto;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-btn:hover:not(:disabled) {
+  background: #2d3448;
+  border-color: #c59b27;
+  color: #ffffff;
+}
+
+.pf2e-lp-container .pf2e-lp-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.pf2e-lp-container .pf2e-lp-btn-gold {
+  background: linear-gradient(135deg, #7c2d12 0%, #991b1b 100%);
+  border-color: #c59b27;
+  color: #fef3c7;
+}
+
+.pf2e-lp-container .pf2e-lp-btn-gold:hover:not(:disabled) {
+  background: linear-gradient(135deg, #9a3412 0%, #b91c1c 100%);
+  border-color: #facc15;
+}
+
+.pf2e-lp-container .pf2e-lp-btn-danger {
+  background: rgba(153, 27, 27, 0.25);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.pf2e-lp-container .pf2e-lp-btn-danger:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.45);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+.pf2e-lp-container .pf2e-lp-btn-sm {
+  padding: 3px 8px;
+  font-size: 0.77em;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 4. SCROLLABLE BODY & FOCUS PANELS                                         */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-container .pf2e-lp-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #1a1e2a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 4px solid #64748b;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner.is-next {
+  border-left-color: #facc15;
+  background: rgba(197, 155, 39, 0.1);
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner.is-future {
+  border-left-color: #a855f7;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner.is-current {
+  border-left-color: #38bdf8;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner-left h3 {
+  margin: 0;
+  font-size: 1.04em;
+  color: #f8fafc;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-tag {
+  font-size: 0.76em;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-tag.is-next {
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde047;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-tag.is-future {
+  background: rgba(168, 85, 247, 0.22);
+  color: #d8b4fe;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-tag.is-current {
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-tag.is-past {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+.pf2e-lp-container .pf2e-lp-banner-hint {
+  font-size: 0.77em;
+  color: #94a3b8;
+}
+
+.pf2e-lp-container .pf2e-lp-panel {
+  background: #1a1e2a;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.pf2e-lp-container .pf2e-lp-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(197, 155, 39, 0.22);
+}
+
+.pf2e-lp-container .pf2e-lp-panel-head h4 {
+  margin: 0;
+  font-size: 0.92em;
+  color: #e6c55d;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-hint {
+  font-size: 0.77em;
+  color: #94a3b8;
+}
+
+.pf2e-lp-container .pf2e-lp-muted {
+  font-size: 0.82em;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Class Feature Chips */
+.pf2e-lp-container .pf2e-lp-feature-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-feature-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px 4px 5px;
+  border-radius: 5px;
+  background: #131722;
+  border: 1px solid rgba(197, 155, 39, 0.32);
+  color: #f1f5f9;
+  font-size: 0.81em;
+  cursor: pointer;
+  width: auto !important;
+  height: auto;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-feature-chip.is-dual {
+  border-color: rgba(168, 85, 247, 0.48);
+}
+
+.pf2e-lp-container .pf2e-lp-feature-chip:hover {
+  border-color: #facc15;
+  background: #1d2334;
+}
+
+.pf2e-lp-container .pf2e-lp-feature-chip img {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: cover;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-chip-src {
+  font-style: normal;
+  font-size: 0.86em;
+  color: #94a3b8;
+}
+
+/* Attribute Boost Grid */
+.pf2e-lp-container .pf2e-lp-boost-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.pf2e-lp-container .pf2e-lp-boost-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 6px;
+  border-radius: 6px;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  cursor: pointer;
+  width: 100%;
+  height: auto;
+  transition: all 0.14s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-boost-btn:hover:not(:disabled) {
+  border-color: #c59b27;
+  background: #1f2536;
+}
+
+.pf2e-lp-container .pf2e-lp-boost-btn.is-selected {
+  background: linear-gradient(180deg, rgba(197, 155, 39, 0.28) 0%, rgba(153, 27, 27, 0.28) 100%);
+  border-color: #facc15;
+  color: #fef3c7;
+  box-shadow: 0 0 8px rgba(250, 204, 21, 0.22);
+}
+
+.pf2e-lp-container .pf2e-lp-boost-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pf2e-lp-container .pf2e-lp-boost-abbr {
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.pf2e-lp-container .pf2e-lp-boost-mod {
+  font-size: 1.05em;
+  font-weight: 700;
+  font-family: monospace;
+  color: #facc15;
+}
+
+/* Skill Increase Row */
+.pf2e-lp-container .pf2e-lp-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pf2e-lp-container .pf2e-lp-skill-row .pf2e-lp-select {
+  max-width: 340px;
+}
+
+.pf2e-lp-container .pf2e-lp-warn-inline {
+  color: #fbbf24;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+/* Feat Slot Drop Cards */
+.pf2e-lp-container .pf2e-lp-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 9px;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #131722;
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-card.is-filled {
+  border-style: solid;
+  border-color: rgba(16, 185, 129, 0.45);
+  border-left: 3px solid #34d399;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-card.has-warn {
+  border-color: rgba(245, 158, 11, 0.6);
+  border-left: 3px solid #f59e0b;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-card.is-dragover,
+.pf2e-lp-container .pf2e-lp-spells-panel.is-dragover {
+  border-style: solid !important;
+  border-color: #facc15 !important;
+  background: rgba(197, 155, 39, 0.14) !important;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.3);
+}
+
+.pf2e-lp-container .pf2e-lp-slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-type {
+  font-size: 0.8em;
+  font-weight: 700;
+  color: #e6c55d;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-lvl {
+  font-size: 0.74em;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-img {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid rgba(197, 155, 39, 0.45);
+  flex: 0 0 30px;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-chosen-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-name {
+  font-weight: 700;
+  font-size: 0.88em;
+  color: #f8fafc;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-name:hover {
+  color: #fde047;
+  text-decoration: underline;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-sub {
+  font-size: 0.74em;
+  color: #94a3b8;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-placeholder {
+  font-size: 0.79em;
+  color: #64748b;
+  font-style: italic;
+  padding: 5px 0;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.pf2e-lp-container .pf2e-lp-slot-warn-line {
+  font-size: 0.74em;
+  color: #fbbf24;
+}
+
+.pf2e-lp-container .pf2e-lp-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: auto;
+}
+
+/* Spell Milestones & Planned Spells */
+.pf2e-lp-container .pf2e-lp-milestone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pf2e-lp-container .pf2e-lp-milestone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  font-size: 0.82em;
+}
+
+.pf2e-lp-container .pf2e-lp-milestone-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-milestone-delta {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(250, 204, 21, 0.18);
+  color: #fde047;
+  font-weight: 700;
+  font-size: 0.9em;
+}
+
+.pf2e-lp-container .pf2e-lp-milestone-full {
+  color: #94a3b8;
+  font-size: 0.9em;
+}
+
+.pf2e-lp-container .pf2e-lp-planned-spells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px 4px 5px;
+  border-radius: 5px;
+  background: #131722;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  font-size: 0.81em;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-chip img {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: cover;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-chip a {
+  color: #f1f5f9;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-chip a:hover {
+  color: #fde047;
+  text-decoration: underline;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-rank {
+  font-size: 0.82em;
+  color: #d8b4fe;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(168, 85, 247, 0.18);
+}
+
+.pf2e-lp-container .pf2e-lp-chip-del {
+  background: transparent;
+  border: none;
+  color: #fca5a5;
+  cursor: pointer;
+  padding: 1px 3px;
+  width: auto !important;
+  height: auto;
+}
+
+.pf2e-lp-container .pf2e-lp-chip-del:hover {
+  color: #ef4444;
+}
+
+.pf2e-lp-container .pf2e-lp-drop-hint {
+  font-size: 0.79em;
+  color: #94a3b8;
+  padding: 8px 10px;
+  border-radius: 5px;
+  border: 1px dashed rgba(168, 85, 247, 0.35);
+  text-align: center;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 5. TAB 2: 1-20 OVERVIEW TABLE                                             */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-container .pf2e-lp-overview-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-head,
+.pf2e-lp-container .pf2e-lp-ov-row {
+  display: grid;
+  grid-template-columns: 62px minmax(200px, 1.4fr) minmax(150px, 0.9fr) minmax(160px, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 6px 9px;
+  border-radius: 5px;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-head {
+  font-size: 0.74em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #e6c55d;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.pf2e-lp-container .pf2e-lp-ov-row {
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.8em;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-row:hover {
+  border-color: #c59b27;
+  background: #1c2233;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-row.is-past {
+  opacity: 0.72;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-row.is-current {
+  border-left: 3px solid #38bdf8;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-row.is-next {
+  border-left: 3px solid #facc15;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-lvl {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-feats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.88em;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pf2e-lp-container .pf2e-lp-ov-chip em {
+  font-style: normal;
+  color: #94a3b8;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-chip.is-filled {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.pf2e-lp-container .pf2e-lp-ov-chip.has-warn {
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.pf2e-lp-container .pf2e-lp-ov-bs,
+.pf2e-lp-container .pf2e-lp-ov-extra {
+  font-size: 0.9em;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+.pf2e-lp-container .pf2e-lp-ov-sp {
+  color: #d8b4fe;
+  font-size: 0.92em;
+  margin-top: 2px;
+}
+
+.pf2e-lp-container .pf2e-lp-mini-tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
+.pf2e-lp-container .pf2e-lp-mini-tag.is-current {
+  background: rgba(56, 189, 248, 0.2);
+  color: #7dd3fc;
+}
+
+.pf2e-lp-container .pf2e-lp-mini-tag.is-next {
+  background: rgba(250, 204, 21, 0.2);
+  color: #fde047;
+}
+
+.pf2e-lp-container .pf2e-lp-mini-tag.is-future {
+  background: rgba(168, 85, 247, 0.22);
+  color: #d8b4fe;
+}
+
+.pf2e-lp-container .pf2e-lp-mini-tag.is-past {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 6. TAB 3: LEVEL 20 BUILD SUMMARY                                          */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-container .pf2e-lp-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-attrs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-attr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 7px 6px;
+  border-radius: 5px;
+  background: #131722;
+  border: 1px solid rgba(197, 155, 39, 0.28);
+}
+
+.pf2e-lp-container .pf2e-lp-summary-attr-card span {
+  font-size: 0.76em;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-attr-card strong {
+  font-size: 1.15em;
+  color: #facc15;
+  font-family: monospace;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pf2e-lp-container .pf2e-lp-skill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.78em;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pf2e-lp-container .pf2e-lp-skill-badge.rank-L {
+  border-color: rgba(250, 204, 21, 0.6);
+  color: #fde047;
+}
+
+.pf2e-lp-container .pf2e-lp-skill-badge.rank-M {
+  border-color: rgba(168, 85, 247, 0.55);
+  color: #d8b4fe;
+}
+
+.pf2e-lp-container .pf2e-lp-skill-badge.rank-E {
+  border-color: rgba(56, 189, 248, 0.5);
+  color: #7dd3fc;
+}
+
+.pf2e-lp-container .pf2e-lp-skill-badge.rank-T {
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-feat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #131722;
+  font-size: 0.82em;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-feat-row img {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: cover;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-feat-row a {
+  color: #f8fafc;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1 1 auto;
+}
+
+.pf2e-lp-container .pf2e-lp-summary-feat-row a:hover {
+  color: #fde047;
+  text-decoration: underline;
+}
+
+.pf2e-lp-container .pf2e-lp-sf-lvl {
+  min-width: 38px;
+  font-weight: 700;
+  color: #e6c55d;
+  font-family: monospace;
+}
+
+.pf2e-lp-container .pf2e-lp-sf-slot {
+  min-width: 135px;
+  color: #94a3b8;
+  font-size: 0.92em;
+}
+
+.pf2e-lp-container .pf2e-lp-empty-main,
+.pf2e-lp-container .pf2e-lp-empty-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  color: #94a3b8;
+  height: 100%;
+  gap: 8px;
+}
+
+.pf2e-lp-container .pf2e-lp-empty-main i {
+  font-size: 2.2em;
+  color: rgba(197, 155, 39, 0.5);
+}
+
+/* ------------------------------------------------------------------------- */
+/* 7. LIGHTWEIGHT INLINE QUICK PICKER MODAL (.pf2e-lp-picker-dialog)         */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-picker-dialog {
+  background: #141720 !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #c59b27 !important;
+}
+
+.pf2e-lp-picker-dialog .window-header {
+  background: linear-gradient(180deg, #2a1515 0%, #171111 100%) !important;
+  border-bottom: 1px solid #c59b27 !important;
+  color: #e6c55d !important;
+}
+
+.pf2e-lp-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 410px;
+  min-height: 300px;
+}
+
+.pf2e-lp-picker-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pf2e-lp-picker-search {
+  flex: 1 1 180px;
+  height: 28px;
+  padding: 2px 8px;
+  background: #0c0f17;
+  color: #f8fafc;
+  border: 1px solid rgba(197, 155, 39, 0.5);
+  border-radius: 5px;
+  font-size: 0.86em;
+}
+
+.pf2e-lp-picker-scope,
+.pf2e-lp-picker-trad,
+.pf2e-lp-picker-rank {
+  height: 28px;
+  padding: 2px 6px;
+  background: #0c0f17;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  font-size: 0.82em;
+}
+
+.pf2e-lp-picker-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.79em;
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.pf2e-lp-picker-browser-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  height: 28px;
+  border-radius: 5px;
+  background: #232837;
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-size: 0.78em;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto !important;
+}
+
+.pf2e-lp-picker-browser-btn:hover {
+  border-color: #c59b27;
+  color: #ffffff;
+}
+
+.pf2e-lp-picker-status {
+  font-size: 0.76em;
+  color: #94a3b8;
+}
+
+.pf2e-lp-picker-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 3px;
+}
+
+.pf2e-lp-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: #1a1e2a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pf2e-lp-picker-row:hover {
+  border-color: rgba(197, 155, 39, 0.5);
+  background: #202637;
+}
+
+.pf2e-lp-picker-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid rgba(197, 155, 39, 0.35);
+  flex: 0 0 28px;
+}
+
+.pf2e-lp-picker-info {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pf2e-lp-picker-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pf2e-lp-picker-inspect {
+  font-weight: 700;
+  font-size: 0.88em;
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.pf2e-lp-picker-inspect:hover {
+  color: #fde047;
+  text-decoration: underline;
+}
+
+.pf2e-lp-picker-lvl {
+  font-size: 0.74em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(197, 155, 39, 0.2);
+  color: #fde68a;
+  font-family: monospace;
+}
+
+.pf2e-lp-picker-rarity {
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.pf2e-lp-picker-rarity.rarity-uncommon {
+  background: rgba(234, 88, 12, 0.25);
+  color: #fdba74;
+}
+
+.pf2e-lp-picker-rarity.rarity-rare {
+  background: rgba(37, 99, 235, 0.28);
+  color: #93c5fd;
+}
+
+.pf2e-lp-picker-rarity.rarity-unique {
+  background: rgba(147, 51, 234, 0.28);
+  color: #d8b4fe;
+}
+
+.pf2e-lp-picker-sub {
+  font-size: 0.74em;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pf2e-lp-picker-select {
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #7c2d12 0%, #991b1b 100%);
+  border: 1px solid #c59b27;
+  color: #fef3c7;
+  font-size: 0.78em;
+  font-weight: 700;
+  cursor: pointer;
+  width: auto !important;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.pf2e-lp-picker-select:hover {
+  border-color: #facc15;
+}
+
+.pf2e-lp-picker-select.is-added {
+  background: rgba(16, 185, 129, 0.24);
+  border-color: #34d399;
+  color: #6ee7b7;
+}
+
+.pf2e-lp-picker-empty {
+  padding: 20px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.84em;
+}
