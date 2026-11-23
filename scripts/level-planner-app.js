@@ -17,6 +17,7 @@ import {
   normalizeSlug
 } from "./character-checker-engine.js";
 import {
+  FORMULA_CRAFTABLE_TYPES,
   applyPlannedLevelChoices,
   applyPlannedLevelUp,
   buildLevelRoadmap,
@@ -559,56 +560,28 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     }
 
-    // 5. Native Drag & Drop on Future Feat Slots
-    container.querySelectorAll("[data-lp-drop-slot]").forEach(zone => {
-      zone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        zone.classList.add("is-dragover");
+    // 5. Native Drag & Drop for Future Feat Slots, Spells, and Alchemist Formulas
+    const bindDropZones = (selector, onDropFn) => {
+      container.querySelectorAll(selector).forEach(zone => {
+        zone.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          zone.classList.add("is-dragover");
+        });
+        zone.addEventListener("dragleave", () => {
+          zone.classList.remove("is-dragover");
+        });
+        zone.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          zone.classList.remove("is-dragover");
+          await onDropFn(e, zone);
+        });
       });
-      zone.addEventListener("dragleave", () => {
-        zone.classList.remove("is-dragover");
-      });
-      zone.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        zone.classList.remove("is-dragover");
-        await this._handleFeatDrop(e, zone);
-      });
-    });
+    };
 
-    // 6. Native Drag & Drop on Future Spell Planning Dropzone
-    container.querySelectorAll("[data-lp-drop-spell]").forEach(zone => {
-      zone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        zone.classList.add("is-dragover");
-      });
-      zone.addEventListener("dragleave", () => {
-        zone.classList.remove("is-dragover");
-      });
-      zone.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        zone.classList.remove("is-dragover");
-        await this._handleSpellDrop(e, zone);
-      });
-    });
-
-    // 7. Native Drag & Drop on Future Alchemist Formula Dropzone
-    container.querySelectorAll("[data-lp-drop-formula]").forEach(zone => {
-      zone.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        zone.classList.add("is-dragover");
-      });
-      zone.addEventListener("dragleave", () => {
-        zone.classList.remove("is-dragover");
-      });
-      zone.addEventListener("drop", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        zone.classList.remove("is-dragover");
-        await this._handleFormulaDrop(e, zone);
-      });
-    });
+    bindDropZones("[data-lp-drop-slot]", (e, zone) => this._handleFeatDrop(e, zone));
+    bindDropZones("[data-lp-drop-spell]", (e, zone) => this._handleSpellDrop(e, zone));
+    bindDropZones("[data-lp-drop-formula]", (e, zone) => this._handleFormulaDrop(e, zone));
   }
 
   _getSelectedActor() {
@@ -662,6 +635,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await updatePlannedLevelData(actor, levelNum, (entry) => {
           const list = Array.isArray(entry.boosts) ? [...entry.boosts] : [];
           const idx = list.indexOf(attrKey);
+          const hadInt = list.includes("int");
           if (idx >= 0) {
             list.splice(idx, 1);
           } else {
@@ -672,6 +646,11 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
           }
           entry.boosts = list;
+          // Clear stale INT bonus picks if INT boost was toggled off at this level
+          if (hadInt && !list.includes("int")) {
+            entry.intBonusSkill = null;
+            entry.intBonusLanguage = "";
+          }
         });
         this.render({ force: false });
         break;
@@ -775,7 +754,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!actor) return;
         const confirmed = await this._confirmDialog({
           title: `Clear Build Plan — ${actor.name}`,
-          content: `<p>Clear all planned future attribute boosts, skill increases, feats, and spells for <strong>${foundry.utils.escapeHTML(actor.name)}</strong>?</p><p style="opacity:0.8;font-size:0.9em;">This only clears future plan notes and does not change anything already on the character sheet.</p>`
+          content: `<p>Clear all planned future attribute boosts, INT bonuses, skill increases, feats, spells, and formulas for <strong>${foundry.utils.escapeHTML(actor.name)}</strong>?</p><p style="opacity:0.8;font-size:0.9em;">This only clears future plan notes and does not change anything already on the character sheet.</p>`
         });
         if (!confirmed) return;
         await clearActorLevelPlan(actor);
@@ -812,12 +791,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       return;
     }
 
+    const docTraits = Array.isArray(doc.system?.traits?.value) ? doc.system.traits.value.map(normalizeSlug) : [];
     const snapshot = {
       uuid: doc.uuid,
       name: doc.name,
       img: doc.img || "systems/pf2e/icons/default-icons/feat.svg",
       level: Number(doc.system?.level?.value ?? 0),
       category: doc.system?.category || "",
+      isDedication: docTraits.includes("dedication") || /\bdedication\b/i.test(doc.name || ""),
       prerequisites: (doc.system?.prerequisites?.value || []).map(p => p?.value || p).filter(Boolean)
     };
 
@@ -876,8 +857,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const dropData = extractDropData(event);
     const doc = await resolveDroppedItem(dropData);
-    const CRAFTABLE_TYPES = new Set(["consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo"]);
-    if (!doc || !CRAFTABLE_TYPES.has(doc.type)) {
+    if (!doc || !FORMULA_CRAFTABLE_TYPES.has(doc.type)) {
       ui.notifications?.warn("Drop a PF2e alchemical or craftable item onto the Alchemist Formulas panel.");
       return;
     }
@@ -1135,6 +1115,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                 img: chosen.img,
                 level: chosen.level,
                 category: chosen.category,
+                isDedication: Boolean(chosen.traits?.includes("dedication") || /\bdedication\b/i.test(chosen.name || "")),
                 prerequisites: chosen.prerequisites || []
               };
             });
@@ -1239,7 +1220,19 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
 
       const allSpells = await getLightweightSpellIndex();
-      const addedUuids = new Set();
+      const knownSpellUuids = new Set();
+      const knownSpellNames = new Set();
+      for (const sp of actor.itemTypes?.spell || []) {
+        const src = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
+        if (src) knownSpellUuids.add(src);
+        if (sp.name) knownSpellNames.add(String(sp.name).toLowerCase());
+      }
+      const roadmapNow = buildLevelRoadmap(actor);
+      const addedUuids = new Set(
+        (roadmapNow?.levels?.find(l => l.level === levelNum)?.plannedSpells || [])
+          .map(s => s?.uuid)
+          .filter(Boolean)
+      );
 
       const renderList = () => {
         const query = (searchInput?.value || "").trim().toLowerCase();
@@ -1278,6 +1271,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         listEl.innerHTML = capped.map((sp, idx) => {
           const isAdded = addedUuids.has(sp.uuid);
+          const isKnown = knownSpellUuids.has(sp.uuid) || knownSpellNames.has(String(sp.name || "").toLowerCase());
           const tradText = sp.traditions.map(capitalize).join(", ") || "Focus / Special";
           return `
             <div class="pf2e-lp-picker-row">
@@ -1287,6 +1281,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
                   <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full spell sheet">${esc(sp.name)}</a>
                   <span class="pf2e-lp-picker-lvl">${sp.isCantrip ? "Cantrip" : `Rank ${sp.rank}`}</span>
                   ${sp.rarity && sp.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(sp.rarity)}">${esc(capitalize(sp.rarity))}</span>` : ""}
+                  ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
                 </div>
                 <div class="pf2e-lp-picker-sub">${esc(tradText)}</div>
               </div>

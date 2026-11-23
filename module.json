@@ -48,7 +48,7 @@
       {
         "id": "lib-wrapper",
         "type": "module",
-        "reason": "Resolves potential canvas interaction collisions when running alongside modules like Monk's Active Tile Triggers."
+        "reason": "Resolves potential canvas interaction collisions when running alongside modules like PF2e Toolbelt, PF2e Exploit Vulnerability, and Monk's Active Tile Triggers."
       }
     ]
   },

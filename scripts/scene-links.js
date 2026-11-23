@@ -118,39 +118,58 @@ export class SceneLinks {
   /**
    * Patches Note permissions, getters, and click handlers to execute scene transitions.
    * Utilizes libWrapper when present to maintain conflict-free interop with modules like
-   * Monk's Active Tile Triggers, with a graceful native fallback if libWrapper is not installed.
+   * PF2e Toolbelt, PF2e Exploit Vulnerability, and Monk's Active Tile Triggers,
+   * with a graceful native fallback ONLY when libWrapper is not installed/active.
    */
   static _patchNotePlaceables() {
     if (this._notePlaceablesPatched) return;
+
+    const libWrapperActive = Boolean(game.modules?.get?.("lib-wrapper")?.active);
+    if (libWrapperActive && !globalThis.libWrapper?.register) {
+      // Wait for setup/ready so libWrapper is initialized before registering
+      return;
+    }
+
     this._notePlaceablesPatched = true;
 
     const NoteClass = CONFIG.Note?.objectClass || foundry.canvas?.placeables?.Note;
     if (!NoteClass?.prototype) return;
 
-    // Define reusable wrapper handlers compatible with both libWrapper and direct fallback
+    const isSingleClickEnabled = () => {
+      try {
+        return Boolean(game.settings?.settings?.has?.(`${MODULE_ID}.sceneLinkSingleClick`) && game.settings.get(MODULE_ID, "sceneLinkSingleClick"));
+      } catch {
+        return false;
+      }
+    };
+
+    // Pure boolean predicates always invoke wrapped() -> safe to register as conflict-free "WRAPPER"
     const isInteractableWrapper = function (wrapped) {
+      const base = wrapped ? wrapped() : false;
       if (this.isPreview) return false;
       if (this.document?.getFlag(MODULE_ID, "isSceneLink") && game.user?.isGM) {
         return true;
       }
-      return wrapped ? wrapped() : false;
+      return base;
     };
 
     const canViewWrapper = function (wrapped, user, event) {
+      const base = wrapped(user, event);
       if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
         return game.user?.isGM ?? false;
       }
-      return wrapped(user, event);
+      return base;
     };
 
     const canControlWrapper = function (wrapped, user, event) {
-      if (this.document?.getFlag(MODULE_ID, "isSceneLink")) {
-        const singleClick = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
-        if (singleClick && game.user?.isGM) return true;
+      const base = wrapped(user, event);
+      if (this.document?.getFlag(MODULE_ID, "isSceneLink") && isSingleClickEnabled() && game.user?.isGM) {
+        return true;
       }
-      return wrapped(user, event);
+      return base;
     };
 
+    // Click handlers legitimately suppress default Journal open on Scene Link pins -> "MIXED"
     const onClickLeft2Wrapper = function (wrapped, event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
       if (isSceneLink && game.user?.isGM) {
@@ -162,8 +181,7 @@ export class SceneLinks {
 
     const onClickLeftWrapper = function (wrapped, event) {
       const isSceneLink = this.document?.getFlag(MODULE_ID, "isSceneLink");
-      const singleClickSetting = game.settings.get(MODULE_ID, "sceneLinkSingleClick");
-      if (isSceneLink && singleClickSetting && game.user?.isGM && !event.shiftKey && !event.ctrlKey) {
+      if (isSceneLink && isSingleClickEnabled() && game.user?.isGM && !event.shiftKey && !event.ctrlKey) {
         SceneLinks.handleNoteActivate(this.document, event);
         return;
       }
@@ -185,26 +203,27 @@ export class SceneLinks {
       });
     }
 
-    // 1. Cooperative wrapping with libWrapper when available (e.g. alongside Monk's Active Tile Triggers)
+    // 1. Cooperative wrapping with libWrapper when available (register each target independently;
+    //    never monkey-patch directly behind libWrapper's back if a single target fails!)
     if (globalThis.libWrapper?.register) {
-      try {
-        const target = "foundry.canvas.placeables.Note.prototype";
+      const target = "foundry.canvas.placeables.Note.prototype";
+      const safeRegister = (prop, fn, type) => {
         try {
-          libWrapper.register(MODULE_ID, `${target}.isInteractable`, isInteractableWrapper, "MIXED");
-        } catch {
-          patchIsInteractable(NoteClass.prototype);
+          libWrapper.register(MODULE_ID, `${target}.${prop}`, fn, type);
+        } catch (err) {
+          console.warn(`PF2e Awesome GM Utilities | Failed to register libWrapper for Note.${prop}:`, err);
         }
-        libWrapper.register(MODULE_ID, `${target}._canView`, canViewWrapper, "MIXED");
-        libWrapper.register(MODULE_ID, `${target}._canControl`, canControlWrapper, "MIXED");
-        libWrapper.register(MODULE_ID, `${target}._onClickLeft2`, onClickLeft2Wrapper, "MIXED");
-        libWrapper.register(MODULE_ID, `${target}._onClickLeft`, onClickLeftWrapper, "MIXED");
-        return;
-      } catch (err) {
-        console.warn("PF2e Awesome GM Utilities | Failed to register Note placeable wrappers with libWrapper, falling back to prototype patch:", err);
-      }
+      };
+
+      safeRegister("isInteractable", isInteractableWrapper, "WRAPPER");
+      safeRegister("_canView", canViewWrapper, "WRAPPER");
+      safeRegister("_canControl", canControlWrapper, "WRAPPER");
+      safeRegister("_onClickLeft2", onClickLeft2Wrapper, "MIXED");
+      safeRegister("_onClickLeft", onClickLeftWrapper, "MIXED");
+      return;
     }
 
-    // 2. Direct monkey-patching fallback when libWrapper is not installed
+    // 2. Direct monkey-patching fallback ONLY when libWrapper is not installed/active
     patchIsInteractable(NoteClass.prototype);
 
     const originalCanView = NoteClass.prototype._canView;

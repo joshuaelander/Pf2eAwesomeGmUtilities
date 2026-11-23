@@ -1303,55 +1303,107 @@ async function openBrowserTabWithFilter(browser, tab, tabName, filter, verifyFn)
 }
 
 /**
+ * Shared helper that initializes a PF2e Compendium Browser tab and returns a clean,
+ * reset copy of its filter object (or `null` if unavailable).
+ */
+async function prepareBrowserTabFilter(tabName) {
+  const browser = game.pf2e?.compendiumBrowser;
+  const tab = browser?.tabs?.[tabName];
+  if (!browser || !tab) {
+    ui.notifications?.warn("PF2e Compendium Browser is unavailable.");
+    return null;
+  }
+
+  if (!tab.isInitialized) {
+    if (typeof tab.init === "function") await tab.init();
+    else if (typeof tab.loadData === "function") await tab.loadData();
+  }
+
+  let filter = null;
+  if (typeof tab.getFilterData === "function") {
+    filter = await tab.getFilterData();
+  } else if (tab.defaultFilterData) {
+    filter = foundry.utils.deepClone(tab.defaultFilterData);
+  } else if (tab.filterData) {
+    filter = foundry.utils.deepClone(tab.filterData);
+  }
+
+  if (!filter || typeof filter !== "object") {
+    await browser.openTab?.(tabName);
+    return null;
+  }
+
+  resetBrowserFilterObject(filter);
+  return { browser, tab, filter };
+}
+
+/**
+ * Sets a Compendium Browser level slider cleanly across both `[min, max]` and `{ min, max }` formats.
+ */
+function applyBrowserLevelSlider(filter, maxLevel, minFallback = 0) {
+  const slider = filter?.sliders?.level;
+  if (!slider?.values) return;
+  const maxLvl = Math.max(minFallback, Number(maxLevel || 20));
+  if (Array.isArray(slider.values)) {
+    slider.values = [minFallback, maxLvl];
+  } else {
+    slider.values.min = slider.values.lowerLimit ?? minFallback;
+    slider.values.max = Math.min(slider.values.upperLimit ?? 20, maxLvl);
+  }
+  slider.isExpanded = true;
+}
+
+/**
+ * Populates a Compendium Browser `traits` multiselect using only valid traits recognized by the tab.
+ * Returns the resolved `{ value, label, not: false }[]` array.
+ */
+function applyBrowserTraitMultiselect(filter, rawTraits = [], fallbackAllowUnknown = false) {
+  const traitSelect = filter?.multiselects?.traits;
+  const selectedTraits = [];
+  if (!traitSelect) return selectedTraits;
+
+  const cleanTraits = Array.isArray(rawTraits) ? rawTraits.filter(Boolean) : [];
+  const rawOpts = traitSelect.options;
+  const validOpts = Array.isArray(rawOpts)
+    ? rawOpts
+    : (rawOpts && typeof rawOpts === "object"
+      ? Object.entries(rawOpts).map(([k, v]) => (typeof v === "string" ? { value: k, label: v } : { value: v?.value || k, label: v?.label || capitalize(k) }))
+      : []);
+
+  for (const t of cleanTraits) {
+    if (validOpts.length > 0) {
+      const match = validOpts.find(o => o?.value === t);
+      if (match) {
+        selectedTraits.push({ value: match.value, label: match.label, not: false });
+      } else if (fallbackAllowUnknown) {
+        selectedTraits.push({ value: t, label: capitalize(t.replace(/-/g, " ")), not: false });
+      }
+    } else {
+      selectedTraits.push({ value: t, label: capitalize(t.replace(/-/g, " ")), not: false });
+    }
+  }
+
+  traitSelect.selected = selectedTraits;
+  if ("conjunction" in traitSelect) {
+    traitSelect.conjunction = selectedTraits.length > 1 ? "or" : "and";
+  }
+  return selectedTraits;
+}
+
+/**
  * Opens PF2e's built-in Compendium Browser pre-filtered for a specific Feat slot
  * so players can browse natively and drag-and-drop onto any slot!
  */
 export async function openNativeBrowserForFeatSlot(slotSpec) {
-  const browser = game.pf2e?.compendiumBrowser;
-  const tab = browser?.tabs?.feat;
-  if (!browser || !tab) {
-    ui.notifications?.warn("PF2e Compendium Browser is unavailable.");
-    return;
-  }
-
   try {
-    // Ensure tab options (categories, traits) are initialized before reading filter schema
-    if (!tab.isInitialized) {
-      if (typeof tab.init === "function") await tab.init();
-      else if (typeof tab.loadData === "function") await tab.loadData();
-    }
+    const prepared = await prepareBrowserTabFilter("feat");
+    if (!prepared) return;
+    const { browser, tab, filter } = prepared;
 
-    let filter = null;
-    if (typeof tab.getFilterData === "function") {
-      filter = await tab.getFilterData();
-    } else if (tab.defaultFilterData) {
-      filter = foundry.utils.deepClone(tab.defaultFilterData);
-    } else if (tab.filterData) {
-      filter = foundry.utils.deepClone(tab.filterData);
-    }
+    // 1. Level slider
+    applyBrowserLevelSlider(filter, Math.max(1, Number(slotSpec.level || 20)), 0);
 
-    if (!filter || typeof filter !== "object") {
-      await browser.openTab?.("feat");
-      return;
-    }
-
-    // Wipe any stale filters from previous browsing sessions (e.g. Class + Archetype + Dedication)
-    resetBrowserFilterObject(filter);
-
-    // 1. Level slider (handles both { min, max } object and [min, max] array formats)
-    const maxLvl = Math.max(1, Number(slotSpec.level || 20));
-    if (filter?.sliders?.level?.values) {
-      if (Array.isArray(filter.sliders.level.values)) {
-        filter.sliders.level.values = [0, maxLvl];
-      } else {
-        filter.sliders.level.values.min = filter.sliders.level.values.lowerLimit ?? 0;
-        filter.sliders.level.values.max = Math.min(filter.sliders.level.values.upperLimit ?? 20, maxLvl);
-      }
-      filter.sliders.level.isExpanded = true;
-    }
-
-    // 2. Category checkboxes (ancestry, class, skill, general)
-    // Free Archetype slots filter strictly to `class` + archetype/dedication trait (matching native PF2e)
+    // 2. Category checkboxes (Free Archetype filters strictly to `class` + archetype/dedication trait)
     const targetCats = slotSpec.groupId === "archetype"
       ? ["class"]
       : (slotSpec.category === "general"
@@ -1372,33 +1424,8 @@ export async function openNativeBrowserForFeatSlot(slotSpec) {
       if (catBox.selected.length > 0) catBox.isExpanded = true;
     }
 
-    // 3. Trait multiselect (only include valid traits recognized by PF2e's browser options!)
-    const traitSelect = filter?.multiselects?.traits;
-    let selectedTraits = [];
-    if (traitSelect) {
-      const rawTraits = Array.isArray(slotSpec.traits) ? slotSpec.traits.filter(Boolean) : [];
-      const rawOpts = traitSelect.options;
-      const validOpts = Array.isArray(rawOpts)
-        ? rawOpts
-        : (rawOpts && typeof rawOpts === "object"
-          ? Object.entries(rawOpts).map(([k, v]) => (typeof v === "string" ? { value: k, label: v } : { value: v?.value || k, label: v?.label || capitalize(k) }))
-          : []);
-
-      for (const t of rawTraits) {
-        if (validOpts.length > 0) {
-          const match = validOpts.find(o => o?.value === t);
-          if (match) {
-            selectedTraits.push({ value: match.value, label: match.label, not: false });
-          }
-        } else {
-          selectedTraits.push({ value: t, label: capitalize(t.replace(/-/g, " ")), not: false });
-        }
-      }
-      traitSelect.selected = selectedTraits;
-      if ("conjunction" in traitSelect) {
-        traitSelect.conjunction = selectedTraits.length > 1 ? "or" : "and";
-      }
-    }
+    // 3. Trait multiselect
+    const selectedTraits = applyBrowserTraitMultiselect(filter, slotSpec.traits, false);
 
     await openBrowserTabWithFilter(browser, tab, "feat", filter, (liveFilter) => {
       const liveCat = findFeatCategoryCheckbox(liveFilter);
@@ -1415,39 +1442,15 @@ export async function openNativeBrowserForFeatSlot(slotSpec) {
     });
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Fallback opening Compendium Browser feat tab:", err);
-    await browser.openTab?.("feat");
+    await game.pf2e?.compendiumBrowser?.openTab?.("feat");
   }
 }
 
 export async function openNativeBrowserForSpells({ tradition = "", maxRank = 1, unlockedNewRank = 0 } = {}) {
-  const browser = game.pf2e?.compendiumBrowser;
-  const tab = browser?.tabs?.spell;
-  if (!browser || !tab) {
-    ui.notifications?.warn("PF2e Compendium Browser is unavailable.");
-    return;
-  }
-
   try {
-    if (!tab.isInitialized) {
-      if (typeof tab.init === "function") await tab.init();
-      else if (typeof tab.loadData === "function") await tab.loadData();
-    }
-
-    let filter = null;
-    if (typeof tab.getFilterData === "function") {
-      filter = await tab.getFilterData();
-    } else if (tab.defaultFilterData) {
-      filter = foundry.utils.deepClone(tab.defaultFilterData);
-    } else if (tab.filterData) {
-      filter = foundry.utils.deepClone(tab.filterData);
-    }
-
-    if (!filter || typeof filter !== "object") {
-      await browser.openTab?.("spell");
-      return;
-    }
-
-    resetBrowserFilterObject(filter);
+    const prepared = await prepareBrowserTabFilter("spell");
+    if (!prepared) return;
+    const { browser, tab, filter } = prepared;
 
     // Tradition checkbox
     const tradBox = filter?.checkboxes?.traditions;
@@ -1476,16 +1479,16 @@ export async function openNativeBrowserForSpells({ tradition = "", maxRank = 1, 
     });
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Fallback opening Compendium Browser spell tab:", err);
-    await browser.openTab?.("spell");
+    await game.pf2e?.compendiumBrowser?.openTab?.("spell");
   }
 }
 
 /**
  * Lazily retrieves lightweight Feat index entries (reusing PF2e Compendium Browser's
- * own cache when already loaded, or calling `pack.getIndex` once — never hydrating full docs!).
+ * own cache when already loaded with prerequisites, or calling `pack.getIndex` once).
  */
 export async function getLightweightFeatIndex() {
-  if (_featIndexCache) return _featIndexCache;
+  if (_featIndexCache && _featIndexCache.length > 0) return _featIndexCache;
 
   const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.feat?.indexData;
   const browserHasPrereqs = Array.isArray(browserIndex)
@@ -1497,9 +1500,9 @@ export async function getLightweightFeatIndex() {
       uuid: e.uuid,
       name: e.name,
       img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
-      level: Number(e.level ?? e.system?.level?.value ?? 0),
+      level: Number((typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 0),
       category: e.category || e.featType || e.system?.category || "",
-      traits: toStringArray(e.traits ?? e.system?.traits?.value).map(normalizeSlug).filter(Boolean),
+      traits: extractAnyItemTraits(e),
       rarity: e.rarity || e.system?.traits?.rarity || "common",
       prerequisites: toStringArray(e.prerequisites ?? e.system?.prerequisites?.value)
         .map(p => (typeof p === "string" ? p : (p?.value || "")))
@@ -1522,7 +1525,7 @@ export async function getLightweightFeatIndex() {
       img: item.img || "systems/pf2e/icons/default-icons/feat.svg",
       level: Number(item.system?.level?.value ?? 0),
       category: item.system?.category || "",
-      traits: toStringArray(item.system?.traits?.value).map(normalizeSlug).filter(Boolean),
+      traits: extractAnyItemTraits(item),
       rarity: item.system?.traits?.rarity || "common",
       prerequisites: toStringArray(item.system?.prerequisites?.value)
         .map(p => (typeof p === "string" ? p : (p?.value || "")))
@@ -1530,57 +1533,68 @@ export async function getLightweightFeatIndex() {
     });
   }
 
-  // Lazy pack.getIndex on Item compendiums containing feats
-  const packs = Array.from(game.packs || []).filter(p =>
-    p.documentName === "Item" && (p.collection === "pf2e.feats-srd" || /feat/i.test(p.collection) || /feat/i.test(p.title))
-  );
+  // Lazy pack.getIndex on Item compendiums containing feats (excluding effect/feature packs!)
+  const packs = Array.from(game.packs || []).filter(p => {
+    if (p.documentName !== "Item") return false;
+    const col = String(p.collection || "");
+    const title = String(p.title || p.metadata?.label || "");
+    if (col === "pf2e.feats-srd" || col === "pf2e.feats") return true;
+    if (/effect|condition|action|spell|equipment|hazard|bestiary/i.test(col) || /\beffects?\b/i.test(title)) return false;
+    return /feat/i.test(col) || /\bfeats?\b/i.test(title);
+  });
+
+  // Request parent objects (`system.level`, `system.traits`, `system.prerequisites`) so Foundry's
+  // server `setProperty` never throws if a mixed pack entry stores a primitive number.
+  const featIndexFields = ["img", "system.level", "system.category", "system.traits", "system.prerequisites"];
 
   for (const pack of packs) {
     try {
-      const idx = await pack.getIndex({
-        fields: ["type", "img", "system.level.value", "system.category", "system.traits.value", "system.traits.rarity", "system.prerequisites.value"]
-      });
+      const idx = await pack.getIndex({ fields: featIndexFields });
       for (const e of idx) {
         if (e.type !== "feat") continue;
         const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
         if (seen.has(uuid)) continue;
         seen.add(uuid);
+        const rawLvl = (typeof e.system?.level === "object" ? e.system.level?.value : e.system?.level) ?? 0;
         results.push({
           uuid,
           name: e.name,
           img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
-          level: Number(e.system?.level?.value ?? 0),
+          level: Number.isFinite(Number(rawLvl)) ? Number(rawLvl) : 0,
           category: e.system?.category || "",
-          traits: toStringArray(e.system?.traits?.value).map(normalizeSlug).filter(Boolean),
+          traits: extractAnyItemTraits(e),
           rarity: e.system?.traits?.rarity || "common",
-          prerequisites: toStringArray(e.system?.prerequisites?.value)
+          prerequisites: toStringArray(e.system?.prerequisites?.value ?? e.system?.prerequisites)
             .map(p => (typeof p === "string" ? p : (p?.value || "")))
             .filter(Boolean)
         });
       }
-    } catch { /* skip unreadable pack */ }
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed indexing feat pack "${pack.collection}":`, err);
+    }
   }
 
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
-  _featIndexCache = results;
-  return _featIndexCache;
+  if (results.length > 0) _featIndexCache = results;
+  return results;
 }
 
 /**
  * Lazily retrieves lightweight Spell index entries (zero startup overhead).
  */
 export async function getLightweightSpellIndex() {
-  if (_spellIndexCache) return _spellIndexCache;
+  if (_spellIndexCache && _spellIndexCache.length > 0) return _spellIndexCache;
 
   const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.spell?.indexData;
   if (Array.isArray(browserIndex) && browserIndex.length > 0) {
     _spellIndexCache = browserIndex.map(e => {
-      const spTraits = toStringArray(e.traits ?? e.system?.traits?.value).map(normalizeSlug);
+      const spTraits = extractAnyItemTraits(e);
+      const rawRank = e.rank ?? (typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 1;
       return {
         uuid: e.uuid,
         name: e.name,
         img: e.img || "systems/pf2e/icons/default-icons/spell.svg",
-        rank: Number(e.rank ?? e.level ?? e.system?.level?.value ?? 1),
+        rank: Number.isFinite(Number(rawRank)) ? Number(rawRank) : 1,
         isCantrip: Boolean(e.isCantrip || spTraits.includes("cantrip")),
         traditions: toStringArray(e.traditions ?? e.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
         rarity: e.rarity || e.system?.traits?.rarity || "common"
@@ -1596,49 +1610,57 @@ export async function getLightweightSpellIndex() {
     if (item.type !== "spell") continue;
     if (seen.has(item.uuid)) continue;
     seen.add(item.uuid);
-    const traits = Array.isArray(item.system?.traits?.value) ? item.system.traits.value : [];
+    const traits = extractAnyItemTraits(item);
     results.push({
       uuid: item.uuid,
       name: item.name,
       img: item.img || "systems/pf2e/icons/default-icons/spell.svg",
       rank: Number(item.system?.level?.value ?? 1),
       isCantrip: traits.includes("cantrip"),
-      traditions: Array.isArray(item.system?.traits?.traditions) ? item.system.traits.traditions.map(normalizeSlug) : [],
+      traditions: toStringArray(item.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
       rarity: item.system?.traits?.rarity || "common"
     });
   }
 
-  const packs = Array.from(game.packs || []).filter(p =>
-    p.documentName === "Item" && (p.collection === "pf2e.spells-srd" || /spell/i.test(p.collection) || /spell/i.test(p.title))
-  );
+  const packs = Array.from(game.packs || []).filter(p => {
+    if (p.documentName !== "Item") return false;
+    const col = String(p.collection || "");
+    const title = String(p.title || p.metadata?.label || "");
+    if (col === "pf2e.spells-srd" || col === "pf2e.spells") return true;
+    if (/effect|condition|action|feat|equipment|hazard|bestiary/i.test(col) || /\beffects?\b/i.test(title)) return false;
+    return /spell/i.test(col) || /\bspells?\b/i.test(title);
+  });
+
+  const spellIndexFields = ["img", "system.level", "system.traits"];
 
   for (const pack of packs) {
     try {
-      const idx = await pack.getIndex({
-        fields: ["type", "img", "system.level.value", "system.traits.value", "system.traits.traditions", "system.traits.rarity"]
-      });
+      const idx = await pack.getIndex({ fields: spellIndexFields });
       for (const e of idx) {
         if (e.type !== "spell") continue;
         const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
         if (seen.has(uuid)) continue;
         seen.add(uuid);
-        const traits = Array.isArray(e.system?.traits?.value) ? e.system.traits.value : [];
+        const traits = extractAnyItemTraits(e);
+        const rawRank = (typeof e.system?.level === "object" ? e.system.level?.value : e.system?.level) ?? 1;
         results.push({
           uuid,
           name: e.name,
           img: e.img || "systems/pf2e/icons/default-icons/spell.svg",
-          rank: Number(e.system?.level?.value ?? 1),
+          rank: Number.isFinite(Number(rawRank)) ? Number(rawRank) : 1,
           isCantrip: traits.includes("cantrip"),
-          traditions: Array.isArray(e.system?.traits?.traditions) ? e.system.traits.traditions.map(normalizeSlug) : [],
+          traditions: toStringArray(e.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
           rarity: e.system?.traits?.rarity || "common"
         });
       }
-    } catch { /* skip unreadable pack */ }
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed indexing spell pack "${pack.collection}":`, err);
+    }
   }
 
   results.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
-  _spellIndexCache = results;
-  return _spellIndexCache;
+  if (results.length > 0) _spellIndexCache = results;
+  return results;
 }
 
 /**
@@ -1646,64 +1668,13 @@ export async function getLightweightSpellIndex() {
  * up to `maxLevel` so Alchemists can browse and drag-and-drop formulas directly!
  */
 export async function openNativeBrowserForFormulas({ maxLevel = 1 } = {}) {
-  const browser = game.pf2e?.compendiumBrowser;
-  const tab = browser?.tabs?.equipment;
-  if (!browser || !tab) {
-    ui.notifications?.warn("PF2e Compendium Browser is unavailable.");
-    return;
-  }
-
   try {
-    if (!tab.isInitialized) {
-      if (typeof tab.init === "function") await tab.init();
-      else if (typeof tab.loadData === "function") await tab.loadData();
-    }
+    const prepared = await prepareBrowserTabFilter("equipment");
+    if (!prepared) return;
+    const { browser, tab, filter } = prepared;
 
-    let filter = null;
-    if (typeof tab.getFilterData === "function") {
-      filter = await tab.getFilterData();
-    } else if (tab.defaultFilterData) {
-      filter = foundry.utils.deepClone(tab.defaultFilterData);
-    } else if (tab.filterData) {
-      filter = foundry.utils.deepClone(tab.filterData);
-    }
-
-    if (!filter || typeof filter !== "object") {
-      await browser.openTab?.("equipment");
-      return;
-    }
-
-    resetBrowserFilterObject(filter);
-
-    const maxLvl = Math.max(0, Number(maxLevel || 20));
-    if (filter?.sliders?.level?.values) {
-      if (Array.isArray(filter.sliders.level.values)) {
-        filter.sliders.level.values = [0, maxLvl];
-      } else {
-        filter.sliders.level.values.min = filter.sliders.level.values.lowerLimit ?? 0;
-        filter.sliders.level.values.max = Math.min(filter.sliders.level.values.upperLimit ?? 20, maxLvl);
-      }
-      filter.sliders.level.isExpanded = true;
-    }
-
-    const traitSelect = filter?.multiselects?.traits;
-    let selectedTraits = [];
-    if (traitSelect) {
-      const rawOpts = traitSelect.options;
-      const validOpts = Array.isArray(rawOpts)
-        ? rawOpts
-        : (rawOpts && typeof rawOpts === "object"
-          ? Object.entries(rawOpts).map(([k, v]) => (typeof v === "string" ? { value: k, label: v } : { value: v?.value || k, label: v?.label || capitalize(k) }))
-          : []);
-      const match = validOpts.find(o => o?.value === "alchemical");
-      if (match) {
-        selectedTraits.push({ value: match.value, label: match.label, not: false });
-      } else {
-        selectedTraits.push({ value: "alchemical", label: "Alchemical", not: false });
-      }
-      traitSelect.selected = selectedTraits;
-      if ("conjunction" in traitSelect) traitSelect.conjunction = "and";
-    }
+    applyBrowserLevelSlider(filter, Math.max(0, Number(maxLevel || 20)), 0);
+    applyBrowserTraitMultiselect(filter, ["alchemical"], true);
 
     await openBrowserTabWithFilter(browser, tab, "equipment", filter, (liveFilter) => {
       const liveTraits = Array.isArray(liveFilter?.multiselects?.traits?.selected)
@@ -1713,7 +1684,7 @@ export async function openNativeBrowserForFormulas({ maxLevel = 1 } = {}) {
     });
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Fallback opening Compendium Browser equipment tab:", err);
-    await browser.openTab?.("equipment");
+    await game.pf2e?.compendiumBrowser?.openTab?.("equipment");
   }
 }
 
@@ -1759,7 +1730,7 @@ function extractAnyItemTraits(e) {
   return Array.from(out);
 }
 
-const FORMULA_CRAFTABLE_TYPES = new Set([
+export const FORMULA_CRAFTABLE_TYPES = new Set([
   "consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo", "shield", "kit"
 ]);
 const ALCHEMICAL_SUBTRAITS = new Set([

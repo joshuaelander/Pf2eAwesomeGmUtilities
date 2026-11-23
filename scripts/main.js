@@ -879,47 +879,44 @@ function patchClassHover(cls) {
   if (typeof cls.prototype._canHover === "function") {
     const origCanHover = cls.prototype._canHover;
     cls.prototype._canHover = function (user, event) {
+      const allowed = origCanHover.call(this, user, event);
       if (isGmUtilitiesActive()) return false;
-      return origCanHover.call(this, user, event);
-    };
-  }
-
-  if (typeof cls.prototype._onHoverIn === "function") {
-    const origOnHoverIn = cls.prototype._onHoverIn;
-    cls.prototype._onHoverIn = function (event, options) {
-      if (isGmUtilitiesActive()) return false;
-      return origOnHoverIn.call(this, event, options);
+      return allowed;
     };
   }
 }
 
 function patchTokenHover() {
   if (patchTokenHover._done) return;
+
+  const libWrapperActive = Boolean(game.modules?.get?.("lib-wrapper")?.active);
+  if (libWrapperActive && !globalThis.libWrapper?.register) {
+    // Wait until libWrapper finishes initializing (setup/ready) rather than monkey-patching behind it
+    return;
+  }
+
   patchTokenHover._done = true;
 
+  // Pure boolean predicate: always invoke wrapped() so we can register as conflict-free "WRAPPER"
+  // (zero conflict warnings with PF2e Toolbelt, PF2e Exploit Vulnerability, Monk's Active Tile Triggers, etc.)
   const canHoverWrapper = function (wrapped, user, event) {
+    const allowed = wrapped(user, event);
     if (isGmUtilitiesActive()) return false;
-    return wrapped(user, event);
-  };
-
-  const onHoverInWrapper = function (wrapped, event, options) {
-    if (isGmUtilitiesActive()) return false;
-    return wrapped(event, options);
+    return allowed;
   };
 
   // 1. Cooperative wrapping with libWrapper when available
   if (globalThis.libWrapper?.register) {
     try {
-      const target = "foundry.canvas.placeables.Token.prototype";
-      libWrapper.register(MODULE_ID, `${target}._canHover`, canHoverWrapper, "MIXED");
-      libWrapper.register(MODULE_ID, `${target}._onHoverIn`, onHoverInWrapper, "MIXED");
+      libWrapper.register(MODULE_ID, "foundry.canvas.placeables.Token.prototype._canHover", canHoverWrapper, "WRAPPER");
       return;
     } catch (err) {
-      console.warn("PF2e Awesome GM Utilities | Failed to register Token hover wrappers with libWrapper, falling back to prototype patch:", err);
+      console.warn("PF2e Awesome GM Utilities | Failed to register Token._canHover wrapper with libWrapper:", err);
+      if (libWrapperActive) return; // Never monkey-patch directly while libWrapper is active
     }
   }
 
-  // 2. Direct monkey-patching fallback
+  // 2. Direct monkey-patching fallback ONLY when libWrapper is not installed/active
   const tokenClass = CONFIG.Token?.objectClass || foundry.canvas?.placeables?.Token;
   if (tokenClass) patchClassHover(tokenClass);
 }
@@ -1109,8 +1106,6 @@ Hooks.once("init", () => {
   registerSettings();
   performanceMonitor.onInit();
   registerKeybindings();
-  SceneLinks._patchNotePlaceables();
-  patchTokenHover();
   JournalEditor.initialize();
 
   Hooks.on("hoverToken", (token, hovered) => {
@@ -1118,6 +1113,12 @@ Hooks.once("init", () => {
       token._onHoverOut();
     }
   });
+});
+
+Hooks.once("setup", () => {
+  // Register libWrapper wrappers during `setup` (after lib-wrapper initializes in `init`)
+  SceneLinks._patchNotePlaceables();
+  patchTokenHover();
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
