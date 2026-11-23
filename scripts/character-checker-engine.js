@@ -1167,6 +1167,15 @@ function detectDynamicTradition(actor, hintKeywords = []) {
   };
 
   for (const feat of candidates) {
+    // Check PF2e ChoiceSet rule selections on the feat first (e.g., Monk Qi Spells, Witch Patron, Sorcerer Bloodline)
+    const selections = feat.flags?.pf2e?.rulesSelections;
+    if (selections && typeof selections === "object") {
+      for (const val of Object.values(selections)) {
+        const sVal = String(val || "").toLowerCase();
+        if (["arcane", "divine", "occult", "primal"].includes(sVal)) return sVal;
+      }
+    }
+
     const slug = getItemSlug(feat);
     const desc = String(feat.system?.description?.value || "").toLowerCase();
 
@@ -1689,7 +1698,561 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     });
   }
 
+  // 5. Focus Spellcasting Sources (Primary Class, Dual Class, Class Feats, and Archetypes)
+  const focusSources = detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, feats, featSlugs);
+  sources.push(...focusSources);
+
   return sources;
+}
+
+/**
+ * Detects all PF2e Focus Spellcasting sources from Primary Class, Dual Class,
+ * class features/feats (e.g. Champion Devotion Spells, Magus Conflux Spells,
+ * Bard Composition Spells, Cleric Domain Spells, Druid Order Spells, Monk Qi Spells,
+ * Ranger Warden Spells, Wizard School Spells, Sorcerer Bloodline Spells, Witch Hexes,
+ * Oracle Revelation Spells, Summoner Link Spells, Animist Vessel Spells,
+ * Necromancer Grave Spells), Multiclass / Free Archetype focus feats, and a generic
+ * fallback for any other focus-spell-granting feat on the Feats tab.
+ */
+function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, feats, featSlugs) {
+  const focusSources = [];
+  const coveredFeatIds = new Set();
+  const focusRank = Math.min(10, Math.ceil(level / 2));
+  const focusPoolMax = Number(actor.system?.resources?.focus?.max ?? 0);
+  const emptySlots = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+
+  const matchFeats = (slugList) => {
+    const set = new Set(slugList.map(normalizeSlug));
+    const found = feats.filter(f => set.has(getItemSlug(f)));
+    for (const f of found) coveredFeatIds.add(f.id);
+    return found;
+  };
+
+  const hasClassOrDual = (clsSlug) => primarySlug === clsSlug || dualInfo?.slug === clsSlug;
+  const classSourceKind = (clsSlug) => (dualInfo?.slug === clsSlug && primarySlug !== clsSlug ? "dual" : "primary");
+  const classSourceBadge = (clsSlug) => (classSourceKind(clsSlug) === "dual" ? "Dual Class · Focus" : "Primary Class · Focus");
+
+  const pushFocusSource = ({
+    key,
+    classSlug,
+    sourceKind,
+    sourceBadge,
+    title,
+    entryName,
+    tradition,
+    ability,
+    expectedFocusSpells = 1,
+    matchKeywords = [],
+    note = ""
+  }) => {
+    const poolText = focusPoolMax > 0 ? ` · Pool: ${focusPoolMax} FP` : "";
+    const slotsSummary = `Rank ${focusRank} Focus (auto-heightened)${poolText}`;
+    focusSources.push({
+      key,
+      classSlug,
+      sourceKind,
+      sourceBadge,
+      title,
+      entryName,
+      castingType: "focus",
+      isFocus: true,
+      flexible: false,
+      tradition: tradition || "",
+      ability: ability || "cha",
+      traditionMissing: !tradition,
+      cantrips: 0,
+      slots: { ...emptySlots },
+      totalLeveledSlots: 0,
+      slotsSummary,
+      expectedFocusSpells: Math.max(1, expectedFocusSpells),
+      expectedSpellsNote: note || `Expects at least ${Math.max(1, expectedFocusSpells)} focus spell(s) in this Focus entry (Focus Pool max up to 3 FP)`,
+      repertoireExpected: null,
+      signatureExpected: 0,
+      focusMatchKeywords: matchKeywords
+    });
+  };
+
+  // --- A. Class-Based Focus Spellcasting (Primary Class OR Dual Class) ---
+
+  // 1. Champion: Devotion Spells (Lay on Hands / Touch of the Void / Shields of the Spirit / Domains / Litanies)
+  const champFocusFeats = matchFeats([
+    "devotion-spells", "lay-on-hands", "touch-of-corruption", "touch-of-the-void", "touch-of-void",
+    "shields-of-the-spirit", "deitys-domain", "deity-s-domain", "advanced-deitys-domain", "advanced-deity-s-domain",
+    "litany-against-wrath", "litany-against-sloth", "litany-of-depravity", "litany-of-righteousness",
+    "litany-of-self-interest", "litany-of-warding", "unimpeded-step"
+  ]);
+  if (hasClassOrDual("champion") || featSlugs.has("devotion-spells")) {
+    const extraChampDomains = matchFeats(["domain-initiate", "expanded-domain-initiate", "advanced-domain"]);
+    const extraCount = champFocusFeats.filter(f => getItemSlug(f) !== "devotion-spells").length + extraChampDomains.length;
+    const expectedCount = Math.max(1, 1 + extraCount);
+    // Avoid overcounting when both `devotion-spells` AND `lay-on-hands` feat exist for the 1st-level spell
+    const baseAdjusted = (featSlugs.has("devotion-spells") && (featSlugs.has("lay-on-hands") || featSlugs.has("touch-of-corruption") || featSlugs.has("touch-of-the-void") || featSlugs.has("shields-of-the-spirit")))
+      ? Math.max(1, expectedCount - 1)
+      : expectedCount;
+    pushFocusSource({
+      key: `focus:champion:${classSourceKind("champion")}`,
+      classSlug: "champion",
+      sourceKind: classSourceKind("champion"),
+      sourceBadge: classSourceBadge("champion"),
+      title: "Champion Devotion Spells",
+      entryName: "Devotion Spells (Champion)",
+      tradition: "divine",
+      ability: "cha",
+      expectedFocusSpells: baseAdjusted,
+      matchKeywords: ["devotion", "champion", "lay on hands"],
+      note: `Champion Devotion Spells (Divine, CHA) — expects ${baseAdjusted} focus spell(s) at Level ${level}`
+    });
+  }
+
+  // 2. Magus: Conflux Spells (Hybrid Study focus spell + Force Fang / Runic Impression / Arcane Shroud)
+  const magusFocusFeats = matchFeats(["conflux-spells", "force-fang", "runic-impression", "arcane-shroud"]);
+  if (hasClassOrDual("magus") || featSlugs.has("conflux-spells")) {
+    const bonusFeats = magusFocusFeats.filter(f => getItemSlug(f) !== "conflux-spells").length;
+    const expectedCount = 1 + bonusFeats;
+    pushFocusSource({
+      key: `focus:magus:${classSourceKind("magus")}`,
+      classSlug: "magus",
+      sourceKind: classSourceKind("magus"),
+      sourceBadge: classSourceBadge("magus"),
+      title: "Magus Conflux Spells",
+      entryName: "Conflux Spells (Magus)",
+      tradition: "arcane",
+      ability: "int",
+      expectedFocusSpells: expectedCount,
+      matchKeywords: ["conflux", "magus"],
+      note: `Magus Conflux Spells (Arcane, INT) — 1 Hybrid Study conflux spell${bonusFeats > 0 ? ` + ${bonusFeats} bonus conflux feat(s)` : ""}`
+    });
+  }
+
+  // 3. Bard: Composition Spells (Counter Performance + Muse / Composition Focus Spells)
+  const bardFocusFeats = matchFeats([
+    "composition-spells", "counter-performance", "lingering-composition", "hymn-of-healing",
+    "uplifting-overture", "dirge-of-doom", "house-of-imaginary-walls", "soothing-ballad",
+    "ode-to-ouroboros", "allegro", "fatal-aria", "symphony-of-the-unfettered-heart"
+  ]);
+  if (hasClassOrDual("bard") || featSlugs.has("composition-spells")) {
+    const bonusFeats = bardFocusFeats.filter(f => getItemSlug(f) !== "composition-spells" && getItemSlug(f) !== "counter-performance").length;
+    const expectedCount = 1 + bonusFeats;
+    pushFocusSource({
+      key: `focus:bard:${classSourceKind("bard")}`,
+      classSlug: "bard",
+      sourceKind: classSourceKind("bard"),
+      sourceBadge: classSourceBadge("bard"),
+      title: "Bard Composition Spells",
+      entryName: "Composition Spells (Bard)",
+      tradition: "occult",
+      ability: "cha",
+      expectedFocusSpells: expectedCount,
+      matchKeywords: ["composition", "bard"],
+      note: `Bard Composition Focus Spells & Cantrips (Occult, CHA)`
+    });
+  }
+
+  // 4. Cleric: Domain Spells (only when Domain Initiate / Expanded Domain Initiate / Advanced Domain present)
+  if (hasClassOrDual("cleric")) {
+    const clericDomainFeats = matchFeats(["domain-initiate", "expanded-domain-initiate", "advanced-domain"]);
+    if (clericDomainFeats.length > 0) {
+      pushFocusSource({
+        key: `focus:cleric:${classSourceKind("cleric")}`,
+        classSlug: "cleric",
+        sourceKind: classSourceKind("cleric"),
+        sourceBadge: classSourceBadge("cleric"),
+        title: "Cleric Domain Spells",
+        entryName: "Domain Spells (Cleric)",
+        tradition: "divine",
+        ability: "wis",
+        expectedFocusSpells: clericDomainFeats.length,
+        matchKeywords: ["domain", "cleric"],
+        note: `Cleric Domain Focus Spells (Divine, WIS) — ${clericDomainFeats.length} domain spell feat(s) detected`
+      });
+    }
+  }
+
+  // 5. Druid: Order Spells
+  const druidFocusFeats = matchFeats(["order-spells", "druidic-order", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape", "tempest-surge", "goodberry", "heal-animal"]);
+  if (hasClassOrDual("druid") || featSlugs.has("order-spells")) {
+    const extraOrder = matchFeats(["order-magic", "advanced-elemental-spell"]).length;
+    pushFocusSource({
+      key: `focus:druid:${classSourceKind("druid")}`,
+      classSlug: "druid",
+      sourceKind: classSourceKind("druid"),
+      sourceBadge: classSourceBadge("druid"),
+      title: "Druid Order Spells",
+      entryName: "Order Spells (Druid)",
+      tradition: "primal",
+      ability: "wis",
+      expectedFocusSpells: 1 + extraOrder,
+      matchKeywords: ["order", "druid"],
+      note: `Druid Order Focus Spells (Primal, WIS) — 1 initial order spell${extraOrder > 0 ? ` + ${extraOrder} additional` : ""}`
+    });
+  }
+
+  // 6. Sorcerer: Bloodline Spells
+  if (hasClassOrDual("sorcerer")) {
+    const sorcExtra = matchFeats(["advanced-bloodline", "greater-bloodline"]).length;
+    matchFeats(["bloodline", "bloodline-spells"]);
+    const sorcTrad = detectDynamicTradition(actor, ["bloodline", "sorcerer"]);
+    pushFocusSource({
+      key: `focus:sorcerer:${classSourceKind("sorcerer")}`,
+      classSlug: "sorcerer",
+      sourceKind: classSourceKind("sorcerer"),
+      sourceBadge: classSourceBadge("sorcerer"),
+      title: "Sorcerer Bloodline Spells",
+      entryName: "Bloodline Spells (Sorcerer)",
+      tradition: sorcTrad,
+      ability: "cha",
+      expectedFocusSpells: 1 + sorcExtra,
+      matchKeywords: ["bloodline", "sorcerer"],
+      note: `Sorcerer Bloodline Focus Spells (CHA) — ${1 + sorcExtra} bloodline focus spell(s)`
+    });
+  }
+
+  // 7. Witch: Hexes & Lessons
+  if (hasClassOrDual("witch") || featSlugs.has("hexes")) {
+    const witchLessons = matchFeats(["cackle", "basic-lesson", "greater-lesson", "major-lesson"]).length;
+    matchFeats(["hexes", "patron"]);
+    const witchTrad = detectDynamicTradition(actor, ["patron", "witch"]);
+    pushFocusSource({
+      key: `focus:witch:${classSourceKind("witch")}`,
+      classSlug: "witch",
+      sourceKind: classSourceKind("witch"),
+      sourceBadge: classSourceBadge("witch"),
+      title: "Witch Hexes",
+      entryName: "Witch Hexes",
+      tradition: witchTrad,
+      ability: "int",
+      expectedFocusSpells: 1 + witchLessons,
+      matchKeywords: ["hex", "witch", "lesson"],
+      note: `Witch Patron Hexes & Lesson Focus Spells (INT) — ${1 + witchLessons} hex focus spell(s)`
+    });
+  }
+
+  // 8. Oracle: Revelation Spells
+  if (hasClassOrDual("oracle") || featSlugs.has("revelation-spells")) {
+    const oracleExtra = matchFeats(["advanced-revelation", "greater-revelation", "domain-acumen"]).length;
+    matchFeats(["revelation-spells", "mystery", "first-revelation"]);
+    pushFocusSource({
+      key: `focus:oracle:${classSourceKind("oracle")}`,
+      classSlug: "oracle",
+      sourceKind: classSourceKind("oracle"),
+      sourceBadge: classSourceBadge("oracle"),
+      title: "Oracle Revelation Spells",
+      entryName: "Revelation Spells (Oracle)",
+      tradition: "divine",
+      ability: "cha",
+      expectedFocusSpells: 1 + oracleExtra,
+      matchKeywords: ["revelation", "oracle"],
+      note: `Oracle Revelation Focus Spells (Divine, CHA) — ${1 + oracleExtra} revelation focus spell(s)`
+    });
+  }
+
+  // 9. Wizard: Arcane School Focus Spells (if Arcane School other than Unified Magical Theory, or Hand of the Apprentice)
+  if (hasClassOrDual("wizard")) {
+    const isUnified = featSlugs.has("school-of-unified-magical-theory")
+      || featSlugs.has("universalist")
+      || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
+    const hasSchool = feats.some(f => /arcane school|school of /i.test(f.name || "") || getItemSlug(f).startsWith("school-of-"));
+    const wizFocusFeats = matchFeats(["hand-of-the-apprentice", "advanced-school-spell"]);
+    const hasInitialSchoolSpell = (hasSchool && !isUnified) || featSlugs.has("hand-of-the-apprentice");
+    if (hasInitialSchoolSpell || wizFocusFeats.length > 0) {
+      const expectedCount = (hasSchool && !isUnified ? 1 : 0) + wizFocusFeats.length;
+      pushFocusSource({
+        key: `focus:wizard:${classSourceKind("wizard")}`,
+        classSlug: "wizard",
+        sourceKind: classSourceKind("wizard"),
+        sourceBadge: classSourceBadge("wizard"),
+        title: "Wizard School Spells",
+        entryName: "School Spells (Wizard)",
+        tradition: "arcane",
+        ability: "int",
+        expectedFocusSpells: Math.max(1, expectedCount),
+        matchKeywords: ["school", "wizard"],
+        note: `Wizard Arcane School Focus Spells (Arcane, INT) — ${Math.max(1, expectedCount)} focus spell(s)`
+      });
+    }
+  }
+
+  // 10. Summoner: Link Spells
+  if (hasClassOrDual("summoner") || featSlugs.has("link-spells")) {
+    const sumExtra = matchFeats(["lifelink-surge", "extend-boost"]).length;
+    matchFeats(["link-spells", "evolution-surge", "boost-eidolon"]);
+    const sumTrad = detectDynamicTradition(actor, ["eidolon", "summoner"]);
+    pushFocusSource({
+      key: `focus:summoner:${classSourceKind("summoner")}`,
+      classSlug: "summoner",
+      sourceKind: classSourceKind("summoner"),
+      sourceBadge: classSourceBadge("summoner"),
+      title: "Summoner Link Spells",
+      entryName: "Link Spells (Summoner)",
+      tradition: sumTrad,
+      ability: "cha",
+      expectedFocusSpells: 1 + sumExtra,
+      matchKeywords: ["link", "summoner", "eidolon"],
+      note: `Summoner Link Focus Spells & Cantrips (CHA) — Evolution Surge & Boost Eidolon`
+    });
+  }
+
+  // 11. Animist: Vessel Spells
+  if (hasClassOrDual("animist") || featSlugs.has("vessel-spells")) {
+    matchFeats(["vessel-spells", "apparition-attunement"]);
+    pushFocusSource({
+      key: `focus:animist:${classSourceKind("animist")}`,
+      classSlug: "animist",
+      sourceKind: classSourceKind("animist"),
+      sourceBadge: classSourceBadge("animist"),
+      title: "Animist Vessel Spells",
+      entryName: "Vessel Spells (Animist)",
+      tradition: "divine",
+      ability: "wis",
+      expectedFocusSpells: 1,
+      matchKeywords: ["vessel", "animist", "apparition"],
+      note: `Animist Apparition Vessel Focus Spells (Divine, WIS)`
+    });
+  }
+
+  // 12. Necromancer (Impossible Magic): Grave Spells
+  if (hasClassOrDual("necromancer") || featSlugs.has("grave-spells")) {
+    matchFeats(["grave-spells"]);
+    pushFocusSource({
+      key: `focus:necromancer:${classSourceKind("necromancer")}`,
+      classSlug: "necromancer",
+      sourceKind: classSourceKind("necromancer"),
+      sourceBadge: classSourceBadge("necromancer"),
+      title: "Necromancer Grave Spells",
+      entryName: "Grave Spells (Necromancer)",
+      tradition: "occult",
+      ability: "int",
+      expectedFocusSpells: 1,
+      matchKeywords: ["grave", "necromancer"],
+      note: `Necromancer Grave Focus Spells (Occult, INT)`
+    });
+  }
+
+  // 13. Monk: Qi / Ki Spells (opt-in via Monk class feats)
+  const monkQiSlugs = [
+    "qi-spells", "ki-strike", "inner-upheaval", "ki-rush", "qi-rush", "wholeness-of-body",
+    "harmonize-self", "abundant-step", "wind-jump", "quivering-palm", "ki-blast", "qi-blast",
+    "ki-form", "qi-form", "wronged-monks-wrath", "medusas-wrath", "ki-cutting-sight",
+    "qi-form", "golden-body", "quivering-palm"
+  ];
+  const monkQiFeats = matchFeats(monkQiSlugs);
+  if (monkQiFeats.length > 0) {
+    const isMonkClass = hasClassOrDual("monk");
+    const qiTrad = detectDynamicTradition(actor, ["qi", "ki", "monk", "inner-upheaval"]);
+    pushFocusSource({
+      key: isMonkClass ? `focus:monk:${classSourceKind("monk")}` : "focus:archetype:monk",
+      classSlug: "monk",
+      sourceKind: isMonkClass ? classSourceKind("monk") : "archetype",
+      sourceBadge: isMonkClass ? classSourceBadge("monk") : "Archetype · Focus",
+      title: "Monk Qi Spells",
+      entryName: "Qi Spells (Monk)",
+      tradition: qiTrad,
+      ability: "wis",
+      expectedFocusSpells: monkQiFeats.length,
+      matchKeywords: ["qi", "ki", "monk"],
+      note: `Monk Qi/Ki Focus Spells (Occult or Divine, WIS) — ${monkQiFeats.length} Qi feat(s) detected`
+    });
+  }
+
+  // 14. Ranger: Warden Spells (opt-in via Ranger class feats)
+  const rangerWardenSlugs = [
+    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden",
+    "gravity-weapon", "heal-companion", "magic-hide", "snare-hopping", "animal-feature",
+    "soothing-mist", "terrain-transposition", "ephemeral-tracking", "enlarge-companion",
+    "hunters-vision", "hunter-s-vision"
+  ];
+  const rangerWardenFeats = matchFeats(rangerWardenSlugs);
+  if (rangerWardenFeats.length > 0) {
+    const isRangerClass = hasClassOrDual("ranger");
+    pushFocusSource({
+      key: isRangerClass ? `focus:ranger:${classSourceKind("ranger")}` : "focus:archetype:ranger",
+      classSlug: "ranger",
+      sourceKind: isRangerClass ? classSourceKind("ranger") : "archetype",
+      sourceBadge: isRangerClass ? classSourceBadge("ranger") : "Archetype · Focus",
+      title: "Ranger Warden Spells",
+      entryName: "Warden Spells (Ranger)",
+      tradition: "primal",
+      ability: "wis",
+      expectedFocusSpells: rangerWardenFeats.length,
+      matchKeywords: ["warden", "ranger"],
+      note: `Ranger Warden Focus Spells (Primal, WIS) — ${rangerWardenFeats.length} Warden feat(s) detected`
+    });
+  }
+
+  // --- B. Iconic Archetype / Free Archetype Focus Spellcasting Feats ---
+  const archFocusRules = [
+    {
+      key: "focus:archetype:blessed-one",
+      classSlug: "blessed-one",
+      slugs: ["blessed-one-dedication"],
+      title: "Blessed One Focus Spells",
+      entryName: "Blessed One Focus Spells",
+      tradition: "divine",
+      ability: "cha",
+      matchKeywords: ["blessed", "lay on hands", "devotion"],
+      skipIfClass: null
+    },
+    {
+      key: "focus:archetype:champion",
+      classSlug: "champion",
+      slugs: ["healing-touch", "devotion-spell"],
+      title: "Champion Archetype Devotion Spells",
+      entryName: "Devotion Spells (Champion Archetype)",
+      tradition: "divine",
+      ability: "cha",
+      matchKeywords: ["devotion", "champion", "healing touch"],
+      skipIfClass: "champion"
+    },
+    {
+      key: "focus:archetype:wizard",
+      classSlug: "wizard",
+      slugs: ["arcane-school-spell"],
+      title: "Wizard Archetype School Spell",
+      entryName: "School Spells (Wizard Archetype)",
+      tradition: "arcane",
+      ability: "int",
+      matchKeywords: ["school", "wizard"],
+      skipIfClass: "wizard"
+    },
+    {
+      key: "focus:archetype:sorcerer",
+      classSlug: "sorcerer",
+      slugs: ["basic-bloodline-spell", "advanced-bloodline"],
+      title: "Sorcerer Archetype Bloodline Spells",
+      entryName: "Bloodline Spells (Sorcerer Archetype)",
+      tradition: null,
+      dynamicHint: ["bloodline", "sorcerer"],
+      ability: "cha",
+      matchKeywords: ["bloodline", "sorcerer"],
+      skipIfClass: "sorcerer"
+    },
+    {
+      key: "focus:archetype:druid",
+      classSlug: "druid",
+      slugs: ["order-spell"],
+      title: "Druid Archetype Order Spell",
+      entryName: "Order Spells (Druid Archetype)",
+      tradition: "primal",
+      ability: "wis",
+      matchKeywords: ["order", "druid"],
+      skipIfClass: "druid"
+    },
+    {
+      key: "focus:archetype:witch",
+      classSlug: "witch",
+      slugs: ["basic-lesson", "greater-lesson", "major-lesson"],
+      title: "Witch Archetype Hexes",
+      entryName: "Witch Hexes (Archetype)",
+      tradition: null,
+      dynamicHint: ["patron", "witch"],
+      ability: "int",
+      matchKeywords: ["hex", "witch", "lesson"],
+      skipIfClass: "witch"
+    },
+    {
+      key: "focus:archetype:cleric",
+      classSlug: "cleric",
+      slugs: ["domain-initiate", "expanded-domain-initiate", "advanced-domain"],
+      title: "Cleric Archetype Domain Spells",
+      entryName: "Domain Spells (Archetype)",
+      tradition: "divine",
+      ability: "wis",
+      matchKeywords: ["domain", "cleric"],
+      skipIfClass: "cleric",
+      skipAlsoIfClass: "champion"
+    },
+    {
+      key: "focus:archetype:oracle",
+      classSlug: "oracle",
+      slugs: ["first-revelation", "advanced-revelation"],
+      title: "Oracle Archetype Revelation Spells",
+      entryName: "Revelation Spells (Archetype)",
+      tradition: "divine",
+      ability: "cha",
+      matchKeywords: ["revelation", "oracle"],
+      skipIfClass: "oracle"
+    },
+    {
+      key: "focus:archetype:magus",
+      classSlug: "magus",
+      slugs: ["conflux-spell"],
+      title: "Magus Archetype Conflux Spell",
+      entryName: "Conflux Spells (Magus Archetype)",
+      tradition: "arcane",
+      ability: "int",
+      matchKeywords: ["conflux", "magus"],
+      skipIfClass: "magus"
+    }
+  ];
+
+  for (const rule of archFocusRules) {
+    if (rule.skipIfClass && hasClassOrDual(rule.skipIfClass)) continue;
+    if (rule.skipAlsoIfClass && hasClassOrDual(rule.skipAlsoIfClass)) continue;
+    const matched = matchFeats(rule.slugs);
+    if (matched.length === 0) continue;
+
+    const isFreeArch = matched.some(f => typeof f.system?.location === "string" && f.system.location.startsWith("archetype-"));
+    const trad = rule.tradition ?? (rule.dynamicHint ? detectDynamicTradition(actor, rule.dynamicHint) : null);
+
+    pushFocusSource({
+      key: rule.key,
+      classSlug: rule.classSlug,
+      sourceKind: "archetype",
+      sourceBadge: isFreeArch ? "Free Archetype · Focus" : "Archetype · Focus",
+      title: rule.title,
+      entryName: rule.entryName,
+      tradition: trad,
+      ability: rule.ability,
+      expectedFocusSpells: matched.length,
+      matchKeywords: rule.matchKeywords,
+      note: `Detected from: ${matched.map(f => f.name).join(", ")}`
+    });
+  }
+
+  // --- C. Generic Fallback Scanner for ANY Other Focus-Spell-Granting Feat/Archetype ---
+  // Catches Shadowdancer, Time Mage, Soul Warden, Beastmaster, Psychic focus feats, homebrew, etc.
+  const refocusOrPassiveExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant)(?:$|-)/;
+  const focusGrantRegex = /(?:you\s+(?:gain|learn|receive)|grants?\s+you|you\s+can\s+cast)\s+(?:the\s+)?[^.<]{0,80}\b(?:focus\s+spell|focus\s+pool)\b/i;
+
+  for (const feat of feats) {
+    if (coveredFeatIds.has(feat.id)) continue;
+    const slug = getItemSlug(feat);
+    if (refocusOrPassiveExclusions.test(slug)) continue;
+
+    const desc = String(feat.system?.description?.value || "");
+    if (!focusGrantRegex.test(desc)) continue;
+
+    const tradMatch = desc.match(/\b(arcane|divine|occult|primal)\b/i);
+    const detectedTrad = tradMatch ? tradMatch[1].toLowerCase() : "";
+
+    // If a focus source of the same tradition already exists, fold it in rather than duplicating entries
+    if (detectedTrad) {
+      const existingSameTrad = focusSources.find(s => s.tradition === detectedTrad);
+      if (existingSameTrad) {
+        existingSameTrad.expectedFocusSpells = Math.min(10, existingSameTrad.expectedFocusSpells + 1);
+        continue;
+      }
+    }
+
+    const isFreeArch = typeof feat.system?.location === "string" && feat.system.location.startsWith("archetype-");
+    const abil = detectedTrad === "arcane" ? "int" : (detectedTrad === "divine" || detectedTrad === "primal" ? "wis" : "cha");
+
+    pushFocusSource({
+      key: `focus:feat:${slug}`,
+      classSlug: slug,
+      sourceKind: "archetype",
+      sourceBadge: isFreeArch ? "Free Archetype · Focus" : "Feat · Focus",
+      title: `${feat.name} (Focus)`,
+      entryName: `Focus Spells (${feat.name})`,
+      tradition: detectedTrad,
+      ability: abil,
+      expectedFocusSpells: 1,
+      matchKeywords: [slug.replace(/-/g, " "), "focus"],
+      note: `Focus spell granted by "${feat.name}" on the Feats tab`
+    });
+  }
+
+  return focusSources;
 }
 
 /**
@@ -1700,10 +2263,10 @@ function analyzeSpellcasting(actor, level, dualInfo) {
   const expectedSources = detectExpectedSpellcastingSources(actor, level, dualInfo);
   const existingEntries = (actor.itemTypes?.spellcastingEntry || []).filter(e => {
     const prepVal = e.system?.prepared?.value;
-    // Focus & Ritual entries are tracked separately from standard slot-based entries
-    return prepVal !== "focus" && prepVal !== "ritual" && prepVal !== "items";
+    // Include prepared, spontaneous, innate, and focus entries; exclude ritual/item-only containers
+    return prepVal !== "ritual" && prepVal !== "items";
   });
-  const focusEntries = (actor.itemTypes?.spellcastingEntry || []).filter(e => e.system?.prepared?.value === "focus");
+  const focusEntries = existingEntries.filter(e => e.system?.prepared?.value === "focus");
   const allSpells = actor.itemTypes?.spell || [];
 
   // Score how strongly an existing entry matches an expected source
@@ -1751,11 +2314,21 @@ function analyzeSpellcasting(actor, level, dualInfo) {
 
       if (eType === src.castingType) score += 20;
       else if (src.castingType === "innate" && eType === "spontaneous") score += 8;
-      else continue; // Must match casting type
+      else continue; // Must match casting type (focus ONLY matches focus!)
 
       if (src.tradition && eTrad === src.tradition) score += 18;
       else if (!src.tradition && eTrad) score += 6;
       else if (src.tradition && eTrad && eTrad !== src.tradition) score -= 15;
+
+      // Focus keyword matching (e.g. "Devotion", "Conflux", "Composition", "Hex", "Order", "Qi", "Warden")
+      if (src.isFocus && Array.isArray(src.focusMatchKeywords)) {
+        for (const kw of src.focusMatchKeywords) {
+          if (kw && eName.includes(kw)) {
+            score += 22;
+            break;
+          }
+        }
+      }
 
       // Name contains class/archetype keyword
       if (src.classSlug && eName.includes(src.classSlug.replace(/-/g, " "))) score += 25;
@@ -1801,20 +2374,66 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         slotDiffs: [],
         currentCantrips: 0,
         currentLeveledSpells: 0,
+        currentFocusSpells: 0,
         currentSlotsSummary: "None",
-        spellsMissingNote: "Create this spellcasting entry to add slots & spells"
+        spellsMissingNote: src.isFocus
+          ? "Create this Focus spellcasting entry and add your focus spell(s)"
+          : "Create this spellcasting entry to add slots & spells"
       });
       issues.push({
         severity: "critical",
         category: "Spellcasting",
         title: `Missing Spellcasting Entry: ${src.title}`,
-        detail: `${src.sourceBadge} · ${CASTING_TYPE_LABELS[src.castingType] || src.castingType} ${TRADITION_LABELS[src.tradition] || "(choose tradition)"} · Expected ${src.cantrips > 0 ? `${src.cantrips} cantrips & ` : ""}${src.slotsSummary}.`
+        detail: `${src.sourceBadge} · ${CASTING_TYPE_LABELS[src.castingType] || src.castingType} ${TRADITION_LABELS[src.tradition] || "(choose tradition)"} · ${src.isFocus ? src.slotsSummary : `Expected ${src.cantrips > 0 ? `${src.cantrips} cantrips & ` : ""}${src.slotsSummary}`}.`
       });
       continue;
     }
 
-    // Entry exists! Count its current slots and spells
+    // Entry exists! Count its current spells
     const entrySpells = allSpells.filter(s => s.system?.location?.value === entry.id);
+
+    // Special evaluation path for Focus Spellcasting entries (no daily slots — tracks Focus Spells)
+    if (src.isFocus || src.castingType === "focus") {
+      const currentFocusSpells = entrySpells.length;
+      const expectedFocusSpells = Math.max(1, Number(src.expectedFocusSpells || 1));
+      const missingFocus = Math.max(0, expectedFocusSpells - currentFocusSpells);
+
+      const status = missingFocus > 0 ? "incomplete" : "complete";
+      const statusLabel = missingFocus > 0 ? "Needs Spells" : "Ready";
+
+      items.push({
+        ...src,
+        entryId: entry.id,
+        matchedEntryName: entry.name,
+        entryExists: true,
+        tradition: entry.system?.tradition?.value || src.tradition,
+        ability: entry.system?.ability?.value || src.ability,
+        status,
+        statusLabel,
+        slotsOutdated: false,
+        slotDiffs: [],
+        slotDiffText: "",
+        currentCantrips: 0,
+        currentLeveledSpells: currentFocusSpells,
+        currentFocusSpells,
+        expectedFocusSpells,
+        currentSlotsSummary: src.slotsSummary,
+        spellsMissingNote: missingFocus > 0
+          ? `Add ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} to "${entry.name}"`
+          : `${currentFocusSpells} focus spell(s) configured`
+      });
+
+      if (missingFocus > 0) {
+        issues.push({
+          severity: "info",
+          category: "Spellcasting",
+          title: `${entry.name}: ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} missing`,
+          detail: `Focus spells in entry: ${currentFocusSpells}/${expectedFocusSpells} · ${src.expectedSpellsNote}`
+        });
+      }
+      continue;
+    }
+
     let currentCantrips = 0;
     let currentLeveledSpells = 0;
     const spellsByRank = {};
@@ -1893,6 +2512,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       slotDiffText: slotDiffs.map(d => `${d.label}: ${d.current}→${d.expected}`).join(", "),
       currentCantrips,
       currentLeveledSpells,
+      currentFocusSpells: 0,
       currentSlotsSummary: formatSlotsSummary(curSlotsObj),
       spellsMissingNote: missingParts.length > 0 ? `Missing ${missingParts.join(" & ")}` : "Spells & slots look good"
     });
@@ -1955,11 +2575,13 @@ export async function createSpellcastingEntry(actor, spec, overrides = {}) {
   const tradLabel = TRADITION_LABELS[tradition] || "";
   const typeLabel = flexible ? "Flexible" : (CASTING_TYPE_LABELS[castingType] || capitalize(castingType));
   const entryName = overrides.name
-    || (spec.isDivineFont ? spec.entryName : `${tradLabel ? `${tradLabel} ` : ""}${typeLabel} Spells (${spec.title.replace(/ Spellcasting$/i, "")})`);
+    || ((spec.isDivineFont || spec.isFocus || castingType === "focus")
+      ? spec.entryName
+      : `${tradLabel ? `${tradLabel} ` : ""}${typeLabel} Spells (${spec.title.replace(/ Spellcasting$/i, "")})`);
 
   const slots = {};
   for (let r = 0; r <= 10; r++) {
-    const max = (r === 0 && castingType !== "prepared") ? 0 : Number(spec.slots?.[r] || 0);
+    const max = (castingType === "focus" || (r === 0 && castingType !== "prepared")) ? 0 : Number(spec.slots?.[r] || 0);
     slots[`slot${r}`] = { value: max, max };
   }
 

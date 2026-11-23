@@ -138,12 +138,19 @@
                   </div>
 
                   <div class="pf2e-cc-spell-stats">
-                    {{#if this.hasCantrips}}
-                      <span><strong>Cantrips:</strong> {{#if this.entryExists}}{{this.currentCantrips}} / {{/if}}{{this.cantrips}}</span>
-                    {{/if}}
-                    <span><strong>Expected Slots (Lv {{../report.level}}):</strong> {{this.slotsSummary}}</span>
-                    {{#if this.entryExists}}
-                      <span><strong>Current Entry:</strong> {{this.matchedEntryName}} ({{this.currentLeveledSpells}} leveled spell(s))</span>
+                    {{#if this.isFocus}}
+                      <span><strong>Focus Casting (Lv {{../report.level}}):</strong> {{this.slotsSummary}}</span>
+                      {{#if this.entryExists}}
+                        <span><strong>Current Entry:</strong> {{this.matchedEntryName}} ({{this.currentFocusSpells}}/{{this.expectedFocusSpells}} focus spell(s))</span>
+                      {{/if}}
+                    {{else}}
+                      {{#if this.hasCantrips}}
+                        <span><strong>Cantrips:</strong> {{#if this.entryExists}}{{this.currentCantrips}} / {{/if}}{{this.cantrips}}</span>
+                      {{/if}}
+                      <span><strong>Expected Slots (Lv {{../report.level}}):</strong> {{this.slotsSummary}}</span>
+                      {{#if this.entryExists}}
+                        <span><strong>Current Entry:</strong> {{this.matchedEntryName}} ({{this.currentLeveledSpells}} leveled spell(s))</span>
+                      {{/if}}
                     {{/if}}
                   </div>
 

@@ -202,6 +202,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         castingTypeLabel: src.flexible ? "Flexible" : (CASTING_TYPE_LABELS[src.castingType] || src.castingType),
         traditionLabel: TRADITION_LABELS[src.tradition] || "Choose Tradition",
         abilityLabel: ABILITY_LABELS[src.ability] || String(src.ability || "").toUpperCase(),
+        isFocus: src.castingType === "focus",
         isMissing: !src.entryExists,
         isOutdated: Boolean(src.entryExists && src.slotsOutdated),
         isNeedsSpells: Boolean(src.entryExists && !src.slotsOutdated && src.status === "incomplete"),
@@ -602,9 +603,19 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
           actionHtml = `<span class="pf2e-cc-sheet-pill is-missing">Missing Entry</span>`;
         } else if (src.slotsOutdated) {
           actionHtml = `<span class="pf2e-cc-sheet-pill is-warn">Slots Outdated</span>`;
+        } else if (src.isFocus || src.castingType === "focus") {
+          const curF = Number(src.currentFocusSpells || 0);
+          const expF = Number(src.expectedFocusSpells || 1);
+          const pillCls = curF < expF ? "is-warn" : "is-ok";
+          actionHtml = `<span class="pf2e-cc-sheet-pill ${pillCls}">${curF}/${expF} focus</span>`;
         } else {
           actionHtml = `<span class="pf2e-cc-sheet-pill is-ok">${src.cantrips > 0 ? `C:${src.currentCantrips}/${src.cantrips} · ` : ""}${src.currentLeveledSpells} spells</span>`;
         }
+
+        const isFocus = Boolean(src.isFocus || src.castingType === "focus");
+        const slotLineHtml = isFocus
+          ? `<strong>Focus:</strong> ${esc(src.slotsSummary)}`
+          : `${src.cantrips > 0 ? `<strong>Cantrips:</strong> ${src.cantrips} · ` : ""}<strong>Slots:</strong> ${esc(src.slotsSummary)}${src.slotsOutdated ? ` · <span class="is-missing">Diff: ${esc(src.slotDiffText)}</span>` : ""}`;
 
         return `
           <div class="pf2e-cc-sheet-spell-row">
@@ -615,8 +626,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor) 
                 <span class="pf2e-cc-sheet-meta">${esc(typeLabel)} · ${esc(tradLabel)} · ${esc(abilLabel)}</span>
               </div>
               <div class="pf2e-cc-sheet-subline">
-                ${src.cantrips > 0 ? `<strong>Cantrips:</strong> ${src.cantrips} · ` : ""}<strong>Slots:</strong> ${esc(src.slotsSummary)}
-                ${src.slotsOutdated ? ` · <span class="is-missing">Diff: ${esc(src.slotDiffText)}</span>` : ""}
+                ${slotLineHtml}
               </div>
               <div class="pf2e-cc-sheet-subline is-muted">${esc(src.expectedSpellsNote)}</div>
             </div>
