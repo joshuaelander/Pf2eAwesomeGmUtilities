@@ -122,7 +122,7 @@ export function hasAnySavedLevelPlan(actor) {
     if (typeof entry.skillIncrease === "string" && entry.skillIncrease) return true;
     if (typeof entry.intBonusSkill === "string" && entry.intBonusSkill) return true;
     if (typeof entry.intBonusLanguage === "string" && entry.intBonusLanguage.trim()) return true;
-    if (entry.feats && typeof entry.feats === "object" && Object.keys(entry.feats).length > 0) return true;
+    if (entry.feats && typeof entry.feats === "object" && Object.values(entry.feats).some(f => Boolean(f && f.uuid))) return true;
     if (Array.isArray(entry.spells) && entry.spells.length > 0) return true;
     if (Array.isArray(entry.formulas) && entry.formulas.length > 0) return true;
   }
@@ -160,6 +160,23 @@ function getAvailableLanguageChoices(excludeSlugs = new Set()) {
   }
   options.sort((a, b) => a.label.localeCompare(b.label));
   return options;
+}
+
+export async function clearPlannedFeat(actor, levelNum, slotKey) {
+  if (!actor || actor.type !== "character" || !slotKey) return false;
+  if (!game.user?.isGM && !actor.isOwner) return false;
+  const key = String(levelNum);
+  await actor.update({
+    [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.-=${slotKey}`]: null
+  });
+  // Defensive fallback in case any exotic slotKey wasn't deleted by -= syntax
+  const stillPresent = actor.getFlag?.(MODULE_ID, PLAN_FLAG_KEY)?.levels?.[key]?.feats?.[slotKey];
+  if (stillPresent) {
+    await actor.update({
+      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}`]: null
+    });
+  }
+  return true;
 }
 
 export async function clearActorLevelPlan(actor) {
@@ -736,7 +753,8 @@ export function buildLevelRoadmap(actor, options = {}) {
   const buildFeatSlot = (groupId, groupLabel, category, traits, slotLevel, isFuture, levelPlanData, activeDedications = []) => {
     const slotKey = `${groupId}-${slotLevel}`;
     const liveFeat = liveFeatsBySlotKey.get(slotKey) || null;
-    const plannedFeat = levelPlanData?.feats?.[slotKey] || null;
+    const rawPlanned = levelPlanData?.feats?.[slotKey];
+    const plannedFeat = rawPlanned && rawPlanned.uuid ? rawPlanned : null;
 
     if (!isFuture) {
       return {
@@ -1700,87 +1718,241 @@ export async function openNativeBrowserForFormulas({ maxLevel = 1 } = {}) {
 }
 
 /**
+ * Robustly extracts normalized trait slugs from any Foundry / PF2e index entry shape
+ * (Set, Array, `{ value, otherTags }`, boolean-map object, or dotted index keys).
+ */
+function extractAnyItemTraits(e) {
+  const out = new Set();
+  const ingest = (raw) => {
+    if (!raw) return;
+    if (typeof raw === "string") {
+      const s = normalizeSlug(raw);
+      if (s) out.add(s);
+      return;
+    }
+    if (Array.isArray(raw) || raw instanceof Set) {
+      for (const v of raw) ingest(v);
+      return;
+    }
+    if (typeof raw[Symbol.iterator] === "function") {
+      for (const v of raw) ingest(v);
+      return;
+    }
+    if (typeof raw === "object") {
+      if ("value" in raw) ingest(raw.value);
+      if ("otherTags" in raw) ingest(raw.otherTags);
+      for (const [k, v] of Object.entries(raw)) {
+        if (v === true && k !== "value" && k !== "otherTags" && k !== "rarity") {
+          const s = normalizeSlug(k);
+          if (s) out.add(s);
+        }
+      }
+    }
+  };
+
+  ingest(e?.traits);
+  ingest(e?.system?.traits);
+  ingest(e?.system?.traits?.value);
+  ingest(e?.system?.traits?.otherTags);
+  ingest(e?.["system.traits"]);
+  ingest(e?.["system.traits.value"]);
+  return Array.from(out);
+}
+
+const FORMULA_CRAFTABLE_TYPES = new Set([
+  "consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo", "shield", "kit"
+]);
+const ALCHEMICAL_SUBTRAITS = new Set([
+  "alchemical", "bomb", "elixir", "mutagen", "lozenge", "bottled-monstrosity"
+]);
+const ALCHEMICAL_CONSUMABLE_CATS = new Set([
+  "elixir", "mutagen", "poison", "drug", "ammo", "alchemical"
+]);
+
+function buildFormulaRecord(e, fallbackPackCollection = "") {
+  const uuid = e?.uuid || (fallbackPackCollection && e?._id ? `Compendium.${fallbackPackCollection}.Item.${e._id}` : "");
+  if (!uuid || !e?.name) return null;
+
+  const traits = extractAnyItemTraits(e);
+  const itemType = normalizeSlug(e?.itemType || e?.type || "");
+  const category = normalizeSlug(e?.category || e?.system?.category || e?.["system.category"] || "");
+  const group = normalizeSlug(e?.group || e?.system?.group || e?.["system.group"] || "");
+  const rawLvl = (typeof e?.level === "object" ? e.level?.value : e?.level)
+    ?? (typeof e?.system?.level === "object" ? e.system.level?.value : e?.system?.level)
+    ?? e?.["system.level.value"]
+    ?? 0;
+  const level = Number.isFinite(Number(rawLvl)) ? Number(rawLvl) : 0;
+  const rarity = normalizeSlug(
+    e?.rarity
+    || e?.traits?.rarity
+    || e?.system?.traits?.rarity
+    || e?.["system.traits.rarity"]
+    || "common"
+  ) || "common";
+
+  const isAlchemical = traits.some(t => ALCHEMICAL_SUBTRAITS.has(t))
+    || group === "bomb"
+    || category === "alchemical"
+    || category === "elixir"
+    || category === "mutagen";
+
+  const isConsumable = itemType === "consumable"
+    || itemType === "ammo"
+    || traits.includes("consumable")
+    || traits.includes("bomb")
+    || traits.includes("elixir")
+    || traits.includes("mutagen")
+    || traits.includes("poison")
+    || group === "bomb"
+    || ALCHEMICAL_CONSUMABLE_CATS.has(category);
+
+  return {
+    uuid,
+    name: String(e.name),
+    img: e.img || "systems/pf2e/icons/default-icons/consumable.svg",
+    level,
+    type: itemType || "equipment",
+    category,
+    group,
+    traits,
+    isAlchemical,
+    isConsumable,
+    rarity
+  };
+}
+
+function collectBrowserIndexRecords(rawIndexData) {
+  if (!rawIndexData) return [];
+  let iter = [];
+  if (Array.isArray(rawIndexData)) iter = rawIndexData;
+  else if (rawIndexData instanceof Map || typeof rawIndexData.values === "function") iter = Array.from(rawIndexData.values());
+  else if (typeof rawIndexData[Symbol.iterator] === "function") iter = Array.from(rawIndexData);
+  else if (typeof rawIndexData === "object") iter = Object.values(rawIndexData);
+
+  const out = [];
+  const seen = new Set();
+  for (const e of iter) {
+    const rec = buildFormulaRecord(e);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    out.push(rec);
+  }
+  return out;
+}
+
+/**
  * Lazily retrieves lightweight craftable/alchemical equipment index entries
  * (zero startup overhead; cached only on first Pick Formulas click).
+ * Uses a 3-tier pipeline so bombs, elixirs, mutagens, poisons, and alchemical tools
+ * are always found reliably across Foundry v14 / PF2e versions.
  */
 export async function getLightweightFormulaIndex() {
-  if (_formulaIndexCache) return _formulaIndexCache;
+  if (_formulaIndexCache && _formulaIndexCache.length > 0) return _formulaIndexCache;
 
-  const CRAFTABLE_TYPES = new Set(["consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo"]);
-  const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.equipment?.indexData;
-
-  if (Array.isArray(browserIndex) && browserIndex.length > 0) {
-    _formulaIndexCache = browserIndex
-      .map(e => {
-        const traits = toStringArray(e.traits ?? e.system?.traits?.value).map(normalizeSlug).filter(Boolean);
-        return {
-          uuid: e.uuid,
-          name: e.name,
-          img: e.img || "systems/pf2e/icons/default-icons/consumable.svg",
-          level: Number(e.level ?? e.system?.level?.value ?? 0),
-          type: e.type || "equipment",
-          traits,
-          isAlchemical: traits.includes("alchemical"),
-          rarity: e.rarity || e.system?.traits?.rarity || "common"
-        };
-      })
-      .sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
+  // Tier 1: Reuse PF2e Compendium Browser's Equipment cache ONLY if it already contains alchemical traits
+  const equipTab = game.pf2e?.compendiumBrowser?.tabs?.equipment;
+  const browserRecords = collectBrowserIndexRecords(equipTab?.indexData);
+  if (browserRecords.some(r => r.isAlchemical)) {
+    browserRecords.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
+    _formulaIndexCache = browserRecords;
     return _formulaIndexCache;
   }
 
+  // Tier 2: Direct lightweight `pack.getIndex` on World items + equipment compendiums
   const results = [];
   const seen = new Set();
 
   for (const item of game.items || []) {
-    if (!CRAFTABLE_TYPES.has(item.type)) continue;
-    if (seen.has(item.uuid)) continue;
-    seen.add(item.uuid);
-    const traits = toStringArray(item.system?.traits?.value).map(normalizeSlug).filter(Boolean);
-    results.push({
-      uuid: item.uuid,
-      name: item.name,
-      img: item.img || "systems/pf2e/icons/default-icons/consumable.svg",
-      level: Number(item.system?.level?.value ?? 0),
-      type: item.type,
-      traits,
-      isAlchemical: traits.includes("alchemical"),
-      rarity: item.system?.traits?.rarity || "common"
-    });
+    if (!FORMULA_CRAFTABLE_TYPES.has(item.type)) continue;
+    const rec = buildFormulaRecord(item);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    results.push(rec);
   }
 
-  const packs = Array.from(game.packs || []).filter(p =>
-    p.documentName === "Item"
-    && (p.collection === "pf2e.equipment-srd" || /equipment|alchem|consumable|item/i.test(p.collection) || /equipment|alchem/i.test(p.title))
-  );
+  const allItemPacks = Array.from(game.packs || []).filter(p => p.documentName === "Item");
+  const primaryPacks = allItemPacks
+    .filter(p => {
+      const col = String(p.collection || "");
+      const title = String(p.title || p.metadata?.label || "");
+      if (col === "pf2e.equipment-srd" || col === "pf2e.equipment") return true;
+      // Never index effect, feature, action, condition, spell, or feat compendiums (e.g. pf2e.equipment-effects)
+      if (/effect|feature|action|condition|spell|feat|hazard|bestiary|deity|ancestry|heritage|background|class/i.test(col)) return false;
+      if (/\beffects?\b/i.test(title)) return false;
+      return /equipment|alchem|consumable|treasure/i.test(col)
+        || /equipment|alchem|consumable/i.test(title);
+    })
+    // Prioritize official `pf2e.equipment-srd` first
+    .sort((a, b) => (b.collection === "pf2e.equipment-srd" ? 1 : 0) - (a.collection === "pf2e.equipment-srd" ? 1 : 0));
 
-  for (const pack of packs) {
+  // Request top-level `system.level` & `system.traits` objects (never nested `.value` paths)
+  // so Foundry's server `setProperty` never throws if any pack entry stores a primitive number!
+  const indexFields = [
+    "img",
+    "system.level",
+    "system.category",
+    "system.group",
+    "system.traits"
+  ];
+
+  for (const pack of primaryPacks) {
     try {
-      const idx = await pack.getIndex({
-        fields: ["type", "img", "system.level.value", "system.traits.value", "system.traits.rarity"]
-      });
+      const idx = await pack.getIndex({ fields: indexFields });
       for (const e of idx) {
-        if (!CRAFTABLE_TYPES.has(e.type)) continue;
-        const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
-        if (seen.has(uuid)) continue;
-        seen.add(uuid);
-        const traits = toStringArray(e.system?.traits?.value).map(normalizeSlug).filter(Boolean);
-        results.push({
-          uuid,
-          name: e.name,
-          img: e.img || "systems/pf2e/icons/default-icons/consumable.svg",
-          level: Number(e.system?.level?.value ?? 0),
-          type: e.type,
-          traits,
-          isAlchemical: traits.includes("alchemical"),
-          rarity: e.system?.traits?.rarity || "common"
-        });
+        if (e.type && !FORMULA_CRAFTABLE_TYPES.has(e.type)) continue;
+        const rec = buildFormulaRecord(e, pack.collection);
+        if (!rec || seen.has(rec.uuid)) continue;
+        seen.add(rec.uuid);
+        results.push(rec);
       }
-    } catch { /* skip unreadable pack */ }
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed indexing equipment pack "${pack.collection}":`, err);
+    }
+  }
+
+  if (results.some(r => r.isAlchemical)) {
+    results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
+    _formulaIndexCache = results;
+    return _formulaIndexCache;
+  }
+
+  // Tier 3: Ask PF2e's native Compendium Browser Equipment tab to load its own index
+  if (equipTab) {
+    try {
+      if (!equipTab.isInitialized) {
+        if (typeof equipTab.init === "function") await equipTab.init();
+        else if (typeof equipTab.loadData === "function") await equipTab.loadData();
+      } else if (typeof equipTab.loadData === "function" && browserRecords.length === 0) {
+        await equipTab.loadData();
+      }
+      const hydrated = collectBrowserIndexRecords(equipTab.indexData);
+      if (hydrated.length > 0) {
+        // Merge hydrated records, preferring entries that have trait data over any trait-less Tier 2 stubs
+        const byUuid = new Map(results.map(r => [r.uuid, r]));
+        for (const rec of hydrated) {
+          const prev = byUuid.get(rec.uuid);
+          if (!prev || (!prev.isAlchemical && rec.isAlchemical) || (prev.traits.length === 0 && rec.traits.length > 0)) {
+            byUuid.set(rec.uuid, rec);
+          }
+        }
+        results.length = 0;
+        results.push(...byUuid.values());
+      }
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Fallback equipment browser loadData failed:", err);
+    }
   }
 
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
-  _formulaIndexCache = results;
-  return _formulaIndexCache;
+  if (results.some(r => r.isAlchemical)) {
+    _formulaIndexCache = results;
+  } else {
+    console.warn(
+      "PF2e Awesome GM Utilities | Formula index loaded 0 alchemical items.",
+      { packCount: primaryPacks.length, totalItems: results.length, sample: results[0] || null }
+    );
+  }
+  return results;
 }
 
 /* ------------------------------------------------------------------------- */

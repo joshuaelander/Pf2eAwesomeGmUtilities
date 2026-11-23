@@ -21,6 +21,7 @@ import {
   applyPlannedLevelUp,
   buildLevelRoadmap,
   clearActorLevelPlan,
+  clearPlannedFeat,
   computeMatchingArchetypeFeatUuids,
   getLightweightFeatIndex,
   getLightweightFormulaIndex,
@@ -704,9 +705,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (!actor) return;
         const levelNum = Number(el.dataset.level);
         const slotKey = el.dataset.slotKey;
-        await updatePlannedLevelData(actor, levelNum, (entry) => {
-          if (entry.feats && slotKey) delete entry.feats[slotKey];
-        });
+        if (!levelNum || !slotKey) return;
+        await clearPlannedFeat(actor, levelNum, slotKey);
         this.render({ force: false });
         break;
       }
@@ -1360,9 +1360,11 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const content = `
       <div class="pf2e-lp-picker">
         <div class="pf2e-lp-picker-controls">
-          <input type="text" class="pf2e-lp-picker-search" placeholder="Search alchemical formulas (Item Lv ≤ ${levelNum})..." autofocus />
+          <input type="text" class="pf2e-lp-picker-search" placeholder="Search bombs, elixirs, mutagens, poisons (Lv ≤ ${levelNum})..." autofocus />
           <select class="pf2e-lp-picker-scope" title="Filter scope">
-            <option value="common-alchemical" selected>Common Alchemical (Free Eligible)</option>
+            <option value="common-alchemical-consumables" selected>Common Alchemical Consumables</option>
+            <option value="common-alchemical">All Common Alchemical (incl. Gear)</option>
+            <option value="all-alchemical-consumables">All Alchemical Consumables</option>
             <option value="all-alchemical">All Alchemical (Any Rarity)</option>
             <option value="all-items">All Craftable Equipment</option>
           </select>
@@ -1428,15 +1430,19 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       const renderList = () => {
         const query = (searchInput?.value || "").trim().toLowerCase();
-        const scope = scopeSelect?.value || "common-alchemical";
+        const scope = scopeSelect?.value || "common-alchemical-consumables";
         const anyLvl = Boolean(anyLvlCb?.checked);
 
         const matched = [];
         for (const item of allItems) {
           if (!anyLvl && item.level > levelNum) continue;
 
-          if (scope === "common-alchemical") {
+          if (scope === "common-alchemical-consumables") {
+            if (!item.isAlchemical || !item.isConsumable || item.rarity !== "common") continue;
+          } else if (scope === "common-alchemical") {
             if (!item.isAlchemical || item.rarity !== "common") continue;
+          } else if (scope === "all-alchemical-consumables") {
+            if (!item.isAlchemical || !item.isConsumable) continue;
           } else if (scope === "all-alchemical") {
             if (!item.isAlchemical) continue;
           }
@@ -1444,7 +1450,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (query) {
             const nameMatch = item.name.toLowerCase().includes(query);
             const traitMatch = item.traits.some(t => t.includes(query));
-            if (!nameMatch && !traitMatch) continue;
+            const catMatch = (item.category && item.category.includes(query)) || (item.group && item.group.includes(query));
+            if (!nameMatch && !traitMatch && !catMatch) continue;
           }
           matched.push(item);
         }
