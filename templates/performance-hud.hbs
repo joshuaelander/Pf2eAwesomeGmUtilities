@@ -19,7 +19,7 @@
     {{/if}}
 
     <span class="perf-hud-sep"></span>
-    <span class="perf-hud-item" title="Main-Thread Freezes (&gt;50ms)">
+    <span class="perf-hud-item" title="Main-Thread Freezes (&gt;{{live.spikeThresholdMs}}ms)">
       <i class="fa-solid fa-bolt"></i>
       <strong data-hud="spikes">{{live.longTaskCount}}</strong>
     </span>

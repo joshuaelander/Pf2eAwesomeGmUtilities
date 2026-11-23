@@ -1032,6 +1032,71 @@
   max-width: 360px;
 }
 
+/* Overview Issue Stutter Cause Pills & Quick Action */
+.pf2e-perf-container .perf-issue-action {
+  margin-left: auto;
+}
+
+.pf2e-perf-container .perf-issue-causes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 4px 0 3px 0;
+}
+
+.pf2e-perf-container .perf-cause-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(197, 155, 39, 0.14);
+  border: 1px solid rgba(197, 155, 39, 0.35);
+  font-size: 0.77em;
+  color: #e2e8f0;
+}
+
+.pf2e-perf-container .perf-cause-pill em {
+  font-style: normal;
+  color: #e6c55d;
+  font-weight: 600;
+}
+
+/* Modules Tab Totals Summary Bar */
+.pf2e-perf-container .perf-modules-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 7px 10px;
+  background: #1a1e2a;
+  border: 1px solid rgba(197, 155, 39, 0.25);
+  border-radius: 5px;
+  font-size: 0.8em;
+  color: #cbd5e1;
+}
+
+.pf2e-perf-container .perf-mod-sum-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pf2e-perf-container .perf-mod-sum-item > i {
+  color: #e6c55d;
+}
+
+.pf2e-perf-container .perf-mod-sum-item strong {
+  color: #f8fafc;
+  font-family: monospace;
+  font-size: 1.04em;
+}
+
+.pf2e-perf-container .perf-mod-sum-item small {
+  color: #94a3b8;
+  font-size: 0.92em;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Module Game Settings Section Headers (Plain Text, No Icons)               */
 /* ------------------------------------------------------------------------- */

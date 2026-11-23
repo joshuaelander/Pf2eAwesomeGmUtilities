@@ -377,6 +377,10 @@
         "Name": "Enable Performance Checker & Module Profiler (GM Only)",
         "Hint": "GM-only diagnostic tool. Enables the Performance Checker button in the GM Utilities menu to monitor FPS, JS heap memory, freezes (with LoAF script cause attribution), module errors, hook CPU timings, and PF2e world bloat. Default OFF (zero overhead when disabled; never runs on player clients)."
       },
+      "PerfSpikeThresholdMs": {
+        "Name": "Stutter / Frame Spike Threshold (ms)",
+        "Hint": "Minimum main-thread freeze or frame spike duration in milliseconds before the Performance Checker logs it as a stutter (default: 100 ms; severe threshold scales to 2x or at least 150 ms). Higher values reduce noise and diagnostic overhead."
+      },
       "ShowCharacterSheetGuides": {
         "Name": "Show Character Sheet Completeness Guides",
         "Hint": "Displays compact PF2e build completeness guides on Character Sheets (Skills & Skill Increases counts, expected Spellcasting slots & 1-click entry creator, and empty Feat slots) for GMs and character owners. Works with Dual Class and Free Archetype."

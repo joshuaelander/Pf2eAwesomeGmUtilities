@@ -372,6 +372,21 @@ function registerSettings() {
     }
   });
 
+  // Performance Checker: Stutter / Frame Spike Threshold in ms (GM-Only World Setting)
+  game.settings.register(MODULE_ID, "perfSpikeThresholdMs", {
+    name: game.i18n.localize("PF2E_AWESOME_GM.Settings.PerfSpikeThresholdMs.Name"),
+    hint: game.i18n.localize("PF2E_AWESOME_GM.Settings.PerfSpikeThresholdMs.Hint"),
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 50, max: 300, step: 25 },
+    default: 100,
+    onChange: (val) => {
+      if (!game.user?.isGM) return;
+      performanceMonitor.setSpikeThresholdMs(val);
+    }
+  });
+
   // Compact Performance HUD Position (Client)
   game.settings.register(MODULE_ID, "perfHudPosition", {
     name: "Performance HUD Position",
@@ -485,7 +500,7 @@ function injectSettingsSectionHeaders(html) {
       id: "pf2e-gm-hdr-performance",
       title: "Performance Checker (GM Only)",
       gmOnly: true,
-      keys: ["enablePerformanceMonitor"]
+      keys: ["enablePerformanceMonitor", "perfSpikeThresholdMs"]
     },
     {
       id: "pf2e-gm-hdr-characterchecker",

@@ -120,7 +120,7 @@
         <!-- Long Tasks / Spikes Card -->
         <div class="perf-metric-card status-{{live.spikeClass}}">
           <div class="metric-header">
-            <span class="metric-title"><i class="fa-solid fa-bolt"></i> Freezes (&gt;50ms)</span>
+            <span class="metric-title"><i class="fa-solid fa-bolt"></i> Freezes (&gt;{{live.spikeThresholdMs}}ms)</span>
             <span class="metric-sub">Main Thread</span>
           </div>
           <div class="metric-value" data-live="spikes">{{live.longTaskCount}}</div>
@@ -179,8 +179,22 @@
                 <div class="issue-top">
                   <span class="issue-category">{{this.category}}</span>
                   <strong class="issue-title">{{this.title}}</strong>
+                  {{#if this.action}}
+                    <button type="button" class="perf-btn perf-btn-xs perf-issue-action" data-perf-action="{{this.action}}">
+                      {{this.actionLabel}}
+                    </button>
+                  {{/if}}
                 </div>
                 <p class="issue-detail">{{this.detail}}</p>
+                {{#if this.hasCauses}}
+                  <div class="perf-issue-causes">
+                    {{#each this.causes}}
+                      <span class="perf-cause-pill" title="Category: {{this.category}}">
+                        <em>{{this.category}}:</em> <strong>{{this.culprit}}</strong> ({{this.count}}&times;, max {{this.maxMs}}ms)
+                      </span>
+                    {{/each}}
+                  </div>
+                {{/if}}
                 <p class="issue-suggestion"><i class="fa-solid fa-lightbulb"></i> {{this.suggestion}}</p>
               </div>
             </div>
@@ -204,6 +218,7 @@
           <select id="perf-module-sort">
             <option value="impact" {{#if (eq moduleSort "impact")}}selected{{/if}}>Impact Score</option>
             <option value="hookMs" {{#if (eq moduleSort "hookMs")}}selected{{/if}}>Hook CPU Time</option>
+            <option value="memSpikes" {{#if (eq moduleSort "memSpikes")}}selected{{/if}}>Memory Spikes</option>
             <option value="errors" {{#if (eq moduleSort "errors")}}selected{{/if}}>Errors Count</option>
             <option value="assets" {{#if (eq moduleSort "assets")}}selected{{/if}}>Asset Size (MB)</option>
             <option value="loadMs" {{#if (eq moduleSort "loadMs")}}selected{{/if}}>Asset Load Time</option>
@@ -225,6 +240,39 @@
         {{/if}}
       </div>
 
+      <!-- Compact Modules Asset & Memory Spike Summary Strip -->
+      <div class="perf-modules-summary">
+        <div class="perf-mod-sum-item" title="Combined decoded/transferred size of all browser assets loaded from active modules (excluding Foundry Core and PF2e System)">
+          <i class="fa-solid fa-file-arrow-down"></i>
+          <span>Module Assets Total:</span>
+          <strong>{{moduleSummary.moduleAssetsFormatted}}</strong>
+          <small>({{moduleSummary.moduleAssetFiles}} files · All incl. Core/System: {{moduleSummary.allAssetsFormatted}})</small>
+        </div>
+        <div class="perf-mod-sum-item" title="Attributed JS Heap memory jumps (≥4–5 MB) captured during freezes or profiled hooks with zero extra polling">
+          <i class="fa-solid fa-memory"></i>
+          <span>Memory Spikes:</span>
+          {{#if moduleSummary.memAvailable}}
+            {{#if moduleSummary.hasMemSpikesTotal}}
+              <strong class="text-warn">{{moduleSummary.memSpikesTotalCount}}</strong>
+              <small>(Peak {{moduleSummary.memSpikesPeakFormatted}}{{#if moduleSummary.memSpikesTopMod}} in {{moduleSummary.memSpikesTopMod}}{{/if}})</small>
+            {{else}}
+              <strong>0</strong>
+              <small>(No attributed &ge;5 MB spikes)</small>
+            {{/if}}
+          {{else}}
+            <strong>N/A</strong>
+            <small>(Chromium / Desktop only)</small>
+          {{/if}}
+        </div>
+        {{#if moduleSummary.hasAuditStorage}}
+          <div class="perf-mod-sum-item" title="Total Settings + Document Flags size across active modules from last Deep Audit">
+            <i class="fa-solid fa-database"></i>
+            <span>Module Data:</span>
+            <strong>{{moduleSummary.moduleStorageFormatted}}</strong>
+          </div>
+        {{/if}}
+      </div>
+
       {{#unless startupAttributed}}
         <div class="perf-info-banner">
           <i class="fa-solid fa-circle-info"></i>
@@ -241,6 +289,7 @@
               <th class="col-num">Errors</th>
               <th class="col-num">Hook CPU</th>
               <th class="col-num">Max Spike</th>
+              <th class="col-num" title="Attributed JS Heap jumps (≥4–5 MB) captured during freezes or profiled hooks">Mem Spikes</th>
               <th class="col-num">Hooks</th>
               <th class="col-num">Assets Size</th>
               <th class="col-num">Load Time</th>
@@ -265,6 +314,7 @@
                 <td class="col-num {{#if this.hasErrors}}text-danger strong{{/if}}">{{this.errors}}</td>
                 <td class="col-num" title="{{this.hookCalls}} hook calls">{{this.hookTotalFormatted}}</td>
                 <td class="col-num" title="{{#if this.slowestHook}}Slowest: {{this.slowestHook}}{{/if}}">{{this.hookMaxFormatted}}</td>
+                <td class="col-num {{#if this.hasMemSpikes}}text-warn strong{{/if}}" title="{{this.memSpikeTooltip}}">{{this.memSpikeFormatted}}</td>
                 <td class="col-num">{{this.hookCount}}</td>
                 <td class="col-num" title="{{this.assetCount}} loaded files">{{this.assetSizeFormatted}}</td>
                 <td class="col-num">{{this.assetLoadFormatted}}</td>
@@ -272,7 +322,7 @@
               </tr>
             {{else}}
               <tr>
-                <td colspan="9" class="perf-empty-cell">No modules match the current filter.</td>
+                <td colspan="10" class="perf-empty-cell">No modules match the current filter.</td>
               </tr>
             {{/each}}
           </tbody>
@@ -346,7 +396,7 @@
 
         <div class="perf-panel">
           <div class="perf-panel-header">
-            <h4><i class="fa-solid fa-bolt"></i> Recent Main-Thread Freezes &amp; Frame Spikes (&gt;50ms)</h4>
+            <h4><i class="fa-solid fa-bolt"></i> Recent Main-Thread Freezes &amp; Frame Spikes (&gt;{{live.spikeThresholdMs}}ms)</h4>
             <span class="perf-hint-inline">
               {{#if loafSupported}}
                 LoAF Script Attribution Active · Correlates scripts, layout/paint, hooks, assets &amp; GC
@@ -380,7 +430,7 @@
                   </tr>
                 {{else}}
                   <tr>
-                    <td colspan="5" class="perf-empty-cell">No freezes over 50ms recorded yet.</td>
+                    <td colspan="5" class="perf-empty-cell">No freezes over {{live.spikeThresholdMs}}ms recorded yet.</td>
                   </tr>
                 {{/each}}
               </tbody>

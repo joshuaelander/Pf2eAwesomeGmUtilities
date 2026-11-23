@@ -69,6 +69,8 @@ export class PerformanceMonitorEngine {
     this._moduleHookStats = new Map();  // moduleId -> { calls, totalMs, maxMs, slowestHook, slowestHookMs }
     this._recentHookEvents = [];        // Ring buffer (max 100) of hook calls >= 3ms for freeze correlation
     this._loafSpikesByModule = new Map(); // moduleId -> { count, totalMs, maxMs, lastScript }
+    this._memSpikesByModule = new Map();  // moduleId -> { count, totalMB, maxMB, lastSource, lastPerfTs }
+    this._spikeThresholdMs = 100;         // Configurable stutter threshold (ms), synced from world setting
 
     // Lightweight GM activity breadcrumbs (only bound when enabled)
     this._recentActivities = [];        // Ring buffer (max 30) of { ts, label }
@@ -160,6 +162,43 @@ export class PerformanceMonitorEngine {
   }
 
   /**
+   * Returns the configured main-thread stutter / frame spike threshold in ms (default 100ms).
+   * Cached in `this._spikeThresholdMs` so per-frame checks have zero setting-lookup overhead.
+   */
+  getSpikeThresholdMs() {
+    try {
+      if (game?.settings?.settings?.has?.(`${MODULE_ID}.perfSpikeThresholdMs`)) {
+        const val = Number(game.settings.get(MODULE_ID, "perfSpikeThresholdMs"));
+        if (Number.isFinite(val) && val >= 50 && val <= 500) {
+          this._spikeThresholdMs = Math.round(val);
+          return this._spikeThresholdMs;
+        }
+      }
+    } catch {
+      // Fallback to cached default
+    }
+    return this._spikeThresholdMs || 100;
+  }
+
+  /**
+   * Returns the severe freeze threshold (scales smoothly with the configured stutter threshold).
+   */
+  getSevereSpikeThresholdMs() {
+    return Math.max(150, Math.round((this._spikeThresholdMs || 100) * 2));
+  }
+
+  /**
+   * Updates the cached stutter threshold live when changed in Module Settings.
+   */
+  setSpikeThresholdMs(val) {
+    const n = Number(val);
+    if (Number.isFinite(n) && n >= 50 && n <= 500) {
+      this._spikeThresholdMs = Math.round(n);
+      this._notify(true);
+    }
+  }
+
+  /**
    * Subscribe a callback to live metric ticks & state updates.
    * @param {Function} fn
    * @returns {Function} Unsubscribe callback
@@ -211,6 +250,7 @@ export class PerformanceMonitorEngine {
     if (!this.isUserGM()) return;
     if (this.enabled) return;
     this.enabled = true;
+    this.getSpikeThresholdMs();
     this._lastHeapBytes = performance?.memory?.usedJSHeapSize || 0;
     this._installHookAttribution();
     this._installErrorListeners();
@@ -247,6 +287,7 @@ export class PerformanceMonitorEngine {
     this._moduleHookStats.clear();
     this._recentHookEvents = [];
     this._loafSpikesByModule.clear();
+    this._memSpikesByModule.clear();
     this._recentActivities = [];
     this._errors = [];
     this._errorCountByModule.clear();
@@ -438,6 +479,8 @@ export class PerformanceMonitorEngine {
     const wrapperFn = function (...args) {
       const prevCtx = self._activeHookContext;
       self._activeHookContext = `${hookName} (${self.getPackageTitle(ownerId)})`;
+      const memObj = performance?.memory;
+      const memBefore = memObj ? memObj.usedJSHeapSize : 0;
       const t0 = performance.now();
       try {
         return origFn.apply(this, args);
@@ -446,6 +489,12 @@ export class PerformanceMonitorEngine {
         const dt = t1 - t0;
         self._activeHookContext = prevCtx;
         self._recordHookTiming(hookName, ownerId, dt, t0, t1);
+        if (dt >= 4 && memObj && memBefore > 0 && !self._auditInProgress) {
+          const gainMB = (memObj.usedJSHeapSize - memBefore) / (1024 * 1024);
+          if (gainMB >= 4) {
+            self._recordModuleMemSpike(ownerId, gainMB, `Hook: ${hookName}`, t1);
+          }
+        }
       }
     };
 
@@ -486,8 +535,8 @@ export class PerformanceMonitorEngine {
       if (this._recentHookEvents.length > 120) this._recentHookEvents.shift();
     }
 
-    // 4. Record severe hook spike directly into long-task log if >= 50ms
-    if (dt >= 50) {
+    // 4. Record severe hook spike directly into long-task log if >= configured stutter threshold
+    if (dt >= this._spikeThresholdMs) {
       const pkgTitle = this.getPackageTitle(ownerId);
       this._recordLongTask({
         durationMs: dt,
@@ -694,15 +743,16 @@ export class PerformanceMonitorEngine {
       const inAuditHeapCooldown = this._auditInProgress || (this._auditWindowEnd > 0 && now <= this._auditWindowEnd + 1200);
 
       // Ignore huge pauses caused by switching browser tabs (> 2500ms)
+      const spikeThreshold = this._spikeThresholdMs;
       if (dt > 0 && dt < 2500) {
-        if (!inAuditCooldown || dt < 50) {
+        if (!inAuditCooldown || dt < spikeThreshold) {
           this._frameTimesThisSec.push(dt);
         }
         if (!inAuditCooldown) {
           if (dt > this._maxFrameMs) this._maxFrameMs = dt;
 
           // Detect frame drop spike if PerformanceObserver isn't available
-          if (dt >= 50) {
+          if (dt >= spikeThreshold) {
             this._spikesThisSec++;
             if (!this._longTaskObserver) {
               const diag = this._diagnoseFreezeWindow(now - dt, now, dt, null);
@@ -896,12 +946,67 @@ export class PerformanceMonitorEngine {
   }
 
   /**
+   * Records an attributed JS Heap memory jump (in MB) for a specific module/package,
+   * deduplicating rapid spikes within 500ms so LoAF + Hook Profiler never double-count.
+   */
+  _recordModuleMemSpike(pkgId, deltaMB, source = "Spike", perfTs = performance.now()) {
+    if (!pkgId || pkgId === "unknown" || !Number.isFinite(deltaMB) || deltaMB < 4) return;
+    let rec = this._memSpikesByModule.get(pkgId);
+    if (!rec) {
+      rec = { count: 0, totalMB: 0, maxMB: 0, lastSource: "", lastPerfTs: 0 };
+      this._memSpikesByModule.set(pkgId, rec);
+    }
+    if (rec.lastPerfTs > 0 && Math.abs(perfTs - rec.lastPerfTs) <= 500) {
+      if (deltaMB > rec.maxMB) {
+        rec.totalMB += (deltaMB - rec.maxMB);
+        rec.maxMB = deltaMB;
+      }
+      return;
+    }
+    rec.count++;
+    rec.totalMB += deltaMB;
+    if (deltaMB > rec.maxMB) rec.maxMB = deltaMB;
+    rec.lastSource = source;
+    rec.lastPerfTs = perfTs;
+  }
+
+  /**
+   * Aggregates the top culprits from recorded main-thread stutters (zero extra runtime cost).
+   */
+  _summarizeFreezeCauses(maxItems = 4) {
+    if (!this._longTasks.length) return [];
+    const byCulprit = new Map();
+    for (const lt of this._longTasks) {
+      const name = lt.culprit || "Browser / GPU Stall";
+      let rec = byCulprit.get(name);
+      if (!rec) {
+        rec = { culprit: name, category: lt.category || "Spike", count: 0, totalMs: 0, maxMs: 0 };
+        byCulprit.set(name, rec);
+      }
+      rec.count++;
+      rec.totalMs += Number(lt.durationMs || 0);
+      if ((lt.durationMs || 0) > rec.maxMs) rec.maxMs = Number(lt.durationMs || 0);
+    }
+    return Array.from(byCulprit.values())
+      .sort((a, b) => (b.totalMs - a.totalMs) || (b.count - a.count))
+      .slice(0, maxItems)
+      .map(c => ({
+        culprit: c.culprit,
+        category: c.category,
+        count: c.count,
+        maxMs: Number(c.maxMs.toFixed(0)),
+        summary: `${c.culprit} (${c.count}×, max ${Math.round(c.maxMs)}ms)`
+      }));
+  }
+
+  /**
    * Correlates LoAF script timings, Hook Profiler timeline, recent UI/Canvas breadcrumbs,
-   * newly decoded assets, and JS heap GC drops to identify what caused a freeze.
+   * newly decoded assets, and JS heap GC drops / memory spikes to identify what caused a freeze.
    */
   _diagnoseFreezeWindow(startTime, endTime, durationMs, loafEntry) {
     const detailParts = [];
     let culprit = "";
+    let culpritPkgId = "";
     let category = "";
 
     // 1. Long Animation Frame (LoAF) native V8/Blink script & rendering attribution
@@ -948,6 +1053,7 @@ export class PerformanceMonitorEngine {
 
         if (!culprit && pkgId !== "unknown") {
           culprit = pkgTitle;
+          culpritPkgId = pkgId;
           category = "Script";
         }
         if (topScriptDesc.length < 2) {
@@ -957,7 +1063,7 @@ export class PerformanceMonitorEngine {
       }
 
       // If this frame was predominantly caused by the Performance Checker's own scan/UI, ignore it
-      if (selfProfilerMs >= durationMs * 0.45 || (selfProfilerMs > 0 && (durationMs - selfProfilerMs) < 50)) {
+      if (selfProfilerMs >= durationMs * 0.45 || (selfProfilerMs > 0 && (durationMs - selfProfilerMs) < this._spikeThresholdMs)) {
         return { ignore: true, culprit: "", category: "", details: "" };
       }
 
@@ -1002,7 +1108,10 @@ export class PerformanceMonitorEngine {
       const top = overlappingHooks.slice(0, 2);
       if (!culprit) {
         culprit = this.getPackageTitle(top[0].ownerId);
+        culpritPkgId = top[0].ownerId;
         category = "Hook Callback";
+      } else if (!culpritPkgId && top[0].ownerId !== "unknown") {
+        culpritPkgId = top[0].ownerId;
       }
       detailParts.push(
         `Hooks: ${top.map(h => `"${h.hook}" (${this.getPackageTitle(h.ownerId)}: ${h.dt.toFixed(1)}ms)`).join(", ")}`
@@ -1026,6 +1135,7 @@ export class PerformanceMonitorEngine {
           const topRes = recentRes[0];
           if (!culprit) {
             culprit = topRes.pkg !== "unknown" ? this.getPackageTitle(topRes.pkg) : "Asset Decode";
+            culpritPkgId = topRes.pkg !== "unknown" ? topRes.pkg : "";
             category = "Asset / Texture";
           }
           detailParts.push(`Asset loaded: ${topRes.name} (${formatBytes(topRes.bytes)})`);
@@ -1035,16 +1145,22 @@ export class PerformanceMonitorEngine {
       // Ignore
     }
 
-    // 4. Garbage Collection (GC) pause check via sudden JS Heap drop
+    // 4. Garbage Collection (GC) pause OR sudden JS Heap memory jump (reusing single heap read!)
     const curHeap = performance?.memory?.usedJSHeapSize || 0;
     if (curHeap > 0 && this._lastHeapBytes > 0) {
-      const freedMB = (this._lastHeapBytes - curHeap) / (1024 * 1024);
-      if (freedMB >= 15) {
+      const deltaMB = (curHeap - this._lastHeapBytes) / (1024 * 1024);
+      if (deltaMB <= -15) {
+        const freedMB = -deltaMB;
         if (!culprit) {
           culprit = "V8 Garbage Collector";
           category = "GC Pause";
         }
         detailParts.push(`Memory GC freed ~${freedMB.toFixed(1)} MB`);
+      } else if (deltaMB >= 5) {
+        if (culpritPkgId && culpritPkgId !== "unknown") {
+          this._recordModuleMemSpike(culpritPkgId, deltaMB, category || "Freeze", endTime);
+        }
+        detailParts.push(`Heap +${deltaMB.toFixed(1)} MB`);
       }
     }
     if (curHeap > 0) this._lastHeapBytes = curHeap;
@@ -1091,8 +1207,9 @@ export class PerformanceMonitorEngine {
       if (supported.includes("long-animation-frame")) {
         this._loafSupported = true;
         this._longTaskObserver = new PerformanceObserver((list) => {
+          const threshold = this._spikeThresholdMs;
           for (const entry of list.getEntries()) {
-            if (entry.duration >= 50) {
+            if (entry.duration >= threshold) {
               const startTime = entry.startTime;
               const endTime = startTime + entry.duration;
               if (this._isInAuditSuppressionWindow(startTime, endTime)) continue;
@@ -1116,8 +1233,9 @@ export class PerformanceMonitorEngine {
       if (supported.includes("longtask")) {
         this._loafSupported = false;
         this._longTaskObserver = new PerformanceObserver((list) => {
+          const threshold = this._spikeThresholdMs;
           for (const entry of list.getEntries()) {
-            if (entry.duration >= 50) {
+            if (entry.duration >= threshold) {
               const startTime = entry.startTime;
               const endTime = startTime + entry.duration;
               if (this._isInAuditSuppressionWindow(startTime, endTime)) continue;
@@ -1153,7 +1271,7 @@ export class PerformanceMonitorEngine {
 
   _recordLongTask({ durationMs, perfEnd = performance.now(), culprit = "Browser / GPU Stall", category = "Spike", details = "" }) {
     const dur = Number((durationMs || 0).toFixed(1));
-    const severity = dur >= 150 ? "critical" : "warning";
+    const severity = dur >= this.getSevereSpikeThresholdMs() ? "critical" : "warning";
 
     // Merge/deduplicate if a hook spike & its enclosing LoAF fire within 35ms of each other
     const latest = this._longTasks[0];
@@ -1275,9 +1393,12 @@ export class PerformanceMonitorEngine {
       else if (mem.pct >= 55 || mem.usedMB >= 1100 || mem.trendMBPerMin > 20) memClass = "warning";
     }
 
+    const spikeThresholdMs = this.getSpikeThresholdMs();
+    const severeThresholdMs = this.getSevereSpikeThresholdMs();
+
     let spikeClass = "good";
-    if (this._severeSpikeCount >= 5 || this._recentMaxFrameMs >= 200) spikeClass = "critical";
-    else if (this._longTaskCount >= 5 || this._recentMaxFrameMs >= 80) spikeClass = "warning";
+    if (this._severeSpikeCount >= 5 || this._recentMaxFrameMs >= severeThresholdMs) spikeClass = "critical";
+    else if (this._longTaskCount >= 5 || this._recentMaxFrameMs >= spikeThresholdMs) spikeClass = "warning";
 
     let domClass = "good";
     if (domNodes >= 15000) domClass = "critical";
@@ -1296,6 +1417,8 @@ export class PerformanceMonitorEngine {
       memClass,
       longTaskCount: this._longTaskCount,
       severeSpikeCount: this._severeSpikeCount,
+      spikeThresholdMs,
+      severeThresholdMs,
       spikeClass,
       domNodes,
       domClass,
@@ -1798,10 +1921,13 @@ export class PerformanceMonitorEngine {
     if (game?.system?.id) ids.add(`system:${game.system.id}`);
     for (const id of this._moduleHookStats.keys()) ids.add(id);
     for (const id of this._loafSpikesByModule.keys()) ids.add(id);
+    for (const id of this._memSpikesByModule.keys()) ids.add(id);
     for (const id of this._errorCountByModule.keys()) ids.add(id);
     for (const id of resourceStats.byModule.keys()) ids.add(id);
     for (const id of storageMap.keys()) ids.add(id);
 
+    const spikeThresholdMs = this.getSpikeThresholdMs();
+    const severeThresholdMs = this.getSevereSpikeThresholdMs();
     const rows = [];
     for (const id of ids) {
       if (id === "unknown" && !this._moduleHookStats.has(id) && !this._errorCountByModule.has(id)) continue;
@@ -1815,6 +1941,7 @@ export class PerformanceMonitorEngine {
       const errors = this._errorCountByModule.get(id) || 0;
       const hStat = this._moduleHookStats.get(id);
       const loafStat = this._loafSpikesByModule.get(id);
+      const memStat = this._memSpikesByModule.get(id);
       const hookCount = hookCountByMod.get(id) || 0;
       const rStat = resourceStats.byModule.get(id);
       const sStat = storageMap.get(id);
@@ -1826,6 +1953,16 @@ export class PerformanceMonitorEngine {
       const slowestHook = hStat?.slowestHook || (loafStat?.lastScript ? `Script: ${loafStat.lastScript}` : "");
       const loafSpikes = loafStat?.count || 0;
       const loafTotalMs = loafStat?.totalMs || 0;
+
+      const memSpikeCount = memStat?.count || 0;
+      const memSpikeMaxMB = memStat?.maxMB || 0;
+      const memSpikeTotalMB = memStat?.totalMB || 0;
+      const memSpikeFormatted = memSpikeCount > 0
+        ? `${memSpikeCount}× (+${memSpikeMaxMB.toFixed(1)} MB)`
+        : "—";
+      const memSpikeTooltip = memSpikeCount > 0
+        ? `${memSpikeCount} attributed JS Heap jump(s), total +${memSpikeTotalMB.toFixed(1)} MB (peak +${memSpikeMaxMB.toFixed(1)} MB via ${memStat.lastSource})`
+        : "Attributed JS Heap jumps (≥4–5 MB) observed during this package's freezes or profiled hooks";
 
       const assetCount = rStat?.count || 0;
       const assetLoadMs = rStat?.totalMs || 0;
@@ -1840,7 +1977,8 @@ export class PerformanceMonitorEngine {
       impactScore += errors * 40;
       impactScore += Math.min(80, (hookTotalMs + loafTotalMs) / 5);
       impactScore += loafSpikes * 12;
-      impactScore += hookMaxMs >= 50 ? 35 : (hookMaxMs >= 16 ? 15 : 0);
+      impactScore += Math.min(30, memSpikeCount * 8);
+      impactScore += hookMaxMs >= spikeThresholdMs ? 35 : (hookMaxMs >= 25 ? 15 : 0);
       impactScore += assetBytes >= 5 * 1024 * 1024 ? 25 : (assetBytes >= 1024 * 1024 ? 10 : 0);
       impactScore += assetLoadMs >= 1500 ? 15 : (assetLoadMs >= 500 ? 6 : 0);
       if (storageBytes != null) {
@@ -1850,10 +1988,10 @@ export class PerformanceMonitorEngine {
 
       let impactLevel = "low";
       let impactLabel = "Low";
-      if (errors > 0 || impactScore >= 60 || hookMaxMs >= 80) {
+      if (errors > 0 || impactScore >= 60 || hookMaxMs >= severeThresholdMs) {
         impactLevel = "critical";
         impactLabel = errors > 0 ? "Errors" : "High";
-      } else if (impactScore >= 25 || hookTotalMs >= 50 || hookMaxMs >= 20 || loafSpikes > 0) {
+      } else if (impactScore >= 25 || hookTotalMs >= spikeThresholdMs || hookMaxMs >= Math.min(50, spikeThresholdMs) || loafSpikes > 0 || memSpikeCount >= 2) {
         impactLevel = "warning";
         impactLabel = "Medium";
       }
@@ -1872,6 +2010,12 @@ export class PerformanceMonitorEngine {
         hasErrors: errors > 0,
         loafSpikes,
         hasLoafSpikes: loafSpikes > 0,
+        memSpikeCount,
+        hasMemSpikes: memSpikeCount > 0,
+        memSpikeMaxMB: Number(memSpikeMaxMB.toFixed(1)),
+        memSpikeTotalMB: Number(memSpikeTotalMB.toFixed(1)),
+        memSpikeFormatted,
+        memSpikeTooltip,
         hookCount,
         hookCalls,
         hookTotalMs: Number(combinedCpuMs.toFixed(2)),
@@ -1904,6 +2048,7 @@ export class PerformanceMonitorEngine {
    * Returns sorted hot-hooks table from Live Hook Profiler data.
    */
   getHotHooks(sortBy = "totalMs") {
+    const spikeThresholdMs = this.getSpikeThresholdMs();
     const list = [];
     for (const stat of this._hookStats.values()) {
       const avgMs = stat.calls > 0 ? (stat.totalMs / stat.calls) : 0;
@@ -1920,7 +2065,7 @@ export class PerformanceMonitorEngine {
         maxFormatted: formatMs(stat.maxMs),
         listeners,
         modulesText: mods.slice(0, 3).join(", ") + (mods.length > 3 ? ` (+${mods.length - 3})` : ""),
-        isSlow: stat.maxMs >= 50 || stat.totalMs >= 100
+        isSlow: stat.maxMs >= spikeThresholdMs || stat.totalMs >= Math.max(100, spikeThresholdMs * 2)
       });
     }
 
@@ -1978,26 +2123,44 @@ export class PerformanceMonitorEngine {
       });
     }
 
-    // 3. Severe Freezes / Long Tasks
+    // 3. Severe Freezes / Long Tasks (using configured stutter threshold + top attributed causes)
+    const thresholdMs = liveMetrics.spikeThresholdMs || this.getSpikeThresholdMs();
+    const severeMs = liveMetrics.severeThresholdMs || this.getSevereSpikeThresholdMs();
+    const minorTriggerCount = thresholdMs >= 75 ? 4 : 8;
+    const freezeCauses = this._summarizeFreezeCauses(4);
+    const causesLine = freezeCauses.length > 0
+      ? ` Top causes: ${freezeCauses.map(c => c.summary).join(", ")}.`
+      : "";
+
     if (liveMetrics.severeSpikeCount >= 3) {
       score -= 15;
       issues.push({
         severity: "critical",
         icon: "fa-solid fa-bolt",
         category: "Main-Thread Stutters",
-        title: `${liveMetrics.severeSpikeCount} severe freeze(s) over 150ms detected`,
-        detail: `Total >50ms stutters: ${liveMetrics.longTaskCount}. Peak frame spike: ${liveMetrics.maxFrameMs} ms.`,
-        suggestion: "Start the 10s Burst Hook Profiler and repeat the action that causes lag to pinpoint the exact module."
+        title: `${liveMetrics.severeSpikeCount} severe freeze(s) over ${severeMs}ms detected`,
+        detail: `Total >${thresholdMs}ms stutters: ${liveMetrics.longTaskCount}. Peak frame spike: ${liveMetrics.maxFrameMs} ms.`,
+        reportSuffix: causesLine,
+        causes: freezeCauses,
+        hasCauses: freezeCauses.length > 0,
+        action: "open-tab-hooks",
+        actionLabel: "View Spikes",
+        suggestion: "Check the Hooks & Spikes tab for per-freeze details, or run a 10s Burst Hook Profile while repeating the action."
       });
-    } else if (liveMetrics.longTaskCount >= 8) {
+    } else if (liveMetrics.longTaskCount >= minorTriggerCount) {
       score -= 8;
       issues.push({
         severity: "warning",
         icon: "fa-solid fa-bolt",
         category: "Main-Thread Stutters",
-        title: `${liveMetrics.longTaskCount} minor main-thread pauses (>50ms)`,
+        title: `${liveMetrics.longTaskCount} main-thread pause(s) over ${thresholdMs}ms`,
         detail: `Peak frame spike: ${liveMetrics.maxFrameMs} ms.`,
-        suggestion: "Review the Hooks & Spikes tab to see which hooks take longest."
+        reportSuffix: causesLine,
+        causes: freezeCauses,
+        hasCauses: freezeCauses.length > 0,
+        action: "open-tab-hooks",
+        actionLabel: "View Spikes",
+        suggestion: "Review the Hooks & Spikes tab to inspect exact script/hook/layout breakdowns, or adjust the stutter threshold in Module Settings."
       });
     }
 
@@ -2095,7 +2258,7 @@ export class PerformanceMonitorEngine {
     }
 
     // 8. Heavy Hook CPU Spikes
-    const slowHookMods = moduleRows.filter(m => !m.isCore && (m.hookMaxMs >= 50 || m.hookTotalMs >= 250));
+    const slowHookMods = moduleRows.filter(m => !m.isCore && (m.hookMaxMs >= thresholdMs || m.hookTotalMs >= Math.max(250, thresholdMs * 3)));
     if (slowHookMods.length > 0) {
       score -= 12;
       const top = slowHookMods.sort((a, b) => b.hookTotalMs - a.hookTotalMs).slice(0, 3);
@@ -2195,7 +2358,7 @@ export class PerformanceMonitorEngine {
       `## Live Telemetry`,
       `- **FPS:** ${live.fps} FPS (Avg: ${live.avgFps}, Min: ${live.minFps}) | **Avg Frame:** ${live.avgFrameMs} ms | **Peak Spike:** ${live.maxFrameMs} ms`,
       `- **JS Heap Memory:** ${live.memory.available ? `${live.memory.usedMB} MB / ${live.memory.limitMB} MB (${live.memory.pct}%, Peak: ${live.memory.peakMB} MB, Trend: ${live.memory.trendLabel})` : "Unavailable in this browser"}`,
-      `- **Long Tasks (>50ms):** ${live.longTaskCount} (Severe >150ms: ${live.severeSpikeCount})`,
+      `- **Main-Thread Stutters (>${live.spikeThresholdMs}ms):** ${live.longTaskCount} (Severe >${live.severeThresholdMs}ms: ${live.severeSpikeCount})`,
       `- **DOM Nodes:** ${live.domNodes.toLocaleString()} | **Open Windows:** ${live.openWindows} | **Chat Messages:** ${game.messages?.size || 0}`,
       `- **Captured Errors:** ${live.totalErrors} total (${live.uniqueErrors} unique)`,
       ``
@@ -2204,7 +2367,7 @@ export class PerformanceMonitorEngine {
     if (health.issues.length > 0) {
       lines.push(`## Diagnostics & Issues`);
       for (const iss of health.issues) {
-        lines.push(`- **[${iss.severity.toUpperCase()}] ${iss.title}**: ${iss.detail}`);
+        lines.push(`- **[${iss.severity.toUpperCase()}] ${iss.title}**: ${iss.detail}${iss.reportSuffix || ""}`);
       }
       lines.push(``);
     }
@@ -2213,7 +2376,7 @@ export class PerformanceMonitorEngine {
     if (topMods.length > 0) {
       lines.push(`## Top Modules by Impact`);
       for (const m of topMods) {
-        lines.push(`- **${m.title}** (\`${m.id}\` v${m.version || "?"}) — Score: ${m.impactScore} | Errors: ${m.errors} | Hooks CPU: ${m.hookTotalFormatted} (max ${m.hookMaxFormatted}) | Assets: ${m.assetSizeFormatted} (${m.assetLoadFormatted}) | Data: ${m.storageFormatted}`);
+        lines.push(`- **${m.title}** (\`${m.id}\` v${m.version || "?"}) — Score: ${m.impactScore} | Errors: ${m.errors} | Hooks CPU: ${m.hookTotalFormatted} (max ${m.hookMaxFormatted}) | Mem Spikes: ${m.memSpikeFormatted} | Assets: ${m.assetSizeFormatted} (${m.assetLoadFormatted}) | Data: ${m.storageFormatted}`);
       }
       lines.push(``);
     }
@@ -2321,6 +2484,7 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
       switch (this._moduleSort) {
         case "hookMs": return (b.hookTotalMs - a.hookTotalMs) || (b.hookMaxMs - a.hookMaxMs);
         case "errors": return (b.errors - a.errors) || (b.impactScore - a.impactScore);
+        case "memSpikes": return (b.memSpikeTotalMB - a.memSpikeTotalMB) || (b.memSpikeCount - a.memSpikeCount) || (b.impactScore - a.impactScore);
         case "assets": return (b.assetBytes - a.assetBytes) || (b.assetLoadMs - a.assetLoadMs);
         case "loadMs": return (b.assetLoadMs - a.assetLoadMs) || (b.assetBytes - a.assetBytes);
         case "storage": return (b.storageBytes - a.storageBytes) || (b.impactScore - a.impactScore);
@@ -2334,6 +2498,42 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
 
     const activeModuleCount = game.modules ? Array.from(game.modules.values()).filter(m => m.active).length : 0;
     const flaggedCount = allModules.filter(m => m.isFlagged).length;
+
+    // Aggregate module-only totals for the Modules tab summary strip (zero runtime cost)
+    let moduleAssetBytes = 0;
+    let moduleAssetFiles = 0;
+    let moduleStorageBytes = 0;
+    let memSpikesTotalCount = 0;
+    let memSpikesPeakMB = 0;
+    let memSpikesTopMod = "";
+    for (const m of allModules) {
+      if (m.isModule) {
+        moduleAssetBytes += m.assetBytes || 0;
+        moduleAssetFiles += m.assetCount || 0;
+        if (m.storageBytes > 0) moduleStorageBytes += m.storageBytes;
+      }
+      if (m.memSpikeCount > 0) {
+        memSpikesTotalCount += m.memSpikeCount;
+        if (m.memSpikeMaxMB > memSpikesPeakMB) {
+          memSpikesPeakMB = m.memSpikeMaxMB;
+          memSpikesTopMod = m.title;
+        }
+      }
+    }
+
+    const moduleSummary = {
+      moduleAssetsFormatted: formatBytes(moduleAssetBytes),
+      moduleAssetFiles,
+      allAssetsFormatted: formatBytes(resourceStats.totalBytes),
+      allAssetFiles: resourceStats.totalAssets,
+      memAvailable: live.memory.available,
+      memSpikesTotalCount,
+      hasMemSpikesTotal: memSpikesTotalCount > 0,
+      memSpikesPeakFormatted: memSpikesPeakMB > 0 ? `+${memSpikesPeakMB.toFixed(1)} MB` : "0 MB",
+      memSpikesTopMod,
+      hasAuditStorage: Boolean(performanceMonitor._auditData),
+      moduleStorageFormatted: formatBytes(moduleStorageBytes)
+    };
 
     return {
       isGM: Boolean(game.user?.isGM),
@@ -2352,6 +2552,7 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
       hasHookData: hotHooks.length > 0,
 
       modules,
+      moduleSummary,
       activeModuleCount,
       flaggedCount,
       moduleSort: this._moduleSort,
@@ -2562,6 +2763,11 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
 
       case "open-tab-modules":
         this._activeTab = "modules";
+        this.render({ force: false });
+        break;
+
+      case "open-tab-hooks":
+        this._activeTab = "hooks";
         this.render({ force: false });
         break;
     }
