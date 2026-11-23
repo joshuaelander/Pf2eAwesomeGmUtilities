@@ -761,6 +761,21 @@
   font-weight: 600;
 }
 
+.pf2e-cc-sheet-warn-text {
+  color: var(--pf2e-gm-yellow-bright);
+  font-weight: 600;
+}
+
+.pf2e-cc-sheet-ok-text {
+  color: var(--pf2e-gm-cyan-bright);
+  font-weight: 600;
+}
+
+.pf2e-cc-sheet-sep {
+  color: var(--pf2e-gm-text-dim);
+  margin: 0 2px;
+}
+
 .pf2e-cc-sheet-chips-row {
   display: flex;
   align-items: center;
@@ -889,34 +904,24 @@
   border-radius: 3px;
 }
 
-/* Spellcasting Tab Inline Panel (Collapsible) */
+/* Spellcasting Tab Inline Panel (Unified Banner + Collapsible Rows) */
 .pf2e-cc-sheet-spells-bar {
-  margin: 4px 0 8px 0;
-  padding: 5px 9px;
-  background: var(--pf2e-gm-strip-bg);
-  border: 1px solid var(--pf2e-gm-border-window);
-  border-left: 3px solid var(--pf2e-gm-purple);
-  border-radius: 5px;
-  color: var(--pf2e-gm-text-primary);
-  font-size: 0.84em;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
-}
-
-.pf2e-cc-sheet-spells-bar.status-complete {
-  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.45);
-  border-left-color: var(--pf2e-gm-cyan);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 6px 10px;
 }
 
 .pf2e-cc-sheet-spells-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 5px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding-bottom: 6px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--pf2e-gm-border-red);
-  color: var(--pf2e-gm-text-cream);
 }
 
 .pf2e-cc-sheet-spells-bar.is-collapsed .pf2e-cc-sheet-spells-header {
@@ -926,10 +931,8 @@
 }
 
 .pf2e-cc-sheet-spells-title-toggle {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   cursor: pointer;
   user-select: none;
 }
@@ -941,7 +944,7 @@
 .pf2e-cc-sheet-spells-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   max-height: 210px;
   overflow-y: auto;
   padding-right: 2px;
@@ -956,10 +959,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 7px;
+  padding: 5px 8px;
   background: var(--pf2e-gm-bg-inset);
   border: 1px solid var(--pf2e-gm-border-subtle);
+  border-left: 3px solid var(--pf2e-gm-cyan);
   border-radius: 4px;
+}
+
+.pf2e-cc-sheet-spell-row.is-missing {
+  border-left-color: var(--pf2e-gm-pink);
+}
+
+.pf2e-cc-sheet-spell-row.is-warn {
+  border-left-color: var(--pf2e-gm-yellow);
 }
 
 .pf2e-cc-sheet-spell-info {
@@ -972,6 +984,10 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.pf2e-cc-sheet-spell-head strong {
+  color: var(--pf2e-gm-text-white);
 }
 
 .pf2e-cc-sheet-tag {
@@ -990,26 +1006,30 @@
 }
 
 .pf2e-cc-sheet-pill {
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 3px;
   font-size: 0.82em;
   font-weight: 700;
   white-space: nowrap;
+  border: 1px solid transparent;
 }
 
 .pf2e-cc-sheet-pill.is-ok {
   background: rgba(var(--pf2e-gm-cyan-rgb), 0.18);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.48);
   color: var(--pf2e-gm-cyan-bright);
 }
 
 .pf2e-cc-sheet-pill.is-missing {
-  background: rgba(var(--pf2e-gm-pink-rgb), 0.22);
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.2);
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.55);
   color: var(--pf2e-gm-pink-soft);
 }
 
 .pf2e-cc-sheet-pill.is-warn {
   background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
-  color: var(--pf2e-gm-yellow);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.52);
+  color: var(--pf2e-gm-yellow-bright);
 }
 
 /* ------------------------------------------------------------------------- */

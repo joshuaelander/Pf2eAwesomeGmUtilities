@@ -511,7 +511,8 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     const charTab = root.querySelector('.tab[data-tab="character"]');
     if (charTab && !charTab.querySelector(".pf2e-cc-sheet-char-bar")) {
       const bar = document.createElement("div");
-      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-char-bar status-${report.status}`;
+      const charStatusCls = report.actionableMissingCount > 0 ? "critical" : report.status;
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-char-bar status-${charStatusCls}`;
 
       const topMissing = report.allIssues
         .filter(i => i.severity === "critical" || i.severity === "warning")
@@ -554,66 +555,111 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       charTab.prepend(bar);
     }
 
+    // Helper: compact consecutive level runs ("1, 2, 3, 4, 5" -> "1–5") for tidy inline strips
+    const formatCompactLevels = (levelsArr, fallbackText = "") => {
+      if (!Array.isArray(levelsArr) || levelsArr.length === 0) return fallbackText;
+      if (levelsArr.some(v => !Number.isFinite(Number(v)))) return fallbackText;
+      const sorted = [...new Set(levelsArr.map(Number))].sort((a, b) => a - b);
+      if (sorted.length === 0) return fallbackText;
+      const ranges = [];
+      let start = sorted[0];
+      let prev = sorted[0];
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] === prev + 1) {
+          prev = sorted[i];
+        } else {
+          ranges.push(prev - start >= 2 ? `${start}–${prev}` : (prev > start ? `${start}, ${prev}` : `${start}`));
+          start = prev = sorted[i];
+        }
+      }
+      ranges.push(prev - start >= 2 ? `${start}–${prev}` : (prev > start ? `${start}, ${prev}` : `${start}`));
+      return ranges.join(", ");
+    };
+
     // ---------------------------------------------------------------------
-    // B. Skills / Proficiencies Tab: Trained Skills, Lore & Skill Increases
+    // B. Skills / Proficiencies Tab: Unified Inline Skills Check Strip
     // ---------------------------------------------------------------------
     const skillsTab = root.querySelector('.tab[data-tab="proficiencies"], .tab[data-tab="skills"]');
     if (skillsTab && !skillsTab.querySelector(".pf2e-cc-sheet-skills-bar")) {
       const sk = report.skills;
       const lang = report.languages;
       const bar = document.createElement("div");
-      const hasSkillsWarning = sk.missingTrained > 0 || sk.missingIncreases > 0 || sk.missingLoreCount > 0 || sk.overCapSkills.length > 0;
-      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-skills-bar status-${hasSkillsWarning ? "warning" : "complete"}`;
 
-      const trainedClass = sk.missingTrained > 0 ? "is-missing" : "is-ok";
-      const incClass = sk.missingIncreases > 0 ? "is-missing" : (sk.excessIncreases > 0 ? "is-warn" : "is-ok");
-      const loreClass = sk.missingLoreCount > 0 ? "is-missing" : "is-ok";
-      const langClass = lang.missing > 0 ? "is-warn" : "is-ok";
+      const hasMissing = sk.missingTrained > 0 || sk.missingIncreases > 0 || sk.missingLoreCount > 0 || sk.hasMissingBgLore || lang.missing > 0;
+      const hasSoftWarn = sk.overCapSkills.length > 0 || sk.excessIncreases > 0;
+      const statusCls = hasMissing ? "critical" : (hasSoftWarn ? "warning" : "complete");
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-skills-bar status-${statusCls}`;
 
-      const overCapHtml = sk.overCapSkills.length > 0
-        ? `<div class="pf2e-cc-sheet-subline is-missing">Above level cap: ${esc(sk.overCapSkills.map(s => `${s.label} (${s.rankLabel} requires Lv ${s.requiredLevel}+)`).join(", "))}</div>`
-        : "";
+      const missingParts = [];
+      const okParts = [];
 
-      const missingLoreHtml = sk.missingBgLores.length > 0
-        ? `<div class="pf2e-cc-sheet-subline is-missing">Missing Background Lore: ${esc(sk.missingBgLores.join(", "))}</div>`
-        : (sk.hasMissingBgLore
-          ? `<div class="pf2e-cc-sheet-subline is-missing">Missing Background Lore (${sk.loreCount}/${sk.bgLoreCount}) — add your Background's Lore skill below.</div>`
-          : "");
+      if (sk.missingTrained > 0) {
+        missingParts.push(`Missing ${sk.missingTrained} Trained Skill${sk.missingTrained === 1 ? "" : "s"} (${sk.currentTrained}/${sk.expectedTrained})`);
+      } else {
+        okParts.push(`Trained ${sk.currentTrained}/${sk.expectedTrained}`);
+      }
 
-      const loreChipHtml = (sk.expectedMinLores > 0 || sk.loreCount > 0) ? `
-        <span class="pf2e-cc-sheet-chip ${loreClass}" title="Lore Skills on sheet${sk.bgLoreCount > 0 ? ` (Background grants ${sk.bgLoreCount} Lore)` : ""}">
-          Lore: <strong>${sk.loreCount}${sk.expectedMinLores > 0 ? ` / ${sk.expectedMinLores}` : ""}</strong>
-          ${sk.missingLoreCount > 0 ? `<em>(${sk.missingLoreCount} left)</em>` : ""}
-        </span>
-      ` : "";
+      if (sk.missingIncreases > 0) {
+        missingParts.push(`Missing ${sk.missingIncreases} Skill Increase${sk.missingIncreases === 1 ? "" : "s"} (${sk.spentIncreases}/${sk.expectedIncreases})`);
+      } else if (sk.excessIncreases > 0) {
+        okParts.push(`Increases ${sk.spentIncreases}/${sk.expectedIncreases}`);
+      } else {
+        okParts.push(`Increases ${sk.spentIncreases}/${sk.expectedIncreases}`);
+      }
+
+      if (sk.missingBgLores.length > 0) {
+        missingParts.push(`Missing Background Lore: ${sk.missingBgLores.join(", ")}`);
+      } else if (sk.hasMissingBgLore) {
+        missingParts.push(`Missing Background Lore (${sk.loreCount}/${sk.bgLoreCount})`);
+      } else if (sk.missingLoreCount > 0) {
+        missingParts.push(`Missing ${sk.missingLoreCount} Lore (${sk.loreCount}/${sk.expectedMinLores})`);
+      } else if (sk.expectedMinLores > 0 || sk.loreCount > 0) {
+        okParts.push(`Lore ${sk.loreCount}${sk.expectedMinLores > 0 ? `/${sk.expectedMinLores}` : ""}`);
+      }
+
+      if (lang.expected > 0) {
+        if (lang.missing > 0) {
+          missingParts.push(`Missing ${lang.missing} Language${lang.missing === 1 ? "" : "s"} (${lang.current}/${lang.expected})`);
+        } else {
+          okParts.push(`Languages ${lang.current}/${lang.expected}`);
+        }
+      }
+
+      const warnParts = [];
+      if (sk.overCapSkills.length > 0) {
+        warnParts.push(`Above level cap: ${sk.overCapSkills.map(s => `${s.label} (${s.rankLabel} Lv ${s.requiredLevel}+)`).join(", ")}`);
+      }
+      if (sk.excessIncreases > 0) {
+        warnParts.push(`${sk.excessIncreases} extra skill increase${sk.excessIncreases === 1 ? "" : "s"} spent`);
+      }
+
+      const segments = [];
+      if (missingParts.length > 0) {
+        segments.push(`<span class="pf2e-cc-sheet-missing-list">${esc(missingParts.join(" · "))}</span>`);
+      }
+      if (warnParts.length > 0) {
+        segments.push(`<span class="pf2e-cc-sheet-warn-text">${esc(warnParts.join(" · "))}</span>`);
+      }
+      if (okParts.length > 0) {
+        segments.push(`<span class="pf2e-cc-sheet-ok-text">${esc(okParts.join(" · "))}</span>`);
+      }
+
+      const compactIncLevels = formatCompactLevels(sk.unlockedIncreaseLevels, sk.increaseLevelsText);
 
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-banner-col">
-          <div class="pf2e-cc-sheet-chips-row">
-            <span class="pf2e-cc-sheet-chip ${trainedClass}" title="Expected Trained Skills: ${esc(sk.formulaText)}">
-              Trained Skills: <strong>${sk.currentTrained} / ${sk.expectedTrained}</strong>
-              ${sk.missingTrained > 0 ? `<em>(${sk.missingTrained} left)</em>` : ""}
-            </span>
-            <span class="pf2e-cc-sheet-chip ${incClass}" title="Skill increases unlocked at level(s): ${esc(sk.increaseLevelsText)}">
-              Skill Increases: <strong>${sk.spentIncreases} / ${sk.expectedIncreases}</strong>
-              ${sk.missingIncreases > 0 ? `<em>(${sk.missingIncreases} left)</em>` : ""}
-            </span>
-            ${loreChipHtml}
-            ${lang.expected > 0 ? `
-              <span class="pf2e-cc-sheet-chip ${langClass}" title="Expected Languages from Ancestry + INT">
-                Languages: <strong>${lang.current} / ${lang.expected}</strong>
-              </span>
-            ` : ""}
+          <div class="pf2e-cc-sheet-banner-text">
+            <strong>Skills Check:</strong> ${segments.join(' <span class="pf2e-cc-sheet-sep">·</span> ')}
           </div>
           <div class="pf2e-cc-sheet-subline">
-            ${esc(sk.formulaText)} · Increases at Lv: <strong>${esc(sk.increaseLevelsText)}</strong>${sk.isFastProgression ? " (Fast Progression)" : ""}
+            ${esc(sk.formulaText)} · Increases at Lv ${esc(compactIncLevels)}${sk.isFastProgression ? " (Fast Progression)" : ""}
           </div>
-          ${missingLoreHtml}
-          ${overCapHtml}
         </div>
-        <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
-          Check
-        </button>
+        <div class="pf2e-cc-sheet-header-btns">
+          <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checklist">
+            Checklist
+          </button>
+        </div>
       `;
 
       bar.querySelector('[data-cc-open="1"]')?.addEventListener("click", (ev) => {
@@ -632,24 +678,37 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     }
 
     // ---------------------------------------------------------------------
-    // C. Spellcasting Tab: Collapsible Expected Spells/Slots & 1-Click Creator
+    // C. Spellcasting Tab: Unified Collapsible Spellcasting Check Strip
     // ---------------------------------------------------------------------
     const spellTab = root.querySelector('.tab[data-tab="spellcasting"]');
     if (spellTab && report.spellcasting.hasExpectedSources && !spellTab.querySelector(".pf2e-cc-sheet-spells-bar")) {
       const sp = report.spellcasting;
       const isExpanded = expandedSpellGuideActors.has(actor.id);
-      const panel = document.createElement("div");
-      panel.className = `pf2e-cc-sheet-spells-bar status-${sp.missingEntryCount > 0 ? "critical" : (sp.outdatedSlotCount > 0 ? "warning" : "complete")} ${isExpanded ? "" : "is-collapsed"}`;
-
-      const summaryParts = [];
-      if (sp.missingEntryCount > 0) summaryParts.push(`${sp.missingEntryCount} Missing`);
-      if (sp.outdatedSlotCount > 0) summaryParts.push(`${sp.outdatedSlotCount} Outdated`);
       const totalSources = sp.sources.length;
       const readyCount = sp.sources.filter(s => s.status === "complete").length;
-      const statusPillCls = sp.missingEntryCount > 0 ? "is-missing" : (sp.outdatedSlotCount > 0 ? "is-warn" : "is-ok");
-      const statusSummaryText = summaryParts.length > 0
-        ? summaryParts.join(" · ")
-        : `${readyCount}/${totalSources} Ready`;
+      const incompleteSources = sp.sources.filter(s => s.status === "incomplete");
+
+      const hasCritical = sp.missingEntryCount > 0 || incompleteSources.length > 0;
+      const statusCls = hasCritical ? "critical" : (sp.outdatedSlotCount > 0 ? "warning" : "complete");
+
+      const panel = document.createElement("div");
+      panel.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-spells-bar status-${statusCls} ${isExpanded ? "" : "is-collapsed"}`;
+
+      const headerSegments = [];
+      if (sp.missingEntryCount > 0) {
+        headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${sp.missingEntryCount} Missing ${sp.missingEntryCount === 1 ? "Entry" : "Entries"}</span>`);
+      }
+      if (sp.outdatedSlotCount > 0) {
+        headerSegments.push(`<span class="pf2e-cc-sheet-warn-text">${sp.outdatedSlotCount} Outdated Slots</span>`);
+      }
+      if (incompleteSources.length > 0) {
+        const incompleteSummary = incompleteSources
+          .map(s => `${s.title} (${s.spellsMissingNote || "Needs Spells"})`)
+          .join(" · ");
+        headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${readyCount}/${totalSources} Ready — ${esc(incompleteSummary)}</span>`);
+      } else if (sp.missingEntryCount === 0 && sp.outdatedSlotCount === 0) {
+        headerSegments.push(`<span class="pf2e-cc-sheet-ok-text">${readyCount}/${totalSources} Ready</span>`);
+      }
 
       const rowsHtml = sp.sources.map(src => {
         const tradLabel = TRADITION_LABELS[src.tradition] || "Select Tradition";
@@ -689,19 +748,25 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         } else if (src.isFocus || src.castingType === "focus") {
           const curF = Number(src.currentFocusSpells || 0);
           const expF = Number(src.expectedFocusSpells || 1);
-          const pillCls = curF < expF ? "is-warn" : "is-ok";
+          const pillCls = curF < expF ? "is-missing" : "is-ok";
           actionHtml = `<span class="pf2e-cc-sheet-pill ${pillCls}">${curF}/${expF} focus</span>`;
         } else {
-          actionHtml = `<span class="pf2e-cc-sheet-pill is-ok">${src.cantrips > 0 ? `C:${src.currentCantrips}/${src.cantrips} · ` : ""}${src.currentLeveledSpells} spells</span>`;
+          const isIncomplete = src.status !== "complete";
+          const pillCls = isIncomplete ? "is-missing" : "is-ok";
+          actionHtml = `<span class="pf2e-cc-sheet-pill ${pillCls}">${src.cantrips > 0 ? `C:${src.currentCantrips}/${src.cantrips} · ` : ""}${src.currentLeveledSpells} spells</span>`;
         }
 
         const isFocus = Boolean(src.isFocus || src.castingType === "focus");
         const slotLineHtml = isFocus
           ? `<strong>Focus:</strong> ${esc(src.slotsSummary)}`
-          : `${src.cantrips > 0 ? `<strong>Cantrips:</strong> ${src.cantrips} · ` : ""}<strong>Slots:</strong> ${esc(src.slotsSummary)}${src.slotsOutdated ? ` · <span class="is-missing">Diff: ${esc(src.slotDiffText)}</span>` : ""}`;
+          : `${src.cantrips > 0 ? `<strong>Cantrips:</strong> ${src.cantrips} · ` : ""}<strong>Slots:</strong> ${esc(src.slotsSummary)}${src.slotsOutdated ? ` · <span class="pf2e-cc-sheet-warn-text">Diff: ${esc(src.slotDiffText)}</span>` : ""}`;
+
+        const rowStatusCls = !src.entryExists || src.status === "incomplete"
+          ? "is-missing"
+          : (src.slotsOutdated ? "is-warn" : "is-ok");
 
         return `
-          <div class="pf2e-cc-sheet-spell-row">
+          <div class="pf2e-cc-sheet-spell-row ${rowStatusCls}">
             <div class="pf2e-cc-sheet-spell-info">
               <div class="pf2e-cc-sheet-spell-head">
                 <strong>${esc(src.title)}</strong>
@@ -720,10 +785,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
 
       panel.innerHTML = `
         <div class="pf2e-cc-sheet-spells-header">
-          <span class="pf2e-cc-sheet-spells-title-toggle" data-cc-toggle-spells="1" title="Click to show or hide expected spellcasting details">
-            <strong>Spellcasting Guide (Lv ${report.level})</strong>
-            <span class="pf2e-cc-sheet-pill ${statusPillCls}">${esc(statusSummaryText)}</span>
-          </span>
+          <div class="pf2e-cc-sheet-banner-text pf2e-cc-sheet-spells-title-toggle" data-cc-toggle-spells="1" title="Click to show or hide expected spellcasting details">
+            <strong>Spellcasting Check (Lv ${report.level}):</strong> ${headerSegments.join(' <span class="pf2e-cc-sheet-sep">·</span> ')}
+          </div>
           <div class="pf2e-cc-sheet-header-btns">
             ${isEditable && sp.needsActionCount > 0 ? `
               <button type="button" class="pf2e-cc-sheet-btn is-primary" data-cc-sync-all="1" title="Create all missing entries and sync outdated slots">
@@ -733,8 +797,8 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
             <button type="button" class="pf2e-cc-sheet-btn" data-cc-toggle-spells="1" data-cc-toggle-label="1" title="Expand or collapse expected spellcasting breakdown">
               ${isExpanded ? "Hide" : `Details (${totalSources})`}
             </button>
-            <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
-              Full Check
+            <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checklist">
+              Checklist
             </button>
           </div>
         </div>
@@ -814,16 +878,19 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     }
 
     // ---------------------------------------------------------------------
-    // D. Feats Tab: Compact Missing Feat Slots & Dual Class Feature Sync
+    // D. Feats Tab: Unified Missing Feat Slots & Dual Class Feature Sync
     // ---------------------------------------------------------------------
     const featsTab = root.querySelector('.tab[data-tab="feats"]');
     if (featsTab && (report.feats.emptySlotsTotal > 0 || report.feats.hasMissingDualFeatures) && !featsTab.querySelector(".pf2e-cc-sheet-feats-bar")) {
       const bar = document.createElement("div");
-      bar.className = "pf2e-cc-sheet-banner pf2e-cc-sheet-feats-bar status-warning";
+      bar.className = "pf2e-cc-sheet-banner pf2e-cc-sheet-feats-bar status-critical";
 
       const emptySummaries = report.feats.groups
         .filter(g => g.empty > 0)
-        .map(g => `${g.label} (Lv ${g.emptyLevelsText})`)
+        .map(g => {
+          const compactLvls = formatCompactLevels(g.emptyLevels, g.emptyLevelsText);
+          return `${g.label} (Lv ${compactLvls})`;
+        })
         .join(" · ");
 
       const dualNote = report.feats.hasMissingDualFeatures
@@ -839,7 +906,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-banner-col">
           <div class="pf2e-cc-sheet-banner-text">
-            ${emptySummaries ? `<strong>Empty Feat Slots (${report.feats.emptySlotsTotal}):</strong> ${esc(emptySummaries)}` : `<strong>Dual Class Features Out of Sync</strong>`}
+            ${emptySummaries
+              ? `<strong>Feats Check (${report.feats.emptySlotsTotal} Empty):</strong> <span class="pf2e-cc-sheet-missing-list">${esc(emptySummaries)}</span>`
+              : `<strong>Feats Check:</strong> <span class="pf2e-cc-sheet-missing-list">Dual Class Features Out of Sync</span>`}
           </div>
           ${dualNote}
         </div>
@@ -849,8 +918,8 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
               Sync Dual Features
             </button>
           ` : ""}
-          <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1">
-            Check
+          <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checklist">
+            Checklist
           </button>
         </div>
       `;
@@ -873,29 +942,29 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     }
 
     // ---------------------------------------------------------------------
-    // E. Crafting Tab: Alchemist / Crafting Free Formulas Guide (Plain Text)
+    // E. Crafting Tab: Unified Alchemist / Crafting Free Formulas Strip
     // ---------------------------------------------------------------------
     const craftingTab = root.querySelector('.tab[data-tab="crafting"]');
     if (craftingTab && report.formulas?.expected > 0 && !craftingTab.querySelector(".pf2e-cc-sheet-crafting-bar")) {
       const fm = report.formulas;
       const bar = document.createElement("div");
-      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-crafting-bar status-${fm.missing > 0 ? "warning" : "complete"}`;
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-crafting-bar status-${fm.missing > 0 ? "critical" : "complete"}`;
 
-      const chipCls = fm.missing > 0 ? "is-missing" : "is-ok";
+      const labelTitle = fm.isAlchemist ? "Alchemist Formulas" : "Free Formulas";
+      const summaryHtml = fm.missing > 0
+        ? `<strong>${labelTitle} (Lv ${report.level}):</strong> <span class="pf2e-cc-sheet-missing-list">Missing ${fm.missing} Formula${fm.missing === 1 ? "" : "s"} (${fm.current}/${fm.expected})</span>`
+        : `<strong>${labelTitle} (Lv ${report.level}):</strong> <span class="pf2e-cc-sheet-ok-text">${fm.current} / ${fm.expected} known</span>`;
+
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-banner-col">
-          <div class="pf2e-cc-sheet-chips-row">
-            <span class="pf2e-cc-sheet-chip ${chipCls}">
-              ${fm.isAlchemist ? "Alchemist Formulas" : "Free Formulas"} (Lv ${report.level}):
-              <strong>${fm.current} / ${fm.expected}</strong>
-              ${fm.missing > 0 ? `<em>(${fm.missing} left)</em>` : ""}
-            </span>
-          </div>
+          <div class="pf2e-cc-sheet-banner-text">${summaryHtml}</div>
           <div class="pf2e-cc-sheet-subline">${esc(fm.formulaText)}</div>
         </div>
-        <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
-          Check
-        </button>
+        <div class="pf2e-cc-sheet-header-btns">
+          <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checklist">
+            Checklist
+          </button>
+        </div>
       `;
 
       bar.querySelector('[data-cc-open="1"]')?.addEventListener("click", (ev) => {
