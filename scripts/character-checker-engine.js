@@ -890,7 +890,38 @@ function analyzeSkills(actor, level, dualInfo) {
 
   // 3. Lore skills (Background lore, Additional Lore feats, extra manual Lores)
   const loreItems = actor.itemTypes?.lore || [];
-  let autoLoreCount = bgLores.length;
+  const normalizeLoreKey = (val) => String(val || "")
+    .toLowerCase()
+    .replace(/\blore\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  const knownLoreKeys = new Set(loreItems.map(l => normalizeLoreKey(l.name)).filter(Boolean));
+  const knownLoreNames = loreItems.map(l => l.name).filter(Boolean);
+
+  // Detect named Background Lore(s) AND choice-based/custom Background Lore(s)
+  const bgCustomSkillText = String(bgSys.trainedSkills?.custom || "").trim();
+  const bgDescText = String(bgSys.description?.value || "").toLowerCase();
+  const hasCustomBgLore = bgLores.length === 0 && Boolean(
+    actor.background && (/\blore\b/i.test(bgCustomSkillText) || /\blore\s+skill\b/i.test(bgDescText))
+  );
+  const expectedBgLoreCount = bgLores.length > 0 ? bgLores.length : (hasCustomBgLore ? 1 : 0);
+
+  const missingBgLores = [];
+  for (const rawBgLore of bgLores) {
+    const key = normalizeLoreKey(rawBgLore);
+    if (!key) continue;
+    const matched = knownLoreKeys.has(key)
+      || Array.from(knownLoreKeys).some(k => k.includes(key) || key.includes(k));
+    if (!matched) {
+      const displayName = /\blore$/i.test(String(rawBgLore).trim())
+        ? String(rawBgLore).trim()
+        : `${String(rawBgLore).trim()} Lore`;
+      missingBgLores.push(displayName);
+    }
+  }
+
+  let featLoreCount = 0;
   let manualLoreIncreasesSpent = 0;
 
   // Feats that auto-grant a Lore item (Additional Lore, Esoteric Lore, Bardic Lore, Gnome Obsession, etc.)
@@ -899,14 +930,12 @@ function analyzeSkills(actor, level, dualInfo) {
     "bardic-lore",
     "esoteric-lore",
     "gossip-lore",
-    "keen-recollection",
     "loremaster-dedication",
-    "pathfinder-agent-dedication",
     "gnome-obsession"
   ]);
   for (const feat of actor.itemTypes?.feat || []) {
     const slug = getItemSlug(feat);
-    if (loreGrantingFeatSlugs.has(slug)) autoLoreCount++;
+    if (loreGrantingFeatSlugs.has(slug)) featLoreCount++;
   }
 
   // Also count Lore items with PF2e grantedBy flag
@@ -919,7 +948,9 @@ function analyzeSkills(actor, level, dualInfo) {
     }
   }
 
-  const effectiveAutoLores = Math.max(autoLoreCount, grantedLoreIds.size);
+  const expectedMinLores = expectedBgLoreCount + featLoreCount;
+  const missingLoreCount = Math.max(missingBgLores.length, Math.max(0, expectedMinLores - loreItems.length));
+  const effectiveAutoLores = Math.max(expectedMinLores, grantedLoreIds.size);
   const extraManualLores = Math.max(0, loreItems.length - effectiveAutoLores);
 
   // Players can spend trained skill picks on either Core Skills OR extra Lore skills
@@ -966,7 +997,29 @@ function analyzeSkills(actor, level, dualInfo) {
       severity: "warning",
       category: "Skills",
       title: `Missing ${missingTrainedSkills} Trained Skill${missingTrainedSkills === 1 ? "" : "s"} (${currentTrainedEffective}/${expectedTrainedRaw})`,
-      detail: `Expected ${expectedTrainedRaw} trained skills (${formulaText})${bgLores.length ? ` plus ${bgLores.length} Background Lore` : ""}.`
+      detail: `Expected ${expectedTrainedRaw} trained skills (${formulaText})${expectedBgLoreCount ? ` plus ${expectedBgLoreCount} Background Lore` : ""}.`
+    });
+  }
+  if (missingBgLores.length > 0) {
+    issues.push({
+      severity: "warning",
+      category: "Skills",
+      title: `Missing Background Lore: ${missingBgLores.join(", ")}`,
+      detail: `Your ${actor.background?.name || "Background"} grants Trained in ${missingBgLores.join(", ")}. Add the Lore skill on the Skills tab.`
+    });
+  } else if (expectedBgLoreCount > 0 && loreItems.length < expectedBgLoreCount) {
+    issues.push({
+      severity: "warning",
+      category: "Skills",
+      title: `Missing Background Lore (${loreItems.length}/${expectedBgLoreCount})`,
+      detail: `Your ${actor.background?.name || "Background"} grants a Lore skill${bgCustomSkillText ? ` (${bgCustomSkillText})` : ""}, but no Lore skill is on the sheet yet.`
+    });
+  } else if (missingLoreCount > 0) {
+    issues.push({
+      severity: "warning",
+      category: "Skills",
+      title: `Missing ${missingLoreCount} Lore Skill${missingLoreCount === 1 ? "" : "s"} (${loreItems.length}/${expectedMinLores})`,
+      detail: `Expected at least ${expectedMinLores} Lore skill(s) from Background (${expectedBgLoreCount}) and Lore feats (${featLoreCount}).`
     });
   }
   if (actor.class && missingIncreases > 0) {
@@ -996,7 +1049,14 @@ function analyzeSkills(actor, level, dualInfo) {
     expectedTrained: expectedTrainedRaw,
     trainedCoreCount,
     loreCount: loreItems.length,
-    bgLoreCount: bgLores.length,
+    knownLoreNames,
+    bgLoreCount: expectedBgLoreCount,
+    bgLoreNames: bgLores,
+    missingBgLores,
+    hasMissingBgLore: missingBgLores.length > 0 || (expectedBgLoreCount > 0 && loreItems.length < expectedBgLoreCount),
+    expectedMinLores,
+    missingLoreCount,
+    loreStatus: missingLoreCount > 0 ? "missing" : "complete",
     extraManualLores,
     currentTrained: currentTrainedEffective,
     missingTrained: missingTrainedSkills,
@@ -1014,6 +1074,83 @@ function analyzeSkills(actor, level, dualInfo) {
     increasesStatus: missingIncreases > 0 ? "missing" : (excessIncreases > 0 ? "extra" : "complete"),
     overCapSkills,
     rankCounts,
+    formulaText,
+    issues
+  };
+}
+
+/* ------------------------------------------------------------------------- */
+/* 4.5. ALCHEMIST & CRAFTING FORMULAS ANALYSIS                               */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Computes expected free crafting formulas (PF2e Remaster Player Core 2 Alchemist +
+ * Alchemical/Magical/Snare Crafting feats) vs formulas currently in `actor.system.crafting.formulas`.
+ *
+ * Remaster Alchemist Formula Book:
+ *  - Level 1: 8 common 1st-level alchemical formulas (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)
+ *  - Each level after 1: +2 free common alchemical formulas (up to actor's level) -> 8 + 2 * (level - 1)
+ */
+export function analyzeFormulas(actor, level, dualInfo = null) {
+  const primarySlug = actor.class ? getItemSlug(actor.class) : "";
+  const isAlchemist = primarySlug === "alchemist" || dualInfo?.slug === "alchemist";
+  const feats = actor.itemTypes?.feat || [];
+  const featSlugs = new Set(feats.map(getItemSlug));
+
+  const hasAlchemicalCrafting = featSlugs.has("alchemical-crafting") || featSlugs.has("alchemist-dedication");
+  const hasSnareCrafting = featSlugs.has("snare-crafting");
+  const hasMagicalCrafting = featSlugs.has("magical-crafting");
+
+  let expected = 0;
+  const parts = [];
+
+  if (isAlchemist) {
+    // 4 Alchemical Crafting + 2 Formula Book + 2 Research Field at Lv 1, plus +2 per level for Lv 2..level
+    const lvlUps = Math.max(0, level - 1) * 2;
+    expected += 8 + lvlUps;
+    parts.push(`8 Alchemist Lv 1 (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)`);
+    if (lvlUps > 0) parts.push(`+${lvlUps} Level-Ups (2/lv for Lv 2–${level})`);
+  } else if (hasAlchemicalCrafting) {
+    expected += 4;
+    parts.push("4 Alchemical Crafting");
+  }
+
+  if (hasSnareCrafting) {
+    expected += 4;
+    parts.push("+4 Snare Crafting");
+  }
+  if (hasMagicalCrafting) {
+    expected += 4;
+    parts.push("+4 Magical Crafting");
+  }
+
+  const rawFormulas = actor.system?.crafting?.formulas;
+  const current = Array.isArray(rawFormulas)
+    ? rawFormulas.filter(Boolean).length
+    : (rawFormulas && typeof rawFormulas === "object" ? Object.values(rawFormulas).filter(Boolean).length : 0);
+
+  const hasFormulas = expected > 0 || current > 0;
+  const missing = Math.max(0, expected - current);
+  const formulaText = parts.join(" ");
+  const issues = [];
+
+  if (expected > 0 && missing > 0) {
+    issues.push({
+      severity: "warning",
+      category: "Formulas",
+      title: `Missing ${missing} ${isAlchemist ? "Alchemical " : ""}Formula${missing === 1 ? "" : "s"} (${current}/${expected})`,
+      detail: `Expected at least ${expected} free formula(s) at Level ${level}: ${formulaText}. Add them on the Crafting tab.`
+    });
+  }
+
+  return {
+    hasFormulas,
+    isAlchemist,
+    perLevelGain: isAlchemist ? 2 : 0,
+    current,
+    expected,
+    missing,
+    complete: missing === 0,
     formulaText,
     issues
   };
@@ -2807,6 +2944,7 @@ export function analyzeCharacter(actor) {
   // 2. Sub-analyses
   const attributes = analyzeAttributeBoosts(actor, level, variants, dualInfo);
   const skills = analyzeSkills(actor, level, dualInfo);
+  const formulas = analyzeFormulas(actor, level, dualInfo);
   const feats = analyzeFeats(actor, level, variants, dualInfo);
   const spellcasting = analyzeSpellcasting(actor, level, dualInfo);
 
@@ -2827,6 +2965,7 @@ export function analyzeCharacter(actor) {
     ...coreIssues,
     ...attributes.issues,
     ...skills.issues,
+    ...formulas.issues,
     ...feats.issues,
     ...spellcasting.issues
   ];
@@ -2850,11 +2989,20 @@ export function analyzeCharacter(actor) {
     totalChecks += 1;
     if (t.complete) passedChecks += 1;
   }
-  // Skills & skill increases
+  // Skills, Lore & skill increases
   if (actor.class) {
     totalChecks += 2;
     if (skills.missingTrained === 0) passedChecks += 1;
     if (skills.missingIncreases === 0) passedChecks += 1;
+  }
+  if (skills.expectedMinLores > 0) {
+    totalChecks += 1;
+    if (skills.missingLoreCount === 0) passedChecks += 1;
+  }
+  // Crafting / Alchemist formulas
+  if (formulas.expected > 0) {
+    totalChecks += 1;
+    if (formulas.complete) passedChecks += 1;
   }
   // Feat slots
   if (feats.totalSlots > 0) {
@@ -2916,6 +3064,7 @@ export function analyzeCharacter(actor) {
     },
     attributes,
     skills,
+    formulas,
     feats,
     spellcasting,
     readinessNotes,

@@ -42,6 +42,14 @@ const GRADUAL_BOOST_SETS = [
 /** Lazy in-memory compendium index cache (populated ONLY on first Quick Pick click) */
 let _featIndexCache = null;
 let _spellIndexCache = null;
+let _formulaIndexCache = null;
+
+/** Tracks actor IDs currently being updated by Level Planner itself so sheet auto-prompt never misfires */
+const _plannerUpdatingActors = new Set();
+
+export function isPlannerUpdatingActor(actorId) {
+  return Boolean(actorId && _plannerUpdatingActors.has(actorId));
+}
 
 /* ------------------------------------------------------------------------- */
 /* 1. OPT-IN SETTING & PLAN FLAG ACCESSORS                                   */
@@ -81,15 +89,77 @@ export async function updatePlannedLevelData(actor, levelNum, mutatorFn) {
   const plan = getActorLevelPlan(actor);
   const key = String(levelNum);
   if (!plan.levels[key] || typeof plan.levels[key] !== "object") {
-    plan.levels[key] = { boosts: [], skillIncrease: null, feats: {}, spells: [] };
+    plan.levels[key] = {
+      boosts: [],
+      skillIncrease: null,
+      intBonusSkill: null,
+      intBonusLanguage: "",
+      feats: {},
+      spells: [],
+      formulas: []
+    };
   }
   const entry = plan.levels[key];
   if (!Array.isArray(entry.boosts)) entry.boosts = [];
+  if (!("skillIncrease" in entry)) entry.skillIncrease = null;
+  if (!("intBonusSkill" in entry)) entry.intBonusSkill = null;
+  if (typeof entry.intBonusLanguage !== "string") entry.intBonusLanguage = "";
   if (!entry.feats || typeof entry.feats !== "object") entry.feats = {};
   if (!Array.isArray(entry.spells)) entry.spells = [];
+  if (!Array.isArray(entry.formulas)) entry.formulas = [];
 
   mutatorFn(entry, plan);
   return await saveActorLevelPlan(actor, plan);
+}
+
+export function hasAnySavedLevelPlan(actor) {
+  const plan = getActorLevelPlan(actor);
+  const levelsObj = plan?.levels;
+  if (!levelsObj || typeof levelsObj !== "object") return false;
+  for (const entry of Object.values(levelsObj)) {
+    if (!entry || typeof entry !== "object") continue;
+    if (Array.isArray(entry.boosts) && entry.boosts.length > 0) return true;
+    if (typeof entry.skillIncrease === "string" && entry.skillIncrease) return true;
+    if (typeof entry.intBonusSkill === "string" && entry.intBonusSkill) return true;
+    if (typeof entry.intBonusLanguage === "string" && entry.intBonusLanguage.trim()) return true;
+    if (entry.feats && typeof entry.feats === "object" && Object.keys(entry.feats).length > 0) return true;
+    if (Array.isArray(entry.spells) && entry.spells.length > 0) return true;
+    if (Array.isArray(entry.formulas) && entry.formulas.length > 0) return true;
+  }
+  return false;
+}
+
+export function resolveLanguageSlug(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const langs = CONFIG.PF2E?.languages;
+  if (!langs || typeof langs !== "object") return null;
+
+  const lower = raw.toLowerCase();
+  const norm = normalizeSlug(raw);
+  if (langs[lower]) return lower;
+  if (langs[norm]) return norm;
+
+  for (const [slug, labelKey] of Object.entries(langs)) {
+    const localized = String(game.i18n?.localize?.(labelKey) || labelKey || slug).trim().toLowerCase();
+    if (localized === lower || normalizeSlug(localized) === norm) {
+      return slug;
+    }
+  }
+  return null;
+}
+
+function getAvailableLanguageChoices(excludeSlugs = new Set()) {
+  const langs = CONFIG.PF2E?.languages;
+  if (!langs || typeof langs !== "object") return [];
+  const options = [];
+  for (const [slug, labelKey] of Object.entries(langs)) {
+    if (excludeSlugs.has(slug)) continue;
+    const label = String(game.i18n?.localize?.(labelKey) || capitalize(slug)).trim();
+    options.push({ slug, label });
+  }
+  options.sort((a, b) => a.label.localeCompare(b.label));
+  return options;
 }
 
 export async function clearActorLevelPlan(actor) {
@@ -514,18 +584,22 @@ function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport
 
 /**
  * Builds the complete Level 1–20 Build Roadmap for a character actor, combining:
- *  - Live sheet data for Levels 1..actor.level
- *  - Planned flag data + projected Attributes & Skills for Levels (actor.level+1)..20
+ *  - Live sheet data for Levels 1..currentLevel
+ *  - Planned flag data + projected Attributes, INT Bonuses, Skills & Formulas for Levels (currentLevel+1)..20
  *  - Auto-read Class Features (Primary + Dual Class) across all 20 levels
  *  - Active variant rules (Dual Class, Free Archetype, Ancestry Paragon, Gradual Boosts)
  *
  * @param {Actor} actor
+ * @param {{ effectiveCurrentLevel?: number }} [options]
  * @returns {object|null}
  */
-export function buildLevelRoadmap(actor) {
+export function buildLevelRoadmap(actor, options = {}) {
   if (!actor || actor.type !== "character") return null;
 
-  const currentLevel = Math.max(1, Math.min(20, Number(actor.level ?? actor.system?.details?.level?.value ?? 1)));
+  const liveLevel = Math.max(1, Math.min(20, Number(actor.level ?? actor.system?.details?.level?.value ?? 1)));
+  const currentLevel = Number.isFinite(options?.effectiveCurrentLevel)
+    ? Math.max(0, Math.min(20, Number(options.effectiveCurrentLevel)))
+    : liveLevel;
   const variants = getActiveVariantRules();
   const dualInfo = getActorDualClassInfo(actor);
   const plan = getActorLevelPlan(actor);
@@ -538,6 +612,7 @@ export function buildLevelRoadmap(actor) {
   const primarySlug = pClass ? normalizeSlug(pClass.slug || pClass.system?.slug || pClass.name) : "";
   const dualName = dualInfo?.name || "";
   const dualSlug = dualInfo?.slug || "";
+  const isAlchemist = primarySlug === "alchemist" || dualSlug === "alchemist";
   const actorAncestryTraits = extractActorAncestryTraits(actor);
   const actorPrimaryClassTraits = extractActorClassTraits(actor, "class", primarySlug);
   const actorDualClassTraits = dualSlug ? extractActorClassTraits(actor, "dualclass", dualSlug) : [];
@@ -709,13 +784,29 @@ export function buildLevelRoadmap(actor) {
   // 6. Build all 20 Level Rows!
   const levels = [];
   const liveAttrBoosts = actor.system?.build?.attributes?.boosts || {};
+  const knownLanguageSlugs = new Set(
+    (Array.isArray(actor.system?.details?.languages?.value) ? actor.system.details.languages.value : [])
+      .map(s => String(s || "").toLowerCase())
+      .filter(Boolean)
+  );
 
   for (let lvl = 1; lvl <= 20; lvl++) {
     const isPast = lvl < currentLevel;
     const isCurrent = lvl === currentLevel;
     const isNextLevel = lvl === currentLevel + 1;
     const isFuture = lvl > currentLevel;
-    const lp = plan.levels[String(lvl)] || { boosts: [], skillIncrease: null, feats: {}, spells: [] };
+    const lp = plan.levels[String(lvl)] || {
+      boosts: [],
+      skillIncrease: null,
+      intBonusSkill: null,
+      intBonusLanguage: "",
+      feats: {},
+      spells: [],
+      formulas: []
+    };
+
+    // Snapshot INT modifier BEFORE applying this level's boosts (handles partial boosts accurately!)
+    const prevIntMod = computeModFromBoostCount(projectedBoostCounts.int || 0).mod;
 
     // A. Attribute Boosts for this level
     const hasBoosts = boostLevels.includes(lvl);
@@ -767,6 +858,74 @@ export function buildLevelRoadmap(actor) {
         selectedLabels: selectedBoosts.map(a => ABILITY_LABELS[a]).join(", "),
         complete: selectedBoosts.length >= boostsPerTier,
         buttons: attrButtons
+      };
+    }
+
+    // A2. INT Modifier Increase Bonus (+1 Trained Skill & +1 Language on actual modifier gain!)
+    const newIntMod = computeModFromBoostCount(projectedBoostCounts.int || 0).mod;
+    const intModGain = isFuture ? Math.max(0, newIntMod - prevIntMod) : 0;
+    const hasIntBonus = intModGain > 0;
+    let intBonusInfo = null;
+    if (hasIntBonus) {
+      const rawIntSkill = typeof lp.intBonusSkill === "string" ? lp.intBonusSkill : "";
+      const chosenSkill = (rawIntSkill === "__lore__" || CORE_SKILL_SLUGS.includes(rawIntSkill)) ? rawIntSkill : "";
+      const chosenLanguage = typeof lp.intBonusLanguage === "string" ? lp.intBonusLanguage.trim() : "";
+
+      const skillOptions = [];
+      let chosenLabel = "";
+      let chosenValid = true;
+
+      for (const slug of CORE_SKILL_SLUGS) {
+        const curRank = Number(projectedSkillRanks[slug] ?? 0);
+        const isChosen = slug === chosenSkill;
+        if (curRank > 0 && !isChosen) continue;
+        const lbl = curRank > 0
+          ? `${capitalize(slug)} (Already ${RANK_FULL[curRank]})`
+          : `${capitalize(slug)} (U → T)`;
+        if (isChosen) {
+          chosenLabel = lbl;
+          if (curRank > 0) chosenValid = false;
+        }
+        skillOptions.push({
+          slug,
+          label: lbl,
+          selected: isChosen,
+          invalid: curRank > 0
+        });
+      }
+
+      const isLoreChosen = chosenSkill === "__lore__";
+      if (isLoreChosen) chosenLabel = "New Lore Skill (add on sheet)";
+      skillOptions.push({
+        slug: "__lore__",
+        label: "New Lore Skill (add on sheet)",
+        selected: isLoreChosen,
+        invalid: false
+      });
+
+      // Advance projected skill rank immediately BEFORE Skill Increase & Feat Prerequisite checks!
+      if (chosenSkill && chosenSkill !== "__lore__" && chosenValid) {
+        projectedSkillRanks[chosenSkill] = 1;
+      }
+
+      const languageOptions = getAvailableLanguageChoices(knownLanguageSlugs);
+      const matchedLangSlug = resolveLanguageSlug(chosenLanguage);
+      if (matchedLangSlug) knownLanguageSlugs.add(matchedLangSlug);
+
+      intBonusInfo = {
+        gain: intModGain,
+        fromMod: prevIntMod,
+        toMod: newIntMod,
+        fromModStr: `${prevIntMod >= 0 ? "+" : ""}${prevIntMod}`,
+        toModStr: `${newIntMod >= 0 ? "+" : ""}${newIntMod}`,
+        chosenSkill,
+        chosenLabel,
+        chosenValid,
+        chosenLanguage,
+        isLoreChosen,
+        languageOptions,
+        complete: Boolean(chosenSkill) && chosenValid,
+        skillOptions
       };
     }
 
@@ -865,11 +1024,41 @@ export function buildLevelRoadmap(actor) {
     const milestones = spellMilestones[lvl] || [];
     const plannedSpells = isFuture && Array.isArray(lp.spells) ? lp.spells : [];
 
+    // E2. Alchemist Free Formulas milestone & planned formulas (Remaster PC2: 8 at Lv 1, +2 per level Lv 2-20)
+    const formulaMilestone = isAlchemist
+      ? (lvl === 1
+        ? {
+            gain: 8,
+            expectedTotal: 8,
+            maxItemLevel: 1,
+            isStarting: true,
+            text: "8 Starting Common Alchemical Formulas (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)"
+          }
+        : {
+            gain: 2,
+            expectedTotal: 8 + (lvl - 1) * 2,
+            maxItemLevel: lvl,
+            isStarting: false,
+            text: `+2 Free Common Alchemical Formulas (Item Lv ≤ ${lvl} · Total by Lv ${lvl}: ${8 + (lvl - 1) * 2})`
+          })
+      : null;
+    const hasFormulaMilestone = Boolean(formulaMilestone);
+    const isAlchemistFutureGain = Boolean(isAlchemist && isFuture && lvl >= 2);
+    const plannedFormulas = isFuture && Array.isArray(lp.formulas) ? lp.formulas : [];
+    const hasPlannedFormulas = plannedFormulas.length > 0;
+    const formulasComplete = !isAlchemistFutureGain || plannedFormulas.length >= (formulaMilestone?.gain || 2);
+
     // F. Level plan completion badge (for future levels)
-    let plannedItemsTotal = featSlots.length + (hasBoosts ? 1 : 0) + (hasSkillIncrease ? 1 : 0);
+    let plannedItemsTotal = featSlots.length
+      + (hasBoosts ? 1 : 0)
+      + (hasIntBonus ? 1 : 0)
+      + (hasSkillIncrease ? 1 : 0)
+      + (isAlchemistFutureGain ? 1 : 0);
     let plannedItemsDone = featSlots.filter(s => s.filled).length
       + (hasBoosts && boostInfo?.complete ? 1 : 0)
-      + (hasSkillIncrease && skillIncreaseInfo?.complete ? 1 : 0);
+      + (hasIntBonus && intBonusInfo?.complete ? 1 : 0)
+      + (hasSkillIncrease && skillIncreaseInfo?.complete ? 1 : 0)
+      + (isAlchemistFutureGain && formulasComplete ? 1 : 0);
 
     levels.push({
       level: lvl,
@@ -881,6 +1070,8 @@ export function buildLevelRoadmap(actor) {
       hasClassFeatures: classFeatures.length > 0,
       hasBoosts,
       boostInfo,
+      hasIntBonus,
+      intBonusInfo,
       hasSkillIncrease,
       skillIncreaseInfo,
       featSlots,
@@ -889,6 +1080,13 @@ export function buildLevelRoadmap(actor) {
       hasSpellMilestones: milestones.length > 0,
       plannedSpells,
       hasPlannedSpells: plannedSpells.length > 0,
+      formulaMilestone,
+      hasFormulaMilestone,
+      isAlchemistFutureGain,
+      plannedFormulas,
+      plannedFormulasCount: plannedFormulas.length,
+      hasPlannedFormulas,
+      formulasComplete,
       plannedItemsTotal,
       plannedItemsDone,
       isLevelPlanComplete: plannedItemsTotal > 0 && plannedItemsDone >= plannedItemsTotal
@@ -920,6 +1118,7 @@ export function buildLevelRoadmap(actor) {
     actorId: actor.id,
     actorName: actor.name,
     actorImg: actor.img || "icons/svg/mystery-man.svg",
+    liveLevel,
     currentLevel,
     canLevelUp: currentLevel < 20,
     nextLevel: Math.min(20, currentLevel + 1),
@@ -927,6 +1126,7 @@ export function buildLevelRoadmap(actor) {
     primaryName,
     dualName,
     isDualClass: Boolean(dualInfo),
+    isAlchemist,
     variants,
     activeVariantBadges: checkerReport?.activeVariantBadges || [],
     hasVariantBadges: (checkerReport?.activeVariantBadges?.length || 0) > 0,
@@ -1423,116 +1623,586 @@ export async function getLightweightSpellIndex() {
   return _spellIndexCache;
 }
 
+/**
+ * Opens PF2e's built-in Compendium Browser Equipment tab pre-filtered to Alchemical items
+ * up to `maxLevel` so Alchemists can browse and drag-and-drop formulas directly!
+ */
+export async function openNativeBrowserForFormulas({ maxLevel = 1 } = {}) {
+  const browser = game.pf2e?.compendiumBrowser;
+  const tab = browser?.tabs?.equipment;
+  if (!browser || !tab) {
+    ui.notifications?.warn("PF2e Compendium Browser is unavailable.");
+    return;
+  }
+
+  try {
+    if (!tab.isInitialized) {
+      if (typeof tab.init === "function") await tab.init();
+      else if (typeof tab.loadData === "function") await tab.loadData();
+    }
+
+    let filter = null;
+    if (typeof tab.getFilterData === "function") {
+      filter = await tab.getFilterData();
+    } else if (tab.defaultFilterData) {
+      filter = foundry.utils.deepClone(tab.defaultFilterData);
+    } else if (tab.filterData) {
+      filter = foundry.utils.deepClone(tab.filterData);
+    }
+
+    if (!filter || typeof filter !== "object") {
+      await browser.openTab?.("equipment");
+      return;
+    }
+
+    resetBrowserFilterObject(filter);
+
+    const maxLvl = Math.max(0, Number(maxLevel || 20));
+    if (filter?.sliders?.level?.values) {
+      if (Array.isArray(filter.sliders.level.values)) {
+        filter.sliders.level.values = [0, maxLvl];
+      } else {
+        filter.sliders.level.values.min = filter.sliders.level.values.lowerLimit ?? 0;
+        filter.sliders.level.values.max = Math.min(filter.sliders.level.values.upperLimit ?? 20, maxLvl);
+      }
+      filter.sliders.level.isExpanded = true;
+    }
+
+    const traitSelect = filter?.multiselects?.traits;
+    let selectedTraits = [];
+    if (traitSelect) {
+      const rawOpts = traitSelect.options;
+      const validOpts = Array.isArray(rawOpts)
+        ? rawOpts
+        : (rawOpts && typeof rawOpts === "object"
+          ? Object.entries(rawOpts).map(([k, v]) => (typeof v === "string" ? { value: k, label: v } : { value: v?.value || k, label: v?.label || capitalize(k) }))
+          : []);
+      const match = validOpts.find(o => o?.value === "alchemical");
+      if (match) {
+        selectedTraits.push({ value: match.value, label: match.label, not: false });
+      } else {
+        selectedTraits.push({ value: "alchemical", label: "Alchemical", not: false });
+      }
+      traitSelect.selected = selectedTraits;
+      if ("conjunction" in traitSelect) traitSelect.conjunction = "and";
+    }
+
+    await openBrowserTabWithFilter(browser, tab, "equipment", filter, (liveFilter) => {
+      const liveTraits = Array.isArray(liveFilter?.multiselects?.traits?.selected)
+        ? liveFilter.multiselects.traits.selected.map(o => o?.value)
+        : [];
+      return liveTraits.includes("alchemical");
+    });
+  } catch (err) {
+    console.warn("PF2e Awesome GM Utilities | Fallback opening Compendium Browser equipment tab:", err);
+    await browser.openTab?.("equipment");
+  }
+}
+
+/**
+ * Lazily retrieves lightweight craftable/alchemical equipment index entries
+ * (zero startup overhead; cached only on first Pick Formulas click).
+ */
+export async function getLightweightFormulaIndex() {
+  if (_formulaIndexCache) return _formulaIndexCache;
+
+  const CRAFTABLE_TYPES = new Set(["consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo"]);
+  const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.equipment?.indexData;
+
+  if (Array.isArray(browserIndex) && browserIndex.length > 0) {
+    _formulaIndexCache = browserIndex
+      .map(e => {
+        const traits = toStringArray(e.traits ?? e.system?.traits?.value).map(normalizeSlug).filter(Boolean);
+        return {
+          uuid: e.uuid,
+          name: e.name,
+          img: e.img || "systems/pf2e/icons/default-icons/consumable.svg",
+          level: Number(e.level ?? e.system?.level?.value ?? 0),
+          type: e.type || "equipment",
+          traits,
+          isAlchemical: traits.includes("alchemical"),
+          rarity: e.rarity || e.system?.traits?.rarity || "common"
+        };
+      })
+      .sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
+    return _formulaIndexCache;
+  }
+
+  const results = [];
+  const seen = new Set();
+
+  for (const item of game.items || []) {
+    if (!CRAFTABLE_TYPES.has(item.type)) continue;
+    if (seen.has(item.uuid)) continue;
+    seen.add(item.uuid);
+    const traits = toStringArray(item.system?.traits?.value).map(normalizeSlug).filter(Boolean);
+    results.push({
+      uuid: item.uuid,
+      name: item.name,
+      img: item.img || "systems/pf2e/icons/default-icons/consumable.svg",
+      level: Number(item.system?.level?.value ?? 0),
+      type: item.type,
+      traits,
+      isAlchemical: traits.includes("alchemical"),
+      rarity: item.system?.traits?.rarity || "common"
+    });
+  }
+
+  const packs = Array.from(game.packs || []).filter(p =>
+    p.documentName === "Item"
+    && (p.collection === "pf2e.equipment-srd" || /equipment|alchem|consumable|item/i.test(p.collection) || /equipment|alchem/i.test(p.title))
+  );
+
+  for (const pack of packs) {
+    try {
+      const idx = await pack.getIndex({
+        fields: ["type", "img", "system.level.value", "system.traits.value", "system.traits.rarity"]
+      });
+      for (const e of idx) {
+        if (!CRAFTABLE_TYPES.has(e.type)) continue;
+        const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
+        if (seen.has(uuid)) continue;
+        seen.add(uuid);
+        const traits = toStringArray(e.system?.traits?.value).map(normalizeSlug).filter(Boolean);
+        results.push({
+          uuid,
+          name: e.name,
+          img: e.img || "systems/pf2e/icons/default-icons/consumable.svg",
+          level: Number(e.system?.level?.value ?? 0),
+          type: e.type,
+          traits,
+          isAlchemical: traits.includes("alchemical"),
+          rarity: e.system?.traits?.rarity || "common"
+        });
+      }
+    } catch { /* skip unreadable pack */ }
+  }
+
+  results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
+  _formulaIndexCache = results;
+  return _formulaIndexCache;
+}
+
 /* ------------------------------------------------------------------------- */
-/* 5. GUIDED 1-CLICK LEVEL-UP EXECUTOR (Lv N -> Lv N+1)                      */
+/* 5. PLAN INSPECTION & GUIDED LEVEL-UP EXECUTOR                             */
 /* ------------------------------------------------------------------------- */
 
 /**
- * Resolves the exact live PF2e `slot.id` on `actor.feats` for a given groupId & level
- * so embedded feats snap cleanly into their exact native character sheet slot.
+ * Resolves the exact live PF2e `slot` object on `actor.feats` for a given groupId & level.
  */
-function resolveLiveFeatSlotId(actor, groupId, targetLevel) {
+function resolveLiveFeatSlot(actor, groupId, targetLevel) {
   const group = actor.feats?.get?.(groupId);
   if (group?.slots) {
     const slots = Array.isArray(group.slots)
       ? group.slots
       : (typeof group.slots.values === "function" ? Array.from(group.slots.values()) : Object.values(group.slots));
     const emptyMatch = slots.find(s => Number(s?.level) === targetLevel && !s?.feat);
-    if (emptyMatch?.id) return emptyMatch.id;
-    const anyMatch = slots.find(s => Number(s?.level) === targetLevel);
-    if (anyMatch?.id) return anyMatch.id;
+    if (emptyMatch) return { id: emptyMatch.id || `${groupId}-${targetLevel}`, alreadyFilled: false };
+    const filledMatch = slots.find(s => Number(s?.level) === targetLevel && s?.feat);
+    if (filledMatch) return { id: filledMatch.id || `${groupId}-${targetLevel}`, alreadyFilled: true };
   }
-  return `${groupId}-${targetLevel}`;
+  const fallbackId = `${groupId}-${targetLevel}`;
+  const alreadyHasAtLoc = (actor.itemTypes?.feat || []).some(f => f.system?.location === fallbackId);
+  return { id: fallbackId, alreadyFilled: alreadyHasAtLoc };
 }
 
 /**
- * Applies the next level-up (actor.level -> actor.level + 1) natively on the live actor:
- *  1. Updates `system.details.level.value` (+ planned Attribute Boosts & Skill Increase)
- *  2. Waits briefly for native PF2e & Dual Class feature grants
- *  3. Embeds planned Feats sequentially into their exact native `system.location` slots
- *     (allowing PF2e ChoiceSet dialogs to prompt cleanly)
- *  4. Syncs Spellcasting Entry slots and embeds any planned Spells into matching entries
+ * Inspects planned vs. unplanned items across one or more target levels (e.g., [4] or [4, 5]).
+ * Works both BEFORE level-up (`effectiveCurrentLevel = actor.level`) and RIGHT AFTER a direct
+ * character-sheet level-up (`effectiveCurrentLevel = previousLevel`).
+ */
+export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurrentLevel = null } = {}) {
+  const cleanLevels = Array.from(new Set(
+    (Array.isArray(targetLevels) ? targetLevels : [targetLevels])
+      .map(Number)
+      .filter(n => Number.isFinite(n) && n >= 1 && n <= 20)
+  )).sort((a, b) => a - b);
+
+  const hasAnyPlan = hasAnySavedLevelPlan(actor);
+  if (!actor || actor.type !== "character" || cleanLevels.length === 0) {
+    return {
+      hasAnySavedPlan: hasAnyPlan,
+      hasPlannedChoicesInRange: false,
+      allLevelsComplete: true,
+      totalPlannedChoices: 0,
+      totalExpectedChoices: 0,
+      levels: []
+    };
+  }
+
+  const effCur = Number.isFinite(effectiveCurrentLevel)
+    ? effectiveCurrentLevel
+    : Math.min(...cleanLevels) - 1;
+  const roadmap = buildLevelRoadmap(actor, { effectiveCurrentLevel: effCur });
+  const levelSummaries = [];
+  let totalPlannedChoices = 0;
+  let totalExpectedChoices = 0;
+  let hasPlannedChoicesInRange = false;
+  let allLevelsComplete = true;
+
+  for (const targetLevel of cleanLevels) {
+    const lvlData = roadmap?.levels?.find(l => l.level === targetLevel);
+    if (!lvlData) continue;
+
+    const plannedItems = [];
+    const unplannedItems = [];
+    let hasPlanned = false;
+
+    if (lvlData.hasClassFeatures) {
+      plannedItems.push({
+        kind: "auto",
+        label: "Class Features (Auto-Granted)",
+        text: lvlData.classFeatures.map(f => f.name).join(", ")
+      });
+    }
+
+    if (lvlData.hasBoosts) {
+      const bi = lvlData.boostInfo;
+      if (bi?.selectedCount > 0) {
+        hasPlanned = true;
+        plannedItems.push({
+          kind: "planned",
+          label: "Attribute Boosts",
+          text: bi.selectedLabels
+        });
+      }
+      if (!bi?.complete) {
+        const remaining = Math.max(1, (bi?.expected || 1) - (bi?.selectedCount || 0));
+        unplannedItems.push(`Attribute Boosts (${bi?.selectedCount || 0}/${bi?.expected || 1} selected — ${remaining} remaining)`);
+      }
+    }
+
+    if (lvlData.hasIntBonus) {
+      const ib = lvlData.intBonusInfo;
+      if (ib?.chosenSkill && ib.chosenValid) {
+        hasPlanned = true;
+        plannedItems.push({
+          kind: "planned",
+          label: `INT Increase Bonus (${ib.fromModStr} → ${ib.toModStr})`,
+          text: ib.chosenLanguage ? `${ib.chosenLabel} · Language: ${ib.chosenLanguage}` : ib.chosenLabel
+        });
+        if (!ib.chosenLanguage) {
+          unplannedItems.push(`INT Bonus Language (not specified — remember to add +1 Language on sheet)`);
+        }
+      } else {
+        unplannedItems.push(`INT Increase Bonus Skill (${ib?.fromModStr} → ${ib?.toModStr}: +1 Trained Skill & +1 Language)`);
+      }
+    }
+
+    if (lvlData.hasSkillIncrease) {
+      const si = lvlData.skillIncreaseInfo;
+      if (si?.chosenSlug && si.chosenValid) {
+        hasPlanned = true;
+        plannedItems.push({
+          kind: "planned",
+          label: "Skill Increase",
+          text: si.chosenTransition
+        });
+      } else {
+        unplannedItems.push(`Skill Increase (up to ${si?.maxLegalLabel || "Trained"})`);
+      }
+    }
+
+    for (const slot of lvlData.featSlots || []) {
+      if (slot.filled && slot.feat) {
+        hasPlanned = true;
+        plannedItems.push({
+          kind: "planned",
+          label: slot.groupLabel,
+          text: slot.feat.name
+        });
+      } else {
+        unplannedItems.push(slot.groupLabel);
+      }
+    }
+
+    if (lvlData.hasSpellMilestones) {
+      const mText = lvlData.spellMilestones.map(m => `${m.title} (${m.deltaText})`).join("; ");
+      plannedItems.push({
+        kind: "auto",
+        label: "Spellcasting Slots Sync",
+        text: mText
+      });
+    }
+
+    if (lvlData.hasPlannedSpells) {
+      hasPlanned = true;
+      plannedItems.push({
+        kind: "planned",
+        label: "Planned Spells",
+        text: lvlData.plannedSpells.map(s => s.name).join(", ")
+      });
+    }
+
+    if (lvlData.isAlchemistFutureGain) {
+      const gain = lvlData.formulaMilestone?.gain || 2;
+      if (lvlData.hasPlannedFormulas) {
+        hasPlanned = true;
+        plannedItems.push({
+          kind: "planned",
+          label: `Alchemist Formulas (${lvlData.plannedFormulasCount}/${gain})`,
+          text: lvlData.plannedFormulas.map(f => f.name).join(", ")
+        });
+      }
+      if (!lvlData.formulasComplete) {
+        const rem = Math.max(1, gain - lvlData.plannedFormulasCount);
+        unplannedItems.push(`Alchemist Free Formulas (${lvlData.plannedFormulasCount}/${gain} planned — ${rem} more free common formula${rem === 1 ? "" : "s"} up to Lv ${targetLevel})`);
+      }
+    } else if (lvlData.hasPlannedFormulas) {
+      hasPlanned = true;
+      plannedItems.push({
+        kind: "planned",
+        label: "Planned Formulas",
+        text: lvlData.plannedFormulas.map(f => f.name).join(", ")
+      });
+    }
+
+    totalPlannedChoices += lvlData.plannedItemsDone || 0;
+    totalExpectedChoices += lvlData.plannedItemsTotal || 0;
+    if (hasPlanned) hasPlannedChoicesInRange = true;
+    const isComplete = unplannedItems.length === 0 && (lvlData.plannedItemsTotal === 0 || lvlData.isLevelPlanComplete);
+    if (!isComplete) allLevelsComplete = false;
+
+    levelSummaries.push({
+      level: targetLevel,
+      lvlData,
+      plannedItems,
+      unplannedItems,
+      hasPlanned,
+      isComplete,
+      filledCount: lvlData.plannedItemsDone || 0,
+      expectedCount: lvlData.plannedItemsTotal || 0
+    });
+  }
+
+  return {
+    hasAnySavedPlan: hasAnyPlan,
+    hasPlannedChoicesInRange,
+    allLevelsComplete,
+    totalPlannedChoices,
+    totalExpectedChoices,
+    levels: levelSummaries
+  };
+}
+
+/**
+ * Applies planned choices for one or more levels cleanly on the live actor:
+ *  - Optional `updateActorLevel: true` raises `system.details.level.value`
+ *  - Always tags `actor.update` with `{ [MODULE_ID]: { fromLevelPlanner: true } }` so it never
+ *    re-triggers the direct-sheet level-up auto-prompt hook
+ *  - Applies Boosts (without overwriting already-picked live tiers), INT Bonus Skill & Language,
+ *    Skill Increases (respecting newly trained INT bonus skills!), Planned Alchemist Formulas,
+ *    Feats (skipping already-filled live slots), Spellcasting Slot Sync, and Planned Spells.
  *
  * @param {Actor} actor
- * @returns {Promise<{ ok: boolean, newLevel: number, summary: string[] }>}
+ * @param {number|number[]} targetLevels
+ * @param {{ updateActorLevel?: boolean, effectiveCurrentLevel?: number }} [options]
+ * @returns {Promise<{ ok: boolean, newLevel: number, summary: string[], reminders: string[] }>}
  */
-export async function applyPlannedLevelUp(actor) {
-  if (!actor || actor.type !== "character") return { ok: false, newLevel: 0, summary: [] };
+export async function applyPlannedLevelChoices(actor, targetLevels, { updateActorLevel = false, effectiveCurrentLevel = null } = {}) {
+  if (!actor || actor.type !== "character") {
+    return { ok: false, newLevel: 0, summary: [], reminders: [] };
+  }
   if (!game.user?.isGM && !actor.isOwner) {
-    ui.notifications?.warn("You do not have permission to level up this character.");
-    return { ok: false, newLevel: actor.level || 1, summary: [] };
+    ui.notifications?.warn("You do not have permission to update this character.");
+    return { ok: false, newLevel: actor.level || 1, summary: [], reminders: [] };
   }
 
-  const currentLevel = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
-  if (currentLevel >= 20) {
-    ui.notifications?.info(`${actor.name} is already Level 20!`);
-    return { ok: false, newLevel: 20, summary: [] };
+  const cleanLevels = Array.from(new Set(
+    (Array.isArray(targetLevels) ? targetLevels : [targetLevels])
+      .map(Number)
+      .filter(n => Number.isFinite(n) && n >= 1 && n <= 20)
+  )).sort((a, b) => a - b);
+
+  if (cleanLevels.length === 0) {
+    return { ok: false, newLevel: actor.level || 1, summary: [], reminders: [] };
   }
 
-  const targetLevel = currentLevel + 1;
-  const roadmap = buildLevelRoadmap(actor);
-  const lvlData = roadmap?.levels?.find(l => l.level === targetLevel);
+  const maxTargetLevel = cleanLevels[cleanLevels.length - 1];
+  const effCur = Number.isFinite(effectiveCurrentLevel)
+    ? effectiveCurrentLevel
+    : Math.min(...cleanLevels) - 1;
+
+  const roadmap = buildLevelRoadmap(actor, { effectiveCurrentLevel: effCur });
   const plan = getActorLevelPlan(actor);
-  const lp = plan.levels[String(targetLevel)] || { boosts: [], skillIncrease: null, feats: {}, spells: [] };
   const summary = [];
+  const reminders = [];
 
-  // 1. Level + Attribute Boosts + Skill Increase in one clean actor.update()
-  const actorUpdates = {
-    "system.details.level.value": targetLevel
-  };
+  // Working copies so sequential updates (e.g. INT bonus training + Skill Increase at same level) compose cleanly!
+  const workingSkillRanks = {};
+  for (const slug of CORE_SKILL_SLUGS) {
+    workingSkillRanks[slug] = Number(actor.system?.skills?.[slug]?.rank ?? 0);
+  }
 
-  if (lvlData?.hasBoosts && !actor.system?.build?.attributes?.manual) {
-    const validBoosts = (Array.isArray(lp.boosts) ? lp.boosts : []).filter(a => ABILITY_KEYS.includes(a));
-    if (validBoosts.length > 0) {
-      actorUpdates[`system.build.attributes.boosts.${targetLevel}`] = validBoosts;
-      summary.push(`Boosts: ${validBoosts.map(a => ABILITY_LABELS[a]).join(", ")}`);
+  const liveLangValues = Array.isArray(actor.system?.details?.languages?.value)
+    ? [...actor.system.details.languages.value]
+    : [];
+  let langValuesDirty = false;
+  let customLangText = String(actor.system?.details?.languages?.details || "").trim();
+  let customLangDirty = false;
+
+  const existingFormulasRaw = Array.isArray(actor.system?.crafting?.formulas)
+    ? foundry.utils.deepClone(actor.system.crafting.formulas)
+    : [];
+  const existingFormulaUuids = new Set(existingFormulasRaw.map(f => f?.uuid).filter(Boolean));
+  const addedFormulaNames = [];
+  let formulasDirty = false;
+
+  const actorUpdates = {};
+  if (updateActorLevel) {
+    actorUpdates["system.details.level.value"] = maxTargetLevel;
+  }
+
+  const liveBoostsAll = actor.system?.build?.attributes?.boosts || {};
+
+  for (const targetLevel of cleanLevels) {
+    const lvlData = roadmap?.levels?.find(l => l.level === targetLevel);
+    const lp = plan.levels[String(targetLevel)] || {
+      boosts: [],
+      skillIncrease: null,
+      intBonusSkill: null,
+      intBonusLanguage: "",
+      feats: {},
+      spells: [],
+      formulas: []
+    };
+
+    // 1a. Attribute Boosts (skip if live sheet already has boosts selected for this tier)
+    if (lvlData?.hasBoosts && !actor.system?.build?.attributes?.manual) {
+      const liveTier = Array.isArray(liveBoostsAll[targetLevel]) ? liveBoostsAll[targetLevel].filter(Boolean) : [];
+      const validBoosts = (Array.isArray(lp.boosts) ? lp.boosts : []).filter(a => ABILITY_KEYS.includes(a));
+      if (liveTier.length === 0 && validBoosts.length > 0) {
+        actorUpdates[`system.build.attributes.boosts.${targetLevel}`] = validBoosts;
+        summary.push(`Boosts (Lv ${targetLevel}): ${validBoosts.map(a => ABILITY_LABELS[a]).join(", ")}`);
+      }
+    }
+
+    // 1b. INT Increase Bonus Skill & Language (applied BEFORE Skill Increase so same-level upgrade works!)
+    if (lvlData?.hasIntBonus) {
+      if (lp.intBonusSkill === "__lore__") {
+        reminders.push(`Lv ${targetLevel} INT Increase: add your new Lore skill manually on the Skills tab.`);
+      } else if (typeof lp.intBonusSkill === "string" && CORE_SKILL_SLUGS.includes(lp.intBonusSkill)) {
+        const slug = lp.intBonusSkill;
+        if ((workingSkillRanks[slug] || 0) === 0) {
+          workingSkillRanks[slug] = 1;
+          actorUpdates[`system.skills.${slug}.rank`] = 1;
+          summary.push(`INT Bonus Skill: ${capitalize(slug)} → Trained`);
+        }
+      } else {
+        reminders.push(`Lv ${targetLevel} INT Increase: pick +1 Trained Skill on the Skills tab.`);
+      }
+
+      const plannedLang = typeof lp.intBonusLanguage === "string" ? lp.intBonusLanguage.trim() : "";
+      if (plannedLang) {
+        const matchedSlug = resolveLanguageSlug(plannedLang);
+        if (matchedSlug) {
+          if (!liveLangValues.includes(matchedSlug)) {
+            liveLangValues.push(matchedSlug);
+            langValuesDirty = true;
+            summary.push(`Language: ${capitalize(matchedSlug)}`);
+          }
+        } else {
+          const existingParts = customLangText ? customLangText.split(",").map(s => s.trim()).filter(Boolean) : [];
+          if (!existingParts.some(p => p.toLowerCase() === plannedLang.toLowerCase())) {
+            existingParts.push(plannedLang);
+            customLangText = existingParts.join(", ");
+            customLangDirty = true;
+            summary.push(`Language: ${plannedLang}`);
+          }
+        }
+      } else {
+        reminders.push(`Lv ${targetLevel} INT Increase: pick +1 Language on the Character sheet.`);
+      }
+    }
+
+    // 1c. Skill Increase
+    if (lvlData?.hasSkillIncrease && typeof lp.skillIncrease === "string" && CORE_SKILL_SLUGS.includes(lp.skillIncrease)) {
+      const slug = lp.skillIncrease;
+      const curRank = Number(workingSkillRanks[slug] ?? 0);
+      const maxLegal = maxSkillRankForLevel(targetLevel);
+      const nextRank = Math.min(maxLegal, curRank + 1);
+      if (nextRank > curRank) {
+        workingSkillRanks[slug] = nextRank;
+        actorUpdates[`system.skills.${slug}.rank`] = nextRank;
+        summary.push(`Skill: ${capitalize(slug)} → ${RANK_FULL[nextRank]}`);
+      }
+    }
+
+    // 1d. Planned Alchemical Formulas (appended cleanly to `actor.system.crafting.formulas`)
+    const plannedFormulas = Array.isArray(lp.formulas) ? lp.formulas : [];
+    for (const fm of plannedFormulas) {
+      if (!fm?.uuid || existingFormulaUuids.has(fm.uuid)) continue;
+      existingFormulaUuids.add(fm.uuid);
+      existingFormulasRaw.push({ uuid: fm.uuid });
+      addedFormulaNames.push(fm.name || "Formula");
+      formulasDirty = true;
+    }
+    if (lvlData?.isAlchemistFutureGain && plannedFormulas.length < (lvlData.formulaMilestone?.gain || 2)) {
+      const rem = (lvlData.formulaMilestone?.gain || 2) - plannedFormulas.length;
+      reminders.push(`Alchemist Lv ${targetLevel}: add ${rem} more free common alchemical formula${rem === 1 ? "" : "s"} (Item Lv ≤ ${targetLevel}) on the Crafting tab.`);
     }
   }
 
-  if (lvlData?.hasSkillIncrease && typeof lp.skillIncrease === "string" && CORE_SKILL_SLUGS.includes(lp.skillIncrease)) {
-    const slug = lp.skillIncrease;
-    const curRank = Number(actor.system?.skills?.[slug]?.rank ?? 0);
-    const maxLegal = maxSkillRankForLevel(targetLevel);
-    const nextRank = Math.min(maxLegal, curRank + 1);
-    if (nextRank > curRank) {
-      actorUpdates[`system.skills.${slug}.rank`] = nextRank;
-      summary.push(`Skill: ${capitalize(slug)} → ${RANK_FULL[nextRank]}`);
-    }
+  if (langValuesDirty) {
+    actorUpdates["system.details.languages.value"] = liveLangValues;
+  }
+  if (customLangDirty) {
+    actorUpdates["system.details.languages.details"] = customLangText;
+  }
+  if (formulasDirty) {
+    actorUpdates["system.crafting.formulas"] = existingFormulasRaw;
+    summary.push(`Formulas: ${addedFormulaNames.join(", ")}`);
   }
 
-  await actor.update(actorUpdates);
+  if (Object.keys(actorUpdates).length > 0) {
+    _plannerUpdatingActors.add(actor.id);
+    try {
+      await actor.update(actorUpdates, { [MODULE_ID]: { fromLevelPlanner: true } });
+    } finally {
+      setTimeout(() => _plannerUpdatingActors.delete(actor.id), 1500);
+    }
+  }
 
   // Allow PF2e's native level-up feature grants & Dual Class auto-sync hook to settle
-  await new Promise(resolve => setTimeout(resolve, 350));
+  if (updateActorLevel) {
+    await new Promise(resolve => setTimeout(resolve, 350));
+  }
 
   // 2. Embed planned Feats sequentially so PF2e ChoiceSet prompts work cleanly
   const addedFeats = [];
-  for (const slot of lvlData?.featSlots || []) {
-    const planned = lp.feats?.[slot.slotKey];
-    if (!planned?.uuid) continue;
+  for (const targetLevel of cleanLevels) {
+    const lvlData = roadmap?.levels?.find(l => l.level === targetLevel);
+    const lp = plan.levels[String(targetLevel)] || { feats: {} };
 
-    try {
-      const sourceDoc = await fromUuid(planned.uuid);
-      if (!sourceDoc || sourceDoc.type !== "feat") continue;
+    for (const slot of lvlData?.featSlots || []) {
+      const planned = lp.feats?.[slot.slotKey];
+      if (!planned?.uuid) continue;
 
-      const obj = sourceDoc.toObject();
-      delete obj._id;
-      const liveSlotId = resolveLiveFeatSlotId(actor, slot.groupId, targetLevel);
-      if (obj.system) {
-        obj.system.location = liveSlotId;
+      const liveSlot = resolveLiveFeatSlot(actor, slot.groupId, targetLevel);
+      if (liveSlot.alreadyFilled) continue;
+
+      try {
+        const sourceDoc = await fromUuid(planned.uuid);
+        if (!sourceDoc || sourceDoc.type !== "feat") continue;
+
+        const obj = sourceDoc.toObject();
+        delete obj._id;
+        if (obj.system) {
+          obj.system.location = liveSlot.id;
+        }
+        obj.flags = obj.flags || {};
+        obj.flags.core = obj.flags.core || {};
+        obj.flags.core.sourceId = planned.uuid;
+        obj._stats = obj._stats || {};
+        obj._stats.compendiumSource = planned.uuid;
+
+        const created = await actor.createEmbeddedDocuments("Item", [obj]);
+        if (created?.length > 0) {
+          addedFeats.push(created[0].name);
+        }
+      } catch (err) {
+        console.warn(`PF2e Awesome GM Utilities | Failed to add planned feat "${planned.name}":`, err);
       }
-      obj.flags = obj.flags || {};
-      obj.flags.core = obj.flags.core || {};
-      obj.flags.core.sourceId = planned.uuid;
-      obj._stats = obj._stats || {};
-      obj._stats.compendiumSource = planned.uuid;
-
-      const created = await actor.createEmbeddedDocuments("Item", [obj]);
-      if (created?.length > 0) {
-        addedFeats.push(created[0].name);
-      }
-    } catch (err) {
-      console.warn(`PF2e Awesome GM Utilities | Failed to add planned feat "${planned.name}":`, err);
     }
   }
   if (addedFeats.length > 0) {
@@ -1548,19 +2218,25 @@ export async function applyPlannedLevelUp(actor) {
     console.warn("PF2e Awesome GM Utilities | Spellcasting sync during level-up failed:", err);
   }
 
-  // 4. Embed any planned Spells into their matching Spellcasting Entry
-  const plannedSpells = Array.isArray(lp.spells) ? lp.spells : [];
-  if (plannedSpells.length > 0) {
+  // 4. Embed any planned Spells into their matching Spellcasting Entry (skipping duplicates)
+  const allPlannedSpells = [];
+  for (const targetLevel of cleanLevels) {
+    const lp = plan.levels[String(targetLevel)];
+    if (Array.isArray(lp?.spells) && lp.spells.length > 0) {
+      allPlannedSpells.push(...lp.spells);
+    }
+  }
+
+  if (allPlannedSpells.length > 0) {
     const postReport = analyzeCharacter(actor);
     const addedSpells = [];
 
-    for (const sp of plannedSpells) {
+    for (const sp of allPlannedSpells) {
       if (!sp?.uuid) continue;
       try {
         const spellDoc = await fromUuid(sp.uuid);
         if (!spellDoc || spellDoc.type !== "spell") continue;
 
-        // Match target spellcasting entry by entryKey, tradition, or first non-focus entry
         let targetEntryId = null;
         if (sp.entryKey) {
           const matchedSrc = postReport?.spellcasting?.sources?.find(s => s.key === sp.entryKey && s.entryId);
@@ -1577,6 +2253,17 @@ export async function applyPlannedLevelUp(actor) {
           if (fallbackEntry) targetEntryId = fallbackEntry.id;
         }
         if (!targetEntryId) continue;
+
+        // Avoid duplicate spell in the same spellcasting entry
+        const spNameLower = String(spellDoc.name || "").toLowerCase();
+        const duplicate = (actor.itemTypes?.spell || []).some(existing =>
+          existing.system?.location?.value === targetEntryId
+          && (
+            (existing._stats?.compendiumSource || existing.flags?.core?.sourceId) === sp.uuid
+            || String(existing.name || "").toLowerCase() === spNameLower
+          )
+        );
+        if (duplicate) continue;
 
         const obj = spellDoc.toObject();
         delete obj._id;
@@ -1601,7 +2288,27 @@ export async function applyPlannedLevelUp(actor) {
 
   return {
     ok: true,
-    newLevel: targetLevel,
-    summary
+    newLevel: Math.max(Number(actor.level || 1), maxTargetLevel),
+    summary,
+    reminders
   };
+}
+
+/**
+ * Applies the next level-up (actor.level -> actor.level + 1) natively on the live actor.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<{ ok: boolean, newLevel: number, summary: string[], reminders: string[] }>}
+ */
+export async function applyPlannedLevelUp(actor) {
+  if (!actor || actor.type !== "character") return { ok: false, newLevel: 0, summary: [], reminders: [] };
+  const currentLevel = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+  if (currentLevel >= 20) {
+    ui.notifications?.info(`${actor.name} is already Level 20!`);
+    return { ok: false, newLevel: 20, summary: [], reminders: [] };
+  }
+  return await applyPlannedLevelChoices(actor, [currentLevel + 1], {
+    updateActorLevel: true,
+    effectiveCurrentLevel: currentLevel
+  });
 }

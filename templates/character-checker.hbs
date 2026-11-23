@@ -215,14 +215,23 @@
           </div>
 
           <div class="pf2e-cc-two-col">
-            <div class="pf2e-cc-stat-box {{#if report.skills.isTrainedMissing}}is-warning{{else}}is-good{{/if}}">
+            <div class="pf2e-cc-stat-box {{#if report.skills.isTrainedMissing}}is-warning{{else}}{{#if report.skills.isLoreMissing}}is-warning{{else}}is-good{{/if}}{{/if}}">
               <div class="pf2e-cc-stat-head">
-                <span>Trained Skills</span>
+                <span>Trained Skills &amp; Lore</span>
                 <strong>{{report.skills.currentTrained}} / {{report.skills.expectedTrained}}</strong>
               </div>
               <div class="pf2e-cc-stat-detail">{{report.skills.formulaText}}</div>
               <div class="pf2e-cc-stat-sub">
-                Core Trained: {{report.skills.trainedCoreCount}}/16 · Lore Items: {{report.skills.loreCount}} ({{report.skills.bgLoreCount}} Background Lore)
+                Core Trained: {{report.skills.trainedCoreCount}}/16 · Lore Skills: <strong>{{report.skills.loreCount}}{{#if report.skills.expectedMinLores}}/{{report.skills.expectedMinLores}}{{/if}}</strong>
+                {{#if report.skills.missingBgLoresText}}
+                  · <span class="pf2e-cc-kv-miss">Missing BG Lore: {{report.skills.missingBgLoresText}}</span>
+                {{else}}
+                  {{#if report.skills.hasMissingBgLore}}
+                    · <span class="pf2e-cc-kv-miss">Missing Background Lore</span>
+                  {{else}}
+                    {{#if report.skills.knownLoresText}}({{report.skills.knownLoresText}}){{/if}}
+                  {{/if}}
+                {{/if}}
               </div>
             </div>
 
@@ -290,6 +299,18 @@
                 <span class="pf2e-cc-kv-label">Languages</span>
                 <span class="pf2e-cc-kv-val">{{report.languages.current}} / {{report.languages.expected}}</span>
               </div>
+
+              {{#if report.formulas.expected}}
+                <div class="pf2e-cc-kv-row {{#if report.formulas.complete}}is-ok{{else}}is-warn{{/if}}" title="{{report.formulas.formulaText}}">
+                  <span class="pf2e-cc-kv-label">{{#if report.formulas.isAlchemist}}Alchemist Formulas{{else}}Crafting Formulas{{/if}}</span>
+                  <span class="pf2e-cc-kv-val">
+                    <strong>{{report.formulas.current}} / {{report.formulas.expected}}</strong>
+                    {{#if report.formulas.missing}}
+                      <em class="pf2e-cc-kv-miss">({{report.formulas.missing}} left)</em>
+                    {{/if}}
+                  </span>
+                </div>
+              {{/if}}
 
               {{#if report.attributes.manual}}
                 <div class="pf2e-cc-kv-row is-ok">

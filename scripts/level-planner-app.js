@@ -17,14 +17,20 @@ import {
   normalizeSlug
 } from "./character-checker-engine.js";
 import {
+  applyPlannedLevelChoices,
   applyPlannedLevelUp,
   buildLevelRoadmap,
   clearActorLevelPlan,
   computeMatchingArchetypeFeatUuids,
   getLightweightFeatIndex,
+  getLightweightFormulaIndex,
   getLightweightSpellIndex,
+  hasAnySavedLevelPlan,
+  inspectPlannedLevels,
   isLevelPlannerEnabled,
+  isPlannerUpdatingActor,
   openNativeBrowserForFeatSlot,
+  openNativeBrowserForFormulas,
   openNativeBrowserForSpells,
   updatePlannedLevelData
 } from "./level-planner-engine.js";
@@ -279,8 +285,10 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             isNextLevel: l.isNextLevel,
             isFuture: l.isFuture,
             hasBoosts: l.hasBoosts,
+            hasIntBonus: l.hasIntBonus,
             hasSkillIncrease: l.hasSkillIncrease,
             hasSpellMilestones: l.hasSpellMilestones,
+            isAlchemistFutureGain: l.isAlchemistFutureGain,
             featCount: l.featSlots.length,
             pillText,
             pillClass
@@ -302,6 +310,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           prevLevel: Math.max(1, rawFocused.level - 1),
           nextStepLevel: Math.min(20, rawFocused.level + 1),
           showSpellsPanel: Boolean(rawFocused.hasSpellMilestones || rawFocused.hasPlannedSpells || (rawFocused.isFuture && hasAnySpellcasting)),
+          showFormulasPanel: Boolean(rawFocused.hasFormulaMilestone || rawFocused.hasPlannedFormulas),
           defaultSpellTradition: defaultTrad,
           defaultSpellEntryKey: defaultEntryKey,
           defaultSpellMaxRank: defaultMaxRank,
@@ -327,6 +336,11 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           boostsText: l.hasBoosts
             ? (l.boostInfo?.selectedLabels || (l.isFuture ? `Pick ${l.boostInfo?.expected || 1}` : "—"))
             : "—",
+          intBonusText: l.hasIntBonus
+            ? (l.intBonusInfo?.chosenSkill
+              ? `${l.intBonusInfo.chosenLabel}${l.intBonusInfo.chosenLanguage ? ` + ${l.intBonusInfo.chosenLanguage}` : ""}`
+              : "Pick Skill & Language")
+            : "",
           skillText: l.hasSkillIncrease
             ? (l.isFuture
               ? (l.skillIncreaseInfo?.chosenTransition || "Choose Skill")
@@ -341,7 +355,10 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           spellsText: l.hasSpellMilestones
             ? l.spellMilestones.map(m => `${m.title}: ${m.deltaText}`).join(" · ")
             : (l.hasPlannedSpells ? `${l.plannedSpells.length} planned spell(s)` : "—"),
-          plannedSpellsCount: l.plannedSpells.length
+          plannedSpellsCount: l.plannedSpells.length,
+          formulasText: l.isAlchemistFutureGain
+            ? `Formulas: ${l.plannedFormulasCount}/${l.formulaMilestone?.gain || 2} (+${l.formulaMilestone?.gain || 2} free)`
+            : (l.hasPlannedFormulas ? `${l.plannedFormulasCount} planned formula(s)` : "")
         }));
 
       for (const l of roadmap.levels) {
@@ -498,7 +515,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     }
 
-    // 4. Skill Increase Dropdown
+    // 4. Skill Increase Dropdown & INT Increase Bonus Controls
     const skillSelect = container.querySelector("#pf2e-lp-skill-select");
     if (skillSelect) {
       skillSelect.addEventListener("change", async (e) => {
@@ -508,6 +525,34 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const slug = e.target.value || null;
         await updatePlannedLevelData(actor, levelNum, (entry) => {
           entry.skillIncrease = slug;
+        });
+        this.render({ force: false });
+      });
+    }
+
+    const intSkillSelect = container.querySelector("#pf2e-lp-int-skill-select");
+    if (intSkillSelect) {
+      intSkillSelect.addEventListener("change", async (e) => {
+        const actor = this._getSelectedActor();
+        if (!actor) return;
+        const levelNum = Number(e.target.dataset.level || this._selectedLevel);
+        const slug = e.target.value || null;
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          entry.intBonusSkill = slug;
+        });
+        this.render({ force: false });
+      });
+    }
+
+    const intLangInput = container.querySelector("#pf2e-lp-int-lang-input");
+    if (intLangInput) {
+      intLangInput.addEventListener("change", async (e) => {
+        const actor = this._getSelectedActor();
+        if (!actor) return;
+        const levelNum = Number(e.target.dataset.level || this._selectedLevel);
+        const lang = String(e.target.value || "").trim();
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          entry.intBonusLanguage = lang;
         });
         this.render({ force: false });
       });
@@ -544,6 +589,23 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         e.stopPropagation();
         zone.classList.remove("is-dragover");
         await this._handleSpellDrop(e, zone);
+      });
+    });
+
+    // 7. Native Drag & Drop on Future Alchemist Formula Dropzone
+    container.querySelectorAll("[data-lp-drop-formula]").forEach(zone => {
+      zone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        zone.classList.add("is-dragover");
+      });
+      zone.addEventListener("dragleave", () => {
+        zone.classList.remove("is-dragover");
+      });
+      zone.addEventListener("drop", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.remove("is-dragover");
+        await this._handleFormulaDrop(e, zone);
       });
     });
   }
@@ -682,6 +744,33 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       }
 
+      case "browse-formulas": {
+        const maxLevel = Number(el.dataset.maxLevel || this._selectedLevel || 1);
+        await openNativeBrowserForFormulas({ maxLevel });
+        break;
+      }
+
+      case "pick-formula": {
+        if (!actor) return;
+        const levelNum = Number(el.dataset.level || this._selectedLevel || 2);
+        await this._openFormulaQuickPicker(actor, levelNum);
+        break;
+      }
+
+      case "remove-formula": {
+        if (!actor) return;
+        const levelNum = Number(el.dataset.level);
+        const formulaId = el.dataset.formulaId;
+        const formulaUuid = el.dataset.uuid;
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          entry.formulas = (entry.formulas || []).filter(fm =>
+            formulaId ? fm.id !== formulaId : fm.uuid !== formulaUuid
+          );
+        });
+        this.render({ force: false });
+        break;
+      }
+
       case "clear-plan": {
         if (!actor) return;
         const confirmed = await this._confirmDialog({
@@ -775,6 +864,38 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
 
     ui.notifications?.info(`Planned spell "${doc.name}" for Level ${levelNum}.`);
+    this.render({ force: false });
+  }
+
+  async _handleFormulaDrop(event, zone) {
+    const actor = this._getSelectedActor();
+    if (!actor || (!game.user?.isGM && !actor.isOwner)) return;
+
+    const levelNum = Number(zone.dataset.level);
+    if (!levelNum || levelNum <= (actor.level || 1)) return;
+
+    const dropData = extractDropData(event);
+    const doc = await resolveDroppedItem(dropData);
+    const CRAFTABLE_TYPES = new Set(["consumable", "equipment", "weapon", "armor", "backpack", "treasure", "ammo"]);
+    if (!doc || !CRAFTABLE_TYPES.has(doc.type)) {
+      ui.notifications?.warn("Drop a PF2e alchemical or craftable item onto the Alchemist Formulas panel.");
+      return;
+    }
+
+    const snapshot = {
+      id: foundry.utils.randomID(8),
+      uuid: doc.uuid,
+      name: doc.name,
+      img: doc.img || "systems/pf2e/icons/default-icons/consumable.svg",
+      level: Number(doc.system?.level?.value ?? 0)
+    };
+
+    await updatePlannedLevelData(actor, levelNum, (entry) => {
+      const exists = (entry.formulas || []).some(f => f.uuid === snapshot.uuid);
+      if (!exists) entry.formulas.push(snapshot);
+    });
+
+    ui.notifications?.info(`Planned formula "${doc.name}" for Level ${levelNum}.`);
     this.render({ force: false });
   }
 
@@ -1228,6 +1349,188 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     dialog.render({ force: true });
   }
 
+  async _openFormulaQuickPicker(actor, levelNum) {
+    const esc = foundry.utils.escapeHTML;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+    if (!DialogV2) {
+      await openNativeBrowserForFormulas({ maxLevel: levelNum });
+      return;
+    }
+
+    const content = `
+      <div class="pf2e-lp-picker">
+        <div class="pf2e-lp-picker-controls">
+          <input type="text" class="pf2e-lp-picker-search" placeholder="Search alchemical formulas (Item Lv ≤ ${levelNum})..." autofocus />
+          <select class="pf2e-lp-picker-scope" title="Filter scope">
+            <option value="common-alchemical" selected>Common Alchemical (Free Eligible)</option>
+            <option value="all-alchemical">All Alchemical (Any Rarity)</option>
+            <option value="all-items">All Craftable Equipment</option>
+          </select>
+          <label class="pf2e-lp-picker-check" title="Include items higher than Level ${levelNum}">
+            <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
+            <span>Any Lv</span>
+          </label>
+          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
+            <i class="fa-solid fa-compass"></i> PF2e Browser
+          </button>
+        </div>
+        <div class="pf2e-lp-picker-status">Loading lightweight equipment index...</div>
+        <div class="pf2e-lp-picker-list"></div>
+      </div>
+    `;
+
+    const dialog = new DialogV2({
+      window: {
+        title: `Plan Alchemical Formulas — Level ${levelNum}`,
+        icon: "fa-solid fa-flask",
+        resizable: true
+      },
+      position: { width: 650, height: 540 },
+      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
+      content,
+      buttons: [
+        {
+          action: "done",
+          label: "Done",
+          icon: "fa-solid fa-check"
+        }
+      ]
+    });
+
+    dialog.addEventListener("render", async () => {
+      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
+      if (!root) return;
+
+      const searchInput = root.querySelector(".pf2e-lp-picker-search");
+      const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
+      const anyLvlCb = root.querySelector(".pf2e-lp-picker-any-lvl");
+      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
+      const statusEl = root.querySelector(".pf2e-lp-picker-status");
+      const listEl = root.querySelector(".pf2e-lp-picker-list");
+
+      browserBtn?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        await openNativeBrowserForFormulas({ maxLevel: levelNum });
+      });
+
+      const allItems = await getLightweightFormulaIndex();
+      const knownSheetUuids = new Set(
+        (Array.isArray(actor.system?.crafting?.formulas) ? actor.system.crafting.formulas : [])
+          .map(f => f?.uuid)
+          .filter(Boolean)
+      );
+      const roadmapNow = buildLevelRoadmap(actor);
+      const plannedOnThisLevel = new Set(
+        (roadmapNow?.levels?.find(l => l.level === levelNum)?.plannedFormulas || [])
+          .map(f => f?.uuid)
+          .filter(Boolean)
+      );
+
+      const renderList = () => {
+        const query = (searchInput?.value || "").trim().toLowerCase();
+        const scope = scopeSelect?.value || "common-alchemical";
+        const anyLvl = Boolean(anyLvlCb?.checked);
+
+        const matched = [];
+        for (const item of allItems) {
+          if (!anyLvl && item.level > levelNum) continue;
+
+          if (scope === "common-alchemical") {
+            if (!item.isAlchemical || item.rarity !== "common") continue;
+          } else if (scope === "all-alchemical") {
+            if (!item.isAlchemical) continue;
+          }
+
+          if (query) {
+            const nameMatch = item.name.toLowerCase().includes(query);
+            const traitMatch = item.traits.some(t => t.includes(query));
+            if (!nameMatch && !traitMatch) continue;
+          }
+          matched.push(item);
+        }
+
+        matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
+        const capped = matched.slice(0, 120);
+        statusEl.textContent = matched.length > 120
+          ? `Showing top 120 of ${matched.length} matching formulas — type to narrow search`
+          : `${matched.length} matching formula(s) — click Add to bookmark for Level ${levelNum}`;
+
+        if (capped.length === 0) {
+          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No matching items found. Try clearing search or changing filter scope.</div>`;
+          return;
+        }
+
+        listEl.innerHTML = capped.map((item, idx) => {
+          const isAdded = plannedOnThisLevel.has(item.uuid);
+          const isKnown = knownSheetUuids.has(item.uuid);
+          const traitStr = item.traits.slice(0, 5).join(" · ");
+          return `
+            <div class="pf2e-lp-picker-row">
+              <img src="${esc(item.img)}" alt="" class="pf2e-lp-picker-img" />
+              <div class="pf2e-lp-picker-info">
+                <div class="pf2e-lp-picker-name-line">
+                  <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open item sheet">${esc(item.name)}</a>
+                  <span class="pf2e-lp-picker-lvl">Lv ${item.level}</span>
+                  ${item.rarity && item.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(item.rarity)}">${esc(capitalize(item.rarity))}</span>` : ""}
+                  ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
+                </div>
+                ${traitStr ? `<div class="pf2e-lp-picker-sub">${esc(traitStr)}</div>` : ""}
+              </div>
+              <button type="button" class="pf2e-lp-picker-select ${isAdded ? "is-added" : ""}" data-idx="${idx}">
+                ${isAdded ? "Added ✓" : "+ Add"}
+              </button>
+            </div>
+          `;
+        }).join("");
+
+        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
+          link.addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            const item = capped[Number(link.dataset.idx)];
+            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
+          });
+        });
+
+        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
+          btn.addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            const chosen = capped[Number(btn.dataset.idx)];
+            if (!chosen) return;
+            await updatePlannedLevelData(actor, levelNum, (entry) => {
+              const exists = (entry.formulas || []).some(f => f.uuid === chosen.uuid);
+              if (!exists) {
+                entry.formulas.push({
+                  id: foundry.utils.randomID(8),
+                  uuid: chosen.uuid,
+                  name: chosen.name,
+                  img: chosen.img,
+                  level: chosen.level
+                });
+              }
+            });
+            plannedOnThisLevel.add(chosen.uuid);
+            btn.classList.add("is-added");
+            btn.textContent = "Added ✓";
+            this.render({ force: false });
+          });
+        });
+      };
+
+      let debounce = null;
+      searchInput?.addEventListener("input", () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(renderList, 60);
+      });
+      scopeSelect?.addEventListener("change", renderList);
+      anyLvlCb?.addEventListener("change", renderList);
+
+      renderList();
+      searchInput?.focus();
+    }, { once: true });
+
+    dialog.render({ force: true });
+  }
+
   /* ----------------------------------------------------------------------- */
   /* GUIDED LEVEL-UP CONFIRMATION & EXECUTION                                */
   /* ----------------------------------------------------------------------- */
@@ -1251,55 +1554,34 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!roadmap || !roadmap.canLevelUp) return;
 
     const targetLevel = roadmap.nextLevel;
-    const lvlData = roadmap.levels.find(l => l.level === targetLevel);
-    if (!lvlData) return;
+    const inspection = inspectPlannedLevels(actor, [targetLevel], { effectiveCurrentLevel: roadmap.currentLevel });
+    const lvlSummary = inspection.levels[0];
+    if (!lvlSummary) return;
 
     const esc = foundry.utils.escapeHTML;
-    const rows = [];
+    const plannedRows = lvlSummary.plannedItems.map(item =>
+      `<li><strong>${esc(item.label)}:</strong> ${esc(item.text)}</li>`
+    );
 
-    if (lvlData.hasClassFeatures) {
-      rows.push(`<li><strong>Class Features (Auto-Granted):</strong> ${esc(lvlData.classFeatures.map(f => f.name).join(", "))}</li>`);
-    }
-
-    if (lvlData.hasBoosts) {
-      const sel = lvlData.boostInfo?.selectedLabels;
-      rows.push(sel
-        ? `<li><strong>Attribute Boosts:</strong> ${esc(sel)}</li>`
-        : `<li style="color:#fbbf24;"><strong>Attribute Boosts:</strong> None planned yet (${lvlData.boostInfo?.expected} available — you can pick them on the sheet afterward)</li>`
-      );
-    }
-
-    if (lvlData.hasSkillIncrease) {
-      const sk = lvlData.skillIncreaseInfo?.chosenTransition;
-      rows.push(sk
-        ? `<li><strong>Skill Increase:</strong> ${esc(sk)}</li>`
-        : `<li style="color:#fbbf24;"><strong>Skill Increase:</strong> Not selected yet (you can raise a skill on the sheet afterward)</li>`
-      );
-    }
-
-    for (const slot of lvlData.featSlots) {
-      if (slot.filled && slot.feat) {
-        rows.push(`<li><strong>${esc(slot.groupLabel)}:</strong> ${esc(slot.feat.name)}</li>`);
-      } else {
-        rows.push(`<li style="color:#fbbf24;"><strong>${esc(slot.groupLabel)}:</strong> <em>Unplanned (slot will remain open on your sheet)</em></li>`);
-      }
-    }
-
-    if (lvlData.hasSpellMilestones) {
-      const mText = lvlData.spellMilestones.map(m => `${m.title} (${m.deltaText})`).join("; ");
-      rows.push(`<li><strong>Spellcasting Slots Sync:</strong> ${esc(mText)}</li>`);
-    }
-
-    if (lvlData.hasPlannedSpells) {
-      rows.push(`<li><strong>Planned Spells to Add:</strong> ${esc(lvlData.plannedSpells.map(s => s.name).join(", "))}</li>`);
-    }
+    const warnBoxHtml = lvlSummary.unplannedItems.length > 0
+      ? `
+        <div class="pf2e-lp-prompt-warn-box">
+          <strong>Note — Level ${targetLevel} is not fully filled out (${lvlSummary.filledCount}/${lvlSummary.expectedCount}):</strong>
+          <ul>
+            ${lvlSummary.unplannedItems.map(u => `<li>${esc(u)}</li>`).join("")}
+          </ul>
+        </div>
+      `
+      : "";
 
     const content = `
       <div class="pf2e-lp-confirm-body">
         <p>Apply guided level-up for <strong>${esc(actor.name)}</strong> from <strong>Level ${roadmap.currentLevel} → Level ${targetLevel}</strong>?</p>
-        <ul style="margin:6px 0 8px 0;padding-left:18px;line-height:1.45;">
-          ${rows.join("")}
-        </ul>
+        ${plannedRows.length > 0
+          ? `<ul style="margin:6px 0 8px 0;padding-left:18px;line-height:1.45;">${plannedRows.join("")}</ul>`
+          : `<p style="opacity:0.85;margin:6px 0;">No planned items are filled out for Level ${targetLevel} yet — only your character level will increase.</p>`
+        }
+        ${warnBoxHtml}
         <p style="font-size:0.86em;opacity:0.82;margin:0;">PF2e will run any native ChoiceSet dialogs automatically for newly granted class features or feats.</p>
       </div>
     `;
@@ -1323,6 +1605,9 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           : " | Build 100% Complete!";
         const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
         ui.notifications?.info(`${actor.name} reached Level ${res.newLevel}!${summaryStr}${remainingNote}`);
+        if (Array.isArray(res.reminders) && res.reminders.length > 0) {
+          ui.notifications?.warn(`Level ${res.newLevel} Reminders: ${res.reminders.join(" · ")}`);
+        }
         this._selectedLevel = res.newLevel < 20 ? res.newLevel + 1 : 20;
       }
     } finally {
@@ -1339,4 +1624,190 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     super._onClose?.(options);
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* DIRECT CHARACTER SHEET LEVEL-UP AUTO-PROMPT HOOK                          */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Watches for direct level increases made on the Character Sheet (e.g. Lv 3 -> Lv 4)
+ * when `enableLevelPlanner` is ON and prompts ONLY the user who raised the level to
+ * apply any saved Level Planner choices (and alerts them if the level is incomplete).
+ * Zero runtime work when `enableLevelPlanner` is OFF or actor has no saved plan.
+ *
+ * @param {(actor: Actor, focusLevel?: number) => void} onOpenLevelPlannerForActor
+ */
+export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
+  if (registerSheetLevelUpPrompt._registered) return;
+  registerSheetLevelUpPrompt._registered = true;
+
+  const pendingLevelIncreases = new Map(); // actorId -> { prevLevel, nextLevel, ts }
+  const activePromptActorIds = new Set();
+
+  Hooks.on("preUpdateActor", (actor, changed, options) => {
+    if (!isLevelPlannerEnabled()) return;
+    if (!actor || actor.type !== "character") return;
+    if (options?.[MODULE_ID]?.fromLevelPlanner || isPlannerUpdatingActor(actor.id)) return;
+
+    const rawNext = changed?.system?.details?.level?.value;
+    if (rawNext === undefined) return;
+
+    const prevLevel = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+    const nextLevel = Math.min(20, Math.max(1, Number(rawNext)));
+    if (!Number.isFinite(nextLevel) || nextLevel <= prevLevel) return;
+
+    pendingLevelIncreases.set(actor.id, { prevLevel, nextLevel, ts: Date.now() });
+  });
+
+  Hooks.on("updateActor", (actor, changed, options, userId) => {
+    if (!isLevelPlannerEnabled()) return;
+    if (!actor || actor.type !== "character") return;
+    if (userId !== game.user?.id) return;
+
+    const rawNext = changed?.system?.details?.level?.value;
+    if (rawNext === undefined) return;
+
+    const pending = pendingLevelIncreases.get(actor.id);
+    pendingLevelIncreases.delete(actor.id);
+
+    if (options?.[MODULE_ID]?.fromLevelPlanner || isPlannerUpdatingActor(actor.id)) return;
+    if (!pending || (Date.now() - pending.ts) > 15000) return;
+
+    const prevLevel = pending.prevLevel;
+    const newLevel = Math.min(20, Math.max(1, Number(rawNext)));
+    if (newLevel <= prevLevel) return;
+
+    // Only prompt if the user actually has saved build plan entries on this character
+    if (!hasAnySavedLevelPlan(actor)) return;
+    if (activePromptActorIds.has(actor.id)) return;
+    activePromptActorIds.add(actor.id);
+
+    // Wait briefly so PF2e native level-up grants & sheet re-render settle cleanly
+    setTimeout(async () => {
+      try {
+        const targetLevels = [];
+        for (let l = prevLevel + 1; l <= newLevel; l++) targetLevels.push(l);
+
+        const inspection = inspectPlannedLevels(actor, targetLevels, { effectiveCurrentLevel: prevLevel });
+        if (!inspection || inspection.levels.length === 0) return;
+
+        const esc = foundry.utils.escapeHTML;
+        const levelBlocks = inspection.levels.map(ls => {
+          const heading = targetLevels.length > 1
+            ? `<div style="font-weight:700;margin-top:6px;color:#e6c55d;">Level ${ls.level}</div>`
+            : "";
+
+          const plannedList = ls.plannedItems.length > 0
+            ? `<ul style="margin:4px 0 6px 0;padding-left:18px;line-height:1.45;">
+                ${ls.plannedItems.map(item => `<li><strong>${esc(item.label)}:</strong> ${esc(item.text)}</li>`).join("")}
+              </ul>`
+            : "";
+
+          let warnHtml = "";
+          if (ls.unplannedItems.length > 0) {
+            const warnHeading = ls.hasPlanned
+              ? `Level ${ls.level} is only partially planned (${ls.filledCount}/${ls.expectedCount}). Still unplanned:`
+              : `Level ${ls.level} has no planned choices filled out yet in your Level Planner:`;
+            warnHtml = `
+              <div class="pf2e-lp-prompt-warn-box">
+                <strong>${esc(warnHeading)}</strong>
+                <ul>
+                  ${ls.unplannedItems.map(u => `<li>${esc(u)}</li>`).join("")}
+                </ul>
+              </div>
+            `;
+          }
+
+          return `${heading}${plannedList}${warnHtml}`;
+        });
+
+        const rangeLabel = targetLevels.length === 1
+          ? `Level ${newLevel}`
+          : `Levels ${prevLevel + 1}–${newLevel}`;
+        const hasAnythingToApply = inspection.hasPlannedChoicesInRange
+          || inspection.levels.some(ls => ls.lvlData?.hasSpellMilestones);
+
+        const content = `
+          <div class="pf2e-lp-confirm-body">
+            <p><strong>${esc(actor.name)}</strong> leveled up directly on the sheet (<strong>Lv ${prevLevel} → Lv ${newLevel}</strong>).${
+              hasAnythingToApply
+                ? ` Would you like to apply your saved Level Planner choices for <strong>${esc(rangeLabel)}</strong>?`
+                : ` Your Level Planner has saved levels for this character, but <strong>${esc(rangeLabel)}</strong> isn't filled out yet.`
+            }</p>
+            ${levelBlocks.join("")}
+            ${hasAnythingToApply ? `<p style="font-size:0.85em;opacity:0.82;margin:6px 0 0 0;">Already-filled slots or boosts on your live sheet will not be overwritten.</p>` : ""}
+          </div>
+        `;
+
+        const DialogV2 = foundry?.applications?.api?.DialogV2;
+        let choice = "skip";
+
+        if (DialogV2?.wait) {
+          const buttons = [];
+          if (hasAnythingToApply) {
+            buttons.push({
+              action: "apply",
+              label: `Apply ${rangeLabel} Plan`,
+              icon: "fa-solid fa-angles-up",
+              default: true
+            });
+          }
+          buttons.push({
+            action: "open",
+            label: "Open Level Planner",
+            icon: "fa-solid fa-stairs",
+            default: !hasAnythingToApply
+          });
+          buttons.push({
+            action: "skip",
+            label: "Skip",
+            icon: "fa-solid fa-xmark"
+          });
+
+          choice = await DialogV2.wait({
+            window: {
+              title: `Level Planner — ${actor.name} (${rangeLabel})`,
+              icon: "fa-solid fa-stairs"
+            },
+            classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
+            position: { width: 520 },
+            content,
+            buttons,
+            rejectClose: false
+          });
+        } else if (hasAnythingToApply) {
+          const ok = await Dialog.confirm({
+            title: `Level Planner — ${actor.name} (${rangeLabel})`,
+            content
+          });
+          choice = ok ? "apply" : "skip";
+        }
+
+        if (choice === "apply") {
+          const res = await applyPlannedLevelChoices(actor, targetLevels, {
+            updateActorLevel: false,
+            effectiveCurrentLevel: prevLevel
+          });
+          if (res.ok) {
+            const postReport = analyzeCharacter(actor);
+            const remainingNote = postReport?.actionableMissingCount > 0
+              ? ` | ${postReport.actionableMissingCount} checklist item(s) remaining`
+              : " | Build 100% Complete!";
+            const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
+            ui.notifications?.info(`Applied Level Planner choices for ${actor.name} (${rangeLabel})!${summaryStr}${remainingNote}`);
+            if (Array.isArray(res.reminders) && res.reminders.length > 0) {
+              ui.notifications?.warn(`${rangeLabel} Reminders: ${res.reminders.join(" · ")}`);
+            }
+          }
+        } else if (choice === "open") {
+          onOpenLevelPlannerForActor?.(actor, newLevel);
+        }
+      } catch (err) {
+        console.warn("PF2e Awesome GM Utilities | Sheet level-up auto-prompt failed:", err);
+      } finally {
+        activePromptActorIds.delete(actor.id);
+      }
+    }, 300);
+  });
 }

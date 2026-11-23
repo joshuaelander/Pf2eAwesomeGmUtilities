@@ -218,6 +218,9 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
       selectedReport.skills.isTrainedComplete = selectedReport.skills.trainedStatus === "complete";
       selectedReport.skills.isIncreasesMissing = selectedReport.skills.increasesStatus === "missing";
       selectedReport.skills.isIncreasesComplete = selectedReport.skills.increasesStatus === "complete";
+      selectedReport.skills.isLoreMissing = selectedReport.skills.missingLoreCount > 0;
+      selectedReport.skills.knownLoresText = selectedReport.skills.knownLoreNames.join(", ");
+      selectedReport.skills.missingBgLoresText = selectedReport.skills.missingBgLores.join(", ");
       selectedReport.skills.intModSigned = selectedReport.skills.intMod >= 0
         ? `+${selectedReport.skills.intMod}`
         : String(selectedReport.skills.intMod);
@@ -552,26 +555,37 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     }
 
     // ---------------------------------------------------------------------
-    // B. Skills / Proficiencies Tab: Trained Skills & Skill Increases Guide
+    // B. Skills / Proficiencies Tab: Trained Skills, Lore & Skill Increases
     // ---------------------------------------------------------------------
     const skillsTab = root.querySelector('.tab[data-tab="proficiencies"], .tab[data-tab="skills"]');
     if (skillsTab && !skillsTab.querySelector(".pf2e-cc-sheet-skills-bar")) {
       const sk = report.skills;
       const lang = report.languages;
       const bar = document.createElement("div");
-      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-skills-bar status-${(sk.missingTrained > 0 || sk.missingIncreases > 0 || sk.overCapSkills.length > 0) ? "warning" : "complete"}`;
+      const hasSkillsWarning = sk.missingTrained > 0 || sk.missingIncreases > 0 || sk.missingLoreCount > 0 || sk.overCapSkills.length > 0;
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-skills-bar status-${hasSkillsWarning ? "warning" : "complete"}`;
 
       const trainedClass = sk.missingTrained > 0 ? "is-missing" : "is-ok";
       const incClass = sk.missingIncreases > 0 ? "is-missing" : (sk.excessIncreases > 0 ? "is-warn" : "is-ok");
+      const loreClass = sk.missingLoreCount > 0 ? "is-missing" : "is-ok";
       const langClass = lang.missing > 0 ? "is-warn" : "is-ok";
 
       const overCapHtml = sk.overCapSkills.length > 0
         ? `<div class="pf2e-cc-sheet-subline is-missing">Above level cap: ${esc(sk.overCapSkills.map(s => `${s.label} (${s.rankLabel} requires Lv ${s.requiredLevel}+)`).join(", "))}</div>`
         : "";
 
-      const loreNote = sk.bgLoreCount > 0
-        ? ` · +${sk.bgLoreCount} BG Lore (${sk.loreCount} Lore total)`
-        : (sk.loreCount > 0 ? ` · ${sk.loreCount} Lore` : "");
+      const missingLoreHtml = sk.missingBgLores.length > 0
+        ? `<div class="pf2e-cc-sheet-subline is-missing">Missing Background Lore: ${esc(sk.missingBgLores.join(", "))}</div>`
+        : (sk.hasMissingBgLore
+          ? `<div class="pf2e-cc-sheet-subline is-missing">Missing Background Lore (${sk.loreCount}/${sk.bgLoreCount}) — add your Background's Lore skill below.</div>`
+          : "");
+
+      const loreChipHtml = (sk.expectedMinLores > 0 || sk.loreCount > 0) ? `
+        <span class="pf2e-cc-sheet-chip ${loreClass}" title="Lore Skills on sheet${sk.bgLoreCount > 0 ? ` (Background grants ${sk.bgLoreCount} Lore)` : ""}">
+          Lore: <strong>${sk.loreCount}${sk.expectedMinLores > 0 ? ` / ${sk.expectedMinLores}` : ""}</strong>
+          ${sk.missingLoreCount > 0 ? `<em>(${sk.missingLoreCount} left)</em>` : ""}
+        </span>
+      ` : "";
 
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-banner-col">
@@ -584,6 +598,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
               Skill Increases: <strong>${sk.spentIncreases} / ${sk.expectedIncreases}</strong>
               ${sk.missingIncreases > 0 ? `<em>(${sk.missingIncreases} left)</em>` : ""}
             </span>
+            ${loreChipHtml}
             ${lang.expected > 0 ? `
               <span class="pf2e-cc-sheet-chip ${langClass}" title="Expected Languages from Ancestry + INT">
                 Languages: <strong>${lang.current} / ${lang.expected}</strong>
@@ -591,8 +606,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
             ` : ""}
           </div>
           <div class="pf2e-cc-sheet-subline">
-            ${esc(sk.formulaText)}${esc(loreNote)} · Increases at Lv: <strong>${esc(sk.increaseLevelsText)}</strong>${sk.isFastProgression ? " (Fast Progression)" : ""}
+            ${esc(sk.formulaText)} · Increases at Lv: <strong>${esc(sk.increaseLevelsText)}</strong>${sk.isFastProgression ? " (Fast Progression)" : ""}
           </div>
+          ${missingLoreHtml}
           ${overCapHtml}
         </div>
         <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
@@ -854,6 +870,41 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       });
 
       featsTab.prepend(bar);
+    }
+
+    // ---------------------------------------------------------------------
+    // E. Crafting Tab: Alchemist / Crafting Free Formulas Guide (Plain Text)
+    // ---------------------------------------------------------------------
+    const craftingTab = root.querySelector('.tab[data-tab="crafting"]');
+    if (craftingTab && report.formulas?.expected > 0 && !craftingTab.querySelector(".pf2e-cc-sheet-crafting-bar")) {
+      const fm = report.formulas;
+      const bar = document.createElement("div");
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-crafting-bar status-${fm.missing > 0 ? "warning" : "complete"}`;
+
+      const chipCls = fm.missing > 0 ? "is-missing" : "is-ok";
+      bar.innerHTML = `
+        <div class="pf2e-cc-sheet-banner-col">
+          <div class="pf2e-cc-sheet-chips-row">
+            <span class="pf2e-cc-sheet-chip ${chipCls}">
+              ${fm.isAlchemist ? "Alchemist Formulas" : "Free Formulas"} (Lv ${report.level}):
+              <strong>${fm.current} / ${fm.expected}</strong>
+              ${fm.missing > 0 ? `<em>(${fm.missing} left)</em>` : ""}
+            </span>
+          </div>
+          <div class="pf2e-cc-sheet-subline">${esc(fm.formulaText)}</div>
+        </div>
+        <button type="button" class="pf2e-cc-sheet-btn" data-cc-open="1" title="Open Full Character Completeness Checker">
+          Check
+        </button>
+      `;
+
+      bar.querySelector('[data-cc-open="1"]')?.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        onOpenCheckerForActor?.(actor);
+      });
+
+      craftingTab.prepend(bar);
     }
   });
 }

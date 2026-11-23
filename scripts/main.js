@@ -39,7 +39,7 @@ import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
 import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./performance-monitor.js";
 import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character-checker-app.js";
 import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character-checker-engine.js";
-import { LevelPlannerApp } from "./level-planner-app.js";
+import { LevelPlannerApp, registerSheetLevelUpPrompt } from "./level-planner-app.js";
 import { applyPlannedLevelUp, buildLevelRoadmap, isLevelPlannerEnabled } from "./level-planner-engine.js";
 
 let soundPadInstance = null;
@@ -1226,6 +1226,7 @@ Hooks.once("ready", async () => {
     (actor) => getCharacterChecker().openForActor(actor),
     (actor) => getLevelPlanner().openForActor(actor)
   );
+  registerSheetLevelUpPrompt((actor, focusLevel) => getLevelPlanner().openForActor(actor, focusLevel));
   game.pf2eAwesomeGmUtilities.characterChecker = {
     get app() { return getCharacterChecker(); },
     toggle: () => getCharacterChecker().toggle(),

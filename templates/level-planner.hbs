@@ -41,8 +41,10 @@
             <span class="pf2e-lp-lvl-num">Lv {{this.level}}</span>
             <span class="pf2e-lp-lvl-icons">
               {{#if this.hasBoosts}}<span class="pf2e-lp-dot is-boost" title="Attribute Boost">B</span>{{/if}}
+              {{#if this.hasIntBonus}}<span class="pf2e-lp-dot is-int" title="INT Increase: +1 Trained Skill &amp; +1 Language">I</span>{{/if}}
               {{#if this.hasSkillIncrease}}<span class="pf2e-lp-dot is-skill" title="Skill Increase">S</span>{{/if}}
               {{#if this.hasSpellMilestones}}<span class="pf2e-lp-dot is-spell" title="New Spell Rank / Slots">M</span>{{/if}}
+              {{#if this.isAlchemistFutureGain}}<span class="pf2e-lp-dot is-formula" title="Alchemist: +2 Free Alchemical Formulas">F</span>{{/if}}
             </span>
             <span class="pf2e-lp-lvl-pill {{this.pillClass}}">{{this.pillText}}</span>
           </button>
@@ -175,7 +177,7 @@
               </div>
               <div class="pf2e-lp-level-banner-right">
                 {{#if focusedLevel.isFuture}}
-                  <span class="pf2e-lp-banner-hint">Drag &amp; drop feats or spells from PF2e Compendium Browser directly onto any slot below.</span>
+                  <span class="pf2e-lp-banner-hint">Drag &amp; drop feats, spells, or formulas from PF2e Compendium Browser directly onto any slot below.</span>
                 {{else}}
                   <span class="pf2e-lp-banner-hint">Showing active choices currently on the character sheet.</span>
                 {{/if}}
@@ -233,6 +235,50 @@
                     </button>
                   {{/each}}
                 </div>
+              </section>
+            {{/if}}
+
+            {{#if focusedLevel.hasIntBonus}}
+              <section class="pf2e-lp-panel pf2e-lp-int-panel">
+                <div class="pf2e-lp-panel-head">
+                  <h4><i class="fa-solid fa-brain"></i> INT Increase Bonus ({{focusedLevel.intBonusInfo.fromModStr}} &rarr; {{focusedLevel.intBonusInfo.toModStr}})</h4>
+                  <span class="pf2e-lp-hint">Grants <strong>+1 Trained Skill</strong> and <strong>+1 Language</strong></span>
+                </div>
+                {{#if focusedLevel.canEditThisLevel}}
+                  <div class="pf2e-lp-int-grid">
+                    <div class="pf2e-lp-int-field">
+                      <label for="pf2e-lp-int-skill-select">Bonus Trained Skill</label>
+                      <select id="pf2e-lp-int-skill-select" class="pf2e-lp-select" data-level="{{focusedLevel.level}}">
+                        <option value="">-- Choose Untrained Skill or New Lore --</option>
+                        {{#each focusedLevel.intBonusInfo.skillOptions}}
+                          <option value="{{this.slug}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                        {{/each}}
+                      </select>
+                      {{#unless focusedLevel.intBonusInfo.chosenValid}}
+                        <span class="pf2e-lp-warn-inline">
+                          <i class="fa-solid fa-triangle-exclamation"></i> Selected skill is already trained at an earlier level.
+                        </span>
+                      {{/unless}}
+                    </div>
+                    <div class="pf2e-lp-int-field">
+                      <label for="pf2e-lp-int-lang-input">Bonus Language (Optional)</label>
+                      <input
+                        type="text"
+                        id="pf2e-lp-int-lang-input"
+                        class="pf2e-lp-input"
+                        list="pf2e-lp-lang-datalist-{{focusedLevel.level}}"
+                        data-level="{{focusedLevel.level}}"
+                        value="{{focusedLevel.intBonusInfo.chosenLanguage}}"
+                        placeholder="Choose or type a language (e.g. Draconic)..."
+                      />
+                      <datalist id="pf2e-lp-lang-datalist-{{focusedLevel.level}}">
+                        {{#each focusedLevel.intBonusInfo.languageOptions}}
+                          <option value="{{this.label}}"></option>
+                        {{/each}}
+                      </datalist>
+                    </div>
+                  </div>
+                {{/if}}
               </section>
             {{/if}}
 
@@ -442,6 +488,92 @@
               </section>
             {{/if}}
 
+            <!-- E. Alchemist Free Formulas -->
+            {{#if focusedLevel.showFormulasPanel}}
+              <section
+                class="pf2e-lp-panel pf2e-lp-formulas-panel"
+                {{#if focusedLevel.canEditThisLevel}}
+                  data-lp-drop-formula="1"
+                  data-level="{{focusedLevel.level}}"
+                  data-max-level="{{focusedLevel.level}}"
+                {{/if}}
+              >
+                <div class="pf2e-lp-panel-head">
+                  <h4>
+                    <i class="fa-solid fa-flask"></i> Alchemist Free Formulas
+                    {{#if focusedLevel.isAlchemistFutureGain}}
+                      <span class="pf2e-lp-formula-counter {{#if focusedLevel.formulasComplete}}is-complete{{else}}is-incomplete{{/if}}">
+                        {{focusedLevel.plannedFormulasCount}} / {{focusedLevel.formulaMilestone.gain}} planned
+                      </span>
+                    {{/if}}
+                  </h4>
+                  {{#if focusedLevel.canEditThisLevel}}
+                    <div class="pf2e-lp-panel-actions">
+                      <button
+                        type="button"
+                        class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-btn-gold"
+                        data-lp-action="pick-formula"
+                        data-level="{{focusedLevel.level}}"
+                      >
+                        <i class="fa-solid fa-plus"></i> Pick Formulas
+                      </button>
+                      <button
+                        type="button"
+                        class="pf2e-lp-btn pf2e-lp-btn-sm"
+                        data-lp-action="browse-formulas"
+                        data-max-level="{{focusedLevel.level}}"
+                        title="Open PF2e Compendium Browser filtered to Alchemical items up to Level {{focusedLevel.level}}"
+                      >
+                        <i class="fa-solid fa-compass"></i> Browse Formulas
+                      </button>
+                    </div>
+                  {{/if}}
+                </div>
+
+                {{#if focusedLevel.hasFormulaMilestone}}
+                  <div class="pf2e-lp-formula-banner">
+                    <span class="pf2e-lp-milestone-delta">
+                      {{#if focusedLevel.formulaMilestone.isStarting}}Lv 1 Base{{else}}+{{focusedLevel.formulaMilestone.gain}} Free{{/if}}
+                    </span>
+                    <span>{{focusedLevel.formulaMilestone.text}}</span>
+                  </div>
+                {{/if}}
+
+                {{#if focusedLevel.hasPlannedFormulas}}
+                  <div class="pf2e-lp-planned-spells">
+                    {{#each focusedLevel.plannedFormulas}}
+                      <div class="pf2e-lp-spell-chip is-formula-chip">
+                        <img src="{{this.img}}" alt="" />
+                        <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}" title="Open item sheet">{{this.name}}</a>
+                        <span class="pf2e-lp-formula-lvl">Lv {{this.level}}</span>
+                        {{#if ../focusedLevel.canEditThisLevel}}
+                          <button
+                            type="button"
+                            class="pf2e-lp-chip-del"
+                            data-lp-action="remove-formula"
+                            data-level="{{../focusedLevel.level}}"
+                            data-formula-id="{{this.id}}"
+                            data-uuid="{{this.uuid}}"
+                            title="Remove planned formula"
+                          >
+                            <i class="fa-solid fa-xmark"></i>
+                          </button>
+                        {{/if}}
+                      </div>
+                    {{/each}}
+                  </div>
+                {{else}}
+                  {{#if focusedLevel.canEditThisLevel}}
+                    <div class="pf2e-lp-drop-hint is-formula-drop">
+                      Click <strong>Pick Formulas</strong>, open <strong>Browse Formulas</strong>, or drag &amp; drop alchemical items from PF2e Compendium Browser here to plan your free Level {{focusedLevel.level}} formulas.
+                    </div>
+                  {{else}}
+                    <div class="pf2e-lp-muted">Active formulas for Levels 1&ndash;{{roadmap.currentLevel}} are tracked on the character sheet Crafting tab ({{roadmap.checkerReport.formulas.current}} / {{roadmap.checkerReport.formulas.expected}} recorded).</div>
+                  {{/if}}
+                {{/if}}
+              </section>
+            {{/if}}
+
           {{/if}}
         {{/if}}
 
@@ -487,6 +619,9 @@
 
                   <div class="pf2e-lp-ov-bs">
                     <div><strong>Boosts:</strong> {{this.boostsText}}</div>
+                    {{#if this.intBonusText}}
+                      <div class="pf2e-lp-ov-int"><strong>INT Bonus:</strong> {{this.intBonusText}}</div>
+                    {{/if}}
                     <div><strong>Skill:</strong> {{this.skillText}}</div>
                   </div>
 
@@ -494,6 +629,9 @@
                     <div class="pf2e-lp-ov-cf">{{this.classFeaturesText}}</div>
                     {{#if this.plannedSpellsCount}}
                       <div class="pf2e-lp-ov-sp">{{this.plannedSpellsCount}} planned spell(s)</div>
+                    {{/if}}
+                    {{#if this.formulasText}}
+                      <div class="pf2e-lp-ov-fm">{{this.formulasText}}</div>
                     {{/if}}
                   </div>
                 </div>
