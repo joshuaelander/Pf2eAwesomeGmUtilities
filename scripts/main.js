@@ -40,7 +40,13 @@ import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./
 import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character-checker-app.js";
 import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character-checker-engine.js";
 import { LevelPlannerApp, registerSheetLevelUpPrompt } from "./level-planner-app.js";
-import { applyPlannedLevelUp, buildLevelRoadmap, isLevelPlannerEnabled } from "./level-planner-engine.js";
+import {
+  applyPlannedLevelUp,
+  buildLevelRoadmap,
+  inspectLevelRevert,
+  isLevelPlannerEnabled,
+  revertActorToLevel
+} from "./level-planner-engine.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -1241,7 +1247,9 @@ Hooks.once("ready", async () => {
     toggle: () => getLevelPlanner().toggle(),
     open: (actorOrId, focusLevel) => getLevelPlanner().openForActor(actorOrId, focusLevel),
     buildRoadmap: (actor) => buildLevelRoadmap(actor),
-    applyLevelUp: (actor) => applyPlannedLevelUp(actor)
+    applyLevelUp: (actor) => applyPlannedLevelUp(actor),
+    inspectRevert: (actor, targetLevel) => inspectLevelRevert(actor, targetLevel),
+    revertToLevel: (actor, targetLevel, options) => revertActorToLevel(actor, targetLevel, options)
   };
 
   // Performance Checker & Module Profiler API (Strictly GM-Only; zero execution for players)

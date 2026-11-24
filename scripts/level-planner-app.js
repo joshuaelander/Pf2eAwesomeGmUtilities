@@ -28,12 +28,14 @@ import {
   getLightweightFormulaIndex,
   getLightweightSpellIndex,
   hasAnySavedLevelPlan,
+  inspectLevelRevert,
   inspectPlannedLevels,
   isLevelPlannerEnabled,
   isPlannerUpdatingActor,
   openNativeBrowserForFeatSlot,
   openNativeBrowserForFormulas,
   openNativeBrowserForSpells,
+  revertActorToLevel,
   updatePlannedLevelData
 } from "./level-planner-engine.js";
 
@@ -103,7 +105,10 @@ async function resolveDroppedItem(dropData) {
 }
 
 async function inspectDocumentByUuid(uuid) {
-  if (!uuid) return;
+  if (!uuid) {
+    ui.notifications?.info("This entry is a saved custom item snapshot and will be restored when you apply this level.");
+    return;
+  }
   try {
     const doc = await fromUuid(uuid);
     if (doc?.sheet) {
@@ -307,6 +312,10 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         focusedLevel = {
           ...rawFocused,
           canEditThisLevel: Boolean(canEdit && rawFocused.isFuture),
+          canRevertToThisLevel: Boolean(canEdit && rawFocused.isPast && !this._isApplyingLevelUp),
+          revertRangeLabel: rawFocused.level + 1 === roadmap.currentLevel
+            ? `${roadmap.currentLevel}`
+            : `${rawFocused.level + 1}–${roadmap.currentLevel}`,
           canStepPrev: rawFocused.level > 1,
           canStepNext: rawFocused.level < 20,
           prevLevel: Math.max(1, rawFocused.level - 1),
@@ -404,6 +413,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       isViewOverview: this._viewMode === "overview",
       isViewSummary: this._viewMode === "summary",
       canApplyLevelUp: Boolean(roadmap?.canLevelUp && canEdit && !this._isApplyingLevelUp),
+      canDeLevel: Boolean(roadmap?.canDeLevel && canEdit && !this._isApplyingLevelUp),
       nextLevelReadyCount,
       nextLevelTotalCount,
       hasCheckerCallback: Boolean(this._onOpenChecker)
@@ -766,6 +776,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "apply-level-up": {
         if (!actor || this._isApplyingLevelUp) return;
         await this._confirmAndApplyLevelUp(actor);
+        break;
+      }
+
+      case "revert-to-level": {
+        if (!actor || this._isApplyingLevelUp) return;
+        const curLvl = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+        const requestedTarget = Number(el.dataset.level || Math.max(1, curLvl - 1));
+        await this._openRevertLevelDialog(actor, requestedTarget);
         break;
       }
     }
@@ -1612,6 +1630,400 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         this._selectedLevel = res.newLevel < 20 ? res.newLevel + 1 : 20;
       }
+    } finally {
+      this._isApplyingLevelUp = false;
+      if (this.rendered) this.render({ force: false });
+    }
+  }
+
+  /* ----------------------------------------------------------------------- */
+  /* DE-LEVEL / REVERT TO EARLIER LEVEL DIALOG & EXECUTION                   */
+  /* ----------------------------------------------------------------------- */
+
+  async _openRevertLevelDialog(actor, initialTargetLevel = null) {
+    const currentLevel = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+    if (currentLevel <= 1) {
+      ui.notifications?.info(`${actor.name} is already Level 1 and cannot be de-leveled further.`);
+      return;
+    }
+
+    const cleanInitial = Math.max(1, Math.min(currentLevel - 1, Math.floor(Number(initialTargetLevel) || (currentLevel - 1))));
+    const esc = foundry.utils.escapeHTML;
+    const DialogV2 = foundry?.applications?.api?.DialogV2;
+
+    if (!DialogV2) {
+      const ok = await this._confirmDialog({
+        title: `De-Level ${actor.name} (Lv ${currentLevel} → Lv ${cleanInitial})`,
+        content: `<p>Save Level ${cleanInitial + 1 === currentLevel ? currentLevel : `${cleanInitial + 1}–${currentLevel}`} choices into the Build Plan and revert <strong>${esc(actor.name)}</strong> back to <strong>Level ${cleanInitial}</strong>?</p>`,
+        yesLabel: `Revert to Lv ${cleanInitial}`
+      });
+      if (ok) {
+        await this._executeRevertLevel(actor, {
+          targetLevel: cleanInitial,
+          saveToPlan: true,
+          revertBoosts: true,
+          revertFeats: true,
+          revertSkills: true,
+          revertSpells: true,
+          revertFormulas: true,
+          manualSkillPicks: {}
+        });
+      }
+      return;
+    }
+
+    const state = {
+      targetLevel: cleanInitial,
+      saveToPlan: true,
+      revertBoosts: true,
+      revertFeats: true,
+      revertSkills: true,
+      revertSpells: true,
+      revertFormulas: true,
+      manualSkillPicks: {}
+    };
+
+    const targetOpts = [];
+    for (let t = currentLevel - 1; t >= 1; t--) {
+      const rangeStr = (t + 1 === currentLevel) ? `Lv ${currentLevel}` : `Lv ${t + 1}–${currentLevel}`;
+      targetOpts.push(
+        `<option value="${t}" ${t === cleanInitial ? "selected" : ""}>Level ${t} (saves &amp; reverts ${rangeStr})</option>`
+      );
+    }
+
+    const content = `
+      <div class="pf2e-lp-revert-body">
+        <p class="pf2e-lp-revert-intro">
+          Revert <strong>${esc(actor.name)}</strong> from <strong>Level ${currentLevel}</strong> back to an earlier level.
+          Applied build choices from reverted levels can be saved directly into your <strong>Build Plan</strong> so you can tweak them and re-apply with 1 click later.
+        </p>
+
+        <div class="pf2e-lp-revert-target-row">
+          <label for="pf2e-lp-revert-target-select">Revert Character Back To:</label>
+          <select id="pf2e-lp-revert-target-select" class="pf2e-lp-revert-target">
+            ${targetOpts.join("")}
+          </select>
+        </div>
+
+        <div class="pf2e-lp-revert-preview">
+          <div class="pf2e-lp-picker-empty">Inspecting live build choices...</div>
+        </div>
+      </div>
+    `;
+
+    let confirmedPayload = null;
+
+    const dialog = new DialogV2({
+      window: {
+        title: `De-Level / Revert — ${actor.name}`,
+        icon: "fa-solid fa-rotate-left",
+        resizable: true
+      },
+      position: { width: 620 },
+      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog", "pf2e-lp-revert-dialog"],
+      content,
+      buttons: [
+        {
+          action: "confirm",
+          label: `Revert to Lv ${cleanInitial}`,
+          icon: "fa-solid fa-rotate-left",
+          default: true,
+          callback: () => {
+            confirmedPayload = {
+              ...state,
+              manualSkillPicks: { ...state.manualSkillPicks }
+            };
+          }
+        },
+        {
+          action: "cancel",
+          label: "Cancel",
+          icon: "fa-solid fa-xmark"
+        }
+      ]
+    });
+
+    dialog.addEventListener("close", async () => {
+      if (confirmedPayload) {
+        const payload = confirmedPayload;
+        confirmedPayload = null;
+        await this._executeRevertLevel(actor, payload);
+      }
+    }, { once: true });
+
+    dialog.addEventListener("render", async () => {
+      const root = dialog.element?.querySelector?.(".pf2e-lp-revert-body");
+      if (!root) return;
+
+      const targetSelect = root.querySelector(".pf2e-lp-revert-target");
+      const previewEl = root.querySelector(".pf2e-lp-revert-preview");
+      const confirmBtn = dialog.element?.querySelector?.('button[data-action="confirm"]');
+
+      let renderToken = 0;
+
+      const updateConfirmLabel = () => {
+        if (!confirmBtn) return;
+        const iconEl = confirmBtn.querySelector("i");
+        const iconHtml = iconEl ? iconEl.outerHTML : '<i class="fa-solid fa-rotate-left"></i>';
+        confirmBtn.innerHTML = `${iconHtml} <span>Revert to Lv ${state.targetLevel}</span>`;
+      };
+
+      const refreshPreview = async () => {
+        const myToken = ++renderToken;
+        previewEl.innerHTML = `<div class="pf2e-lp-picker-empty">Inspecting Levels ${state.targetLevel + 1}–${currentLevel}...</div>`;
+        updateConfirmLabel();
+
+        const preview = await inspectLevelRevert(actor, state.targetLevel);
+        if (myToken !== renderToken) return;
+
+        if (!preview?.ok) {
+          previewEl.innerHTML = `<div class="pf2e-lp-picker-empty">Unable to inspect revert range.</div>`;
+          return;
+        }
+
+        const t = preview.totals;
+        const rangeLabel = (state.targetLevel + 1 === currentLevel)
+          ? `Lv ${currentLevel}`
+          : `Lv ${state.targetLevel + 1}–${currentLevel}`;
+
+        const optionRows = [];
+        optionRows.push(`
+          <label class="pf2e-lp-revert-opt is-highlight">
+            <input type="checkbox" data-revert-opt="saveToPlan" ${state.saveToPlan ? "checked" : ""} />
+            <span><strong>Save reverted choices into Build Plan (${esc(rangeLabel)})</strong> — keeps your build ready to edit or re-apply later</span>
+          </label>
+        `);
+
+        if (!preview.manualAttributes && t.boostLevelsCount > 0) {
+          optionRows.push(`
+            <label class="pf2e-lp-revert-opt">
+              <input type="checkbox" data-revert-opt="revertBoosts" ${state.revertBoosts ? "checked" : ""} />
+              <span>Clear reverted Attribute Boosts (${t.boostPicksCount} boost${t.boostPicksCount === 1 ? "" : "s"} across ${t.boostLevelsCount} tier${t.boostLevelsCount === 1 ? "" : "s"})</span>
+            </label>
+          `);
+        }
+
+        if (t.featsCount > 0) {
+          optionRows.push(`
+            <label class="pf2e-lp-revert-opt">
+              <input type="checkbox" data-revert-opt="revertFeats" ${state.revertFeats ? "checked" : ""} />
+              <span>Remove reverted Slotted Feats (${t.featsCount})${t.customFeatsCount > 0 ? ` · includes ${t.customFeatsCount} custom snapshot` : ""}</span>
+            </label>
+          `);
+        }
+
+        if (t.trackedSkillsCount > 0 || t.overCapSkillsCount > 0 || t.untrackedSkillSlotsCount > 0 || t.intDropsCount > 0) {
+          const skillNoteParts = [];
+          if (t.trackedSkillsCount > 0) skillNoteParts.push(`${t.trackedSkillsCount} tracked/over-cap increase${t.trackedSkillsCount === 1 ? "" : "s"}`);
+          if (t.untrackedSkillSlotsCount > 0) skillNoteParts.push(`${t.untrackedSkillSlotsCount} optional manual pick${t.untrackedSkillSlotsCount === 1 ? "" : "s"} below`);
+          if (t.intDropsCount > 0) skillNoteParts.push(`${t.intDropsCount} INT drop`);
+          optionRows.push(`
+            <label class="pf2e-lp-revert-opt">
+              <input type="checkbox" data-revert-opt="revertSkills" ${state.revertSkills ? "checked" : ""} />
+              <span>Revert Skill Increases &amp; INT Bonus Skills/Languages${skillNoteParts.length > 0 ? ` (${skillNoteParts.join(" · ")})` : ""}</span>
+            </label>
+          `);
+        }
+
+        if (t.spellsCount > 0 || t.spellEntriesToSync.length > 0) {
+          optionRows.push(`
+            <label class="pf2e-lp-revert-opt">
+              <input type="checkbox" data-revert-opt="revertSpells" ${state.revertSpells ? "checked" : ""} />
+              <span>Sync Spell Slots to Lv ${state.targetLevel}${t.spellsCount > 0 ? ` &amp; remove ${t.spellsCount} over-rank/tracked spell${t.spellsCount === 1 ? "" : "s"}` : ""}</span>
+            </label>
+          `);
+        }
+
+        if (t.formulasCount > 0) {
+          optionRows.push(`
+            <label class="pf2e-lp-revert-opt">
+              <input type="checkbox" data-revert-opt="revertFormulas" ${state.revertFormulas ? "checked" : ""} />
+              <span>Remove ${t.formulasCount} tracked / Lv ${esc(rangeLabel)} Formula${t.formulasCount === 1 ? "" : "s"}</span>
+            </label>
+          `);
+        }
+
+        const levelCardsHtml = preview.levels.map(info => {
+          const rows = [];
+
+          if (info.boosts.length > 0) {
+            const intBadge = info.intModDrop
+              ? ` <span class="pf2e-lp-revert-tag is-warn">INT ${esc(info.intModDrop.fromModStr)} &rarr; ${esc(info.intModDrop.toModStr)}</span>`
+              : "";
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Boosts:</strong> ${esc(info.boostLabels)}${intBadge}</div>`);
+          }
+
+          if (info.trackedIntBonusSkillRevert || info.trackedIntBonusLanguageWillRemove) {
+            const intParts = [];
+            if (info.trackedIntBonusSkillRevert) intParts.push(`Skill: ${info.trackedIntBonusSkillRevert.transition}`);
+            if (info.trackedIntBonusLanguageWillRemove) intParts.push(`Language: ${info.trackedIntBonusLanguage}`);
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>INT Bonus:</strong> ${esc(intParts.join(" · "))}</div>`);
+          }
+
+          if (info.trackedSkillIncrease) {
+            const badge = info.trackedSkillIncrease.source === "over-cap"
+              ? `<span class="pf2e-lp-revert-tag is-warn">Over Lv ${state.targetLevel} Cap</span>`
+              : `<span class="pf2e-lp-revert-tag is-info">Tracked</span>`;
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Skill Increase:</strong> ${esc(info.trackedSkillIncrease.transition)} ${badge}</div>`);
+          } else if (info.untrackedSkillIncrease && preview.untrackedSkillCandidates.length > 0) {
+            const chosenManual = state.manualSkillPicks[info.level] || "";
+            const candOpts = preview.untrackedSkillCandidates.map(c =>
+              `<option value="${esc(c.slug)}" ${chosenManual === c.slug ? "selected" : ""}>${esc(c.optionLabel)}</option>`
+            ).join("");
+            rows.push(`
+              <div class="pf2e-lp-revert-row pf2e-lp-revert-skill-row">
+                <strong>Skill Increase (untracked):</strong>
+                <select class="pf2e-lp-revert-skill-pick" data-level="${info.level}" title="Optionally pick which skill you raised at Level ${info.level} to revert & save">
+                  <option value="">-- Leave skills untouched on sheet --</option>
+                  ${candOpts}
+                </select>
+              </div>
+            `);
+          }
+
+          if (info.overCapExtraAdjustments?.length > 0) {
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Over-Cap Skill Clamp:</strong> ${esc(info.overCapExtraAdjustments.map(x => x.transition).join(", "))}</div>`);
+          }
+
+          if (info.feats.length > 0) {
+            const featList = info.feats.map(f =>
+              `<span class="pf2e-lp-revert-chip"><em>${esc(f.groupLabel)}:</em> ${esc(f.name)}${f.isCustomSnapshot ? ' <span class="pf2e-lp-revert-tag is-warn">Custom</span>' : ""}</span>`
+            ).join("");
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Feats:</strong> <div class="pf2e-lp-revert-chips">${featList}</div></div>`);
+          }
+
+          if (info.spells.length > 0) {
+            const spList = info.spells.map(sp =>
+              `<span class="pf2e-lp-revert-chip is-spell">${esc(sp.name)} <em>(${esc(sp.rankLabel)})</em></span>`
+            ).join("");
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Spells:</strong> <div class="pf2e-lp-revert-chips">${spList}</div></div>`);
+          }
+
+          if (info.formulas.length > 0) {
+            const fmList = info.formulas.map(fm =>
+              `<span class="pf2e-lp-revert-chip is-formula">${esc(fm.name)} <em>(Lv ${fm.level})</em></span>`
+            ).join("");
+            rows.push(`<div class="pf2e-lp-revert-row"><strong>Formulas:</strong> <div class="pf2e-lp-revert-chips">${fmList}</div></div>`);
+          }
+
+          if (info.classFeaturesRemoved.length > 0 || info.dualClassFeaturesToDelete.length > 0) {
+            const names = [
+              ...info.classFeaturesRemoved,
+              ...info.dualClassFeaturesToDelete.map(d => `${d.name} (Dual)`)
+            ];
+            const uniqueNames = Array.from(new Set(names));
+            rows.push(`<div class="pf2e-lp-revert-row is-muted"><strong>Class Features (Auto-Removed):</strong> ${esc(uniqueNames.join(", "))}</div>`);
+          }
+
+          if (rows.length === 0) {
+            rows.push(`<div class="pf2e-lp-revert-row is-muted">No slotted choices detected on live sheet for Level ${info.level}.</div>`);
+          }
+
+          return `
+            <div class="pf2e-lp-revert-card">
+              <div class="pf2e-lp-revert-card-head">
+                <span class="pf2e-lp-revert-lvl">Level ${info.level}</span>
+                <span class="pf2e-lp-revert-tag is-save" data-save-badge-lvl="${info.level}">${state.saveToPlan ? `Saves to Lv ${info.level} Plan` : "Revert Only (Not Saved)"}</span>
+              </div>
+              <div class="pf2e-lp-revert-card-body">
+                ${rows.join("")}
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        const spellSyncHtml = t.spellEntriesToSync.length > 0
+          ? `<div class="pf2e-lp-revert-sync-note"><i class="fa-solid fa-wand-sparkles"></i> Spellcasting slot counts will sync down to Level ${state.targetLevel} for: <strong>${esc(t.spellEntriesToSync.map(e => e.name).join(", "))}</strong>.</div>`
+          : "";
+
+        const remindersHtml = preview.reminders.length > 0
+          ? `
+            <div class="pf2e-lp-prompt-warn-box">
+              <strong>Notes &amp; Manual Checks:</strong>
+              <ul>
+                ${preview.reminders.map(r => `<li>${esc(r)}</li>`).join("")}
+              </ul>
+            </div>
+          `
+          : "";
+
+        previewEl.innerHTML = `
+          <div class="pf2e-lp-revert-opts">${optionRows.join("")}</div>
+          <div class="pf2e-lp-revert-cards">${levelCardsHtml}</div>
+          ${spellSyncHtml}
+          ${remindersHtml}
+        `;
+
+        previewEl.querySelectorAll("[data-revert-opt]").forEach(cb => {
+          cb.addEventListener("change", (ev) => {
+            const key = ev.target.dataset.revertOpt;
+            if (key && key in state) {
+              state[key] = Boolean(ev.target.checked);
+              if (key === "saveToPlan") {
+                previewEl.querySelectorAll("[data-save-badge-lvl]").forEach(badge => {
+                  const lvl = badge.dataset.saveBadgeLvl;
+                  badge.textContent = state.saveToPlan ? `Saves to Lv ${lvl} Plan` : "Revert Only (Not Saved)";
+                  badge.classList.toggle("is-save", state.saveToPlan);
+                  badge.classList.toggle("is-warn", !state.saveToPlan);
+                });
+              }
+            }
+          });
+        });
+
+        previewEl.querySelectorAll(".pf2e-lp-revert-skill-pick").forEach(sel => {
+          sel.addEventListener("change", (ev) => {
+            const lvl = Number(ev.target.dataset.level);
+            const val = ev.target.value || "";
+            if (val) state.manualSkillPicks[lvl] = val;
+            else delete state.manualSkillPicks[lvl];
+          });
+        });
+      };
+
+      targetSelect?.addEventListener("change", async (ev) => {
+        const nextTarget = Number(ev.target.value);
+        if (Number.isFinite(nextTarget) && nextTarget >= 1 && nextTarget < currentLevel) {
+          state.targetLevel = nextTarget;
+          await refreshPreview();
+        }
+      });
+
+      await refreshPreview();
+    }, { once: true });
+
+    dialog.render({ force: true });
+  }
+
+  async _executeRevertLevel(actor, payload) {
+    if (!actor || !payload || this._isApplyingLevelUp) return;
+    this._isApplyingLevelUp = true;
+    if (this.rendered) this.render({ force: false });
+
+    try {
+      const res = await revertActorToLevel(actor, payload.targetLevel, {
+        saveToPlan: payload.saveToPlan,
+        revertBoosts: payload.revertBoosts,
+        revertFeats: payload.revertFeats,
+        revertSkills: payload.revertSkills,
+        revertSpells: payload.revertSpells,
+        revertFormulas: payload.revertFormulas,
+        manualSkillPicks: payload.manualSkillPicks
+      });
+
+      if (res.ok) {
+        const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
+        ui.notifications?.info(`${actor.name} reverted from Level ${res.oldLevel} → Level ${res.newLevel}!${summaryStr}`);
+        if (Array.isArray(res.reminders) && res.reminders.length > 0) {
+          ui.notifications?.warn(`Level ${res.newLevel} Revert Notes: ${res.reminders.join(" · ")}`);
+        }
+        // Focus the newly reverted next level so the saved plan is immediately visible & editable!
+        this._selectedLevel = Math.min(20, res.newLevel + 1);
+        this._viewMode = "focus";
+      }
+    } catch (err) {
+      console.error("PF2e Awesome GM Utilities | Failed reverting character level:", err);
+      ui.notifications?.error(`Failed to revert ${actor.name}: ${err?.message || err}`);
     } finally {
       this._isApplyingLevelUp = false;
       if (this.rendered) this.render({ force: false });

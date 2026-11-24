@@ -23,8 +23,11 @@ import {
   formatSlotsSummary,
   getActiveVariantRules,
   getActorDualClassInfo,
-  normalizeSlug
+  normalizeSlug,
+  syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
+
+const VARIANT_RULES_MODULE_ID = "pf2e-awesome-variant-rules";
 
 const PLAN_FLAG_KEY = "levelPlan";
 const ABILITY_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
@@ -122,7 +125,7 @@ export function hasAnySavedLevelPlan(actor) {
     if (typeof entry.skillIncrease === "string" && entry.skillIncrease) return true;
     if (typeof entry.intBonusSkill === "string" && entry.intBonusSkill) return true;
     if (typeof entry.intBonusLanguage === "string" && entry.intBonusLanguage.trim()) return true;
-    if (entry.feats && typeof entry.feats === "object" && Object.values(entry.feats).some(f => Boolean(f && f.uuid))) return true;
+    if (entry.feats && typeof entry.feats === "object" && Object.values(entry.feats).some(f => Boolean(f && (f.uuid || f.itemData)))) return true;
     if (Array.isArray(entry.spells) && entry.spells.length > 0) return true;
     if (Array.isArray(entry.formulas) && entry.formulas.length > 0) return true;
   }
@@ -754,7 +757,7 @@ export function buildLevelRoadmap(actor, options = {}) {
     const slotKey = `${groupId}-${slotLevel}`;
     const liveFeat = liveFeatsBySlotKey.get(slotKey) || null;
     const rawPlanned = levelPlanData?.feats?.[slotKey];
-    const plannedFeat = rawPlanned && rawPlanned.uuid ? rawPlanned : null;
+    const plannedFeat = rawPlanned && (rawPlanned.uuid || rawPlanned.itemData) ? rawPlanned : null;
 
     if (!isFuture) {
       return {
@@ -1139,6 +1142,8 @@ export function buildLevelRoadmap(actor, options = {}) {
     liveLevel,
     currentLevel,
     canLevelUp: currentLevel < 20,
+    canDeLevel: currentLevel > 1,
+    prevLevel: Math.max(1, currentLevel - 1),
     nextLevel: Math.min(20, currentLevel + 1),
     classDisplay: dualInfo ? `${primaryName} / ${dualName}` : primaryName,
     primaryName,
@@ -2319,25 +2324,33 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
 
     for (const slot of lvlData?.featSlots || []) {
       const planned = lp.feats?.[slot.slotKey];
-      if (!planned?.uuid) continue;
+      if (!planned?.uuid && !planned?.itemData) continue;
 
       const liveSlot = resolveLiveFeatSlot(actor, slot.groupId, targetLevel);
       if (liveSlot.alreadyFilled) continue;
 
       try {
-        const sourceDoc = await fromUuid(planned.uuid);
-        if (!sourceDoc || sourceDoc.type !== "feat") continue;
+        let obj = null;
+        if (planned.uuid) {
+          const sourceDoc = await fromUuid(planned.uuid);
+          if (sourceDoc && sourceDoc.type === "feat") {
+            obj = sourceDoc.toObject();
+            obj.flags = obj.flags || {};
+            obj.flags.core = obj.flags.core || {};
+            obj.flags.core.sourceId = planned.uuid;
+            obj._stats = obj._stats || {};
+            obj._stats.compendiumSource = planned.uuid;
+          }
+        }
+        if (!obj && planned.itemData && typeof planned.itemData === "object") {
+          obj = foundry.utils.deepClone(planned.itemData);
+        }
+        if (!obj) continue;
 
-        const obj = sourceDoc.toObject();
         delete obj._id;
         if (obj.system) {
           obj.system.location = liveSlot.id;
         }
-        obj.flags = obj.flags || {};
-        obj.flags.core = obj.flags.core || {};
-        obj.flags.core.sourceId = planned.uuid;
-        obj._stats = obj._stats || {};
-        obj._stats.compendiumSource = planned.uuid;
 
         const created = await actor.createEmbeddedDocuments("Item", [obj]);
         if (created?.length > 0) {
@@ -2375,10 +2388,24 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     const addedSpells = [];
 
     for (const sp of allPlannedSpells) {
-      if (!sp?.uuid) continue;
+      if (!sp?.uuid && !sp?.itemData) continue;
       try {
-        const spellDoc = await fromUuid(sp.uuid);
-        if (!spellDoc || spellDoc.type !== "spell") continue;
+        let obj = null;
+        if (sp.uuid) {
+          const spellDoc = await fromUuid(sp.uuid);
+          if (spellDoc && spellDoc.type === "spell") {
+            obj = spellDoc.toObject();
+            obj.flags = obj.flags || {};
+            obj.flags.core = obj.flags.core || {};
+            obj.flags.core.sourceId = sp.uuid;
+            obj._stats = obj._stats || {};
+            obj._stats.compendiumSource = sp.uuid;
+          }
+        }
+        if (!obj && sp.itemData && typeof sp.itemData === "object") {
+          obj = foundry.utils.deepClone(sp.itemData);
+        }
+        if (!obj) continue;
 
         let targetEntryId = null;
         if (sp.entryKey) {
@@ -2398,17 +2425,16 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
         if (!targetEntryId) continue;
 
         // Avoid duplicate spell in the same spellcasting entry
-        const spNameLower = String(spellDoc.name || "").toLowerCase();
+        const spNameLower = String(obj.name || sp.name || "").toLowerCase();
         const duplicate = (actor.itemTypes?.spell || []).some(existing =>
           existing.system?.location?.value === targetEntryId
           && (
-            (existing._stats?.compendiumSource || existing.flags?.core?.sourceId) === sp.uuid
+            (sp.uuid && (existing._stats?.compendiumSource || existing.flags?.core?.sourceId) === sp.uuid)
             || String(existing.name || "").toLowerCase() === spNameLower
           )
         );
         if (duplicate) continue;
 
-        const obj = spellDoc.toObject();
         delete obj._id;
         obj.system = obj.system || {};
         obj.system.location = obj.system.location || {};
@@ -2454,4 +2480,1170 @@ export async function applyPlannedLevelUp(actor) {
     updateActorLevel: true,
     effectiveCurrentLevel: currentLevel
   });
+}
+
+/* ------------------------------------------------------------------------- */
+/* 6. DE-LEVEL / REVERT TO EARLIER LEVEL (SAVE TO BUILD PLAN & ROLLBACK)     */
+/* ------------------------------------------------------------------------- */
+
+const SKIP_REVERT_FEAT_GROUPS = new Set([
+  "classfeature",
+  "ancestryfeature",
+  "pfsboon",
+  "deityboon",
+  "curse",
+  "bonus",
+  "mythic",
+  "calling"
+]);
+
+/**
+ * Resolves a reusable compendium or world UUID for an embedded Actor Item so it remains
+ * valid after the embedded document is deleted during a de-level.
+ * Returns `{ uuid: string|null, isCustomSnapshot: boolean }`.
+ */
+function resolveReusableSourceUuid(doc, itemType = "feat") {
+  if (!doc) return { uuid: null, isCustomSnapshot: true };
+
+  const candidates = [
+    doc._stats?.compendiumSource,
+    doc.flags?.core?.sourceId,
+    doc.sourceId
+  ];
+  for (const raw of candidates) {
+    if (typeof raw === "string" && raw.trim() && !raw.startsWith("Actor.")) {
+      return { uuid: raw.trim(), isCustomSnapshot: false };
+    }
+  }
+
+  // Fallback 1: Match in world Items directory by slug or name
+  const docSlug = normalizeSlug(doc.slug || doc.system?.slug || doc.name);
+  const docNameLower = String(doc.name || "").trim().toLowerCase();
+  if (game.items?.contents) {
+    const worldMatch = game.items.contents.find(i =>
+      i.type === itemType
+      && (
+        (docSlug && normalizeSlug(i.slug || i.system?.slug || i.name) === docSlug)
+        || (docNameLower && String(i.name || "").trim().toLowerCase() === docNameLower)
+      )
+    );
+    if (worldMatch?.uuid) {
+      return { uuid: worldMatch.uuid, isCustomSnapshot: false };
+    }
+  }
+
+  // Fallback 2: Match in already-loaded lightweight compendium index cache (zero extra I/O)
+  const cache = itemType === "spell" ? _spellIndexCache : (itemType === "feat" ? _featIndexCache : null);
+  if (Array.isArray(cache) && docNameLower) {
+    const cachedMatch = cache.find(entry => String(entry.name || "").trim().toLowerCase() === docNameLower);
+    if (cachedMatch?.uuid) {
+      return { uuid: cachedMatch.uuid, isCustomSnapshot: false };
+    }
+  }
+
+  return { uuid: null, isCustomSnapshot: true };
+}
+
+/**
+ * Produces a clean portable Item data object for custom/homebrew feats or spells
+ * that lack a compendium/world source UUID so they can be restored losslessly on re-level.
+ */
+function sanitizeEmbeddedItemSnapshot(doc) {
+  if (!doc || typeof doc.toObject !== "function") return null;
+  const obj = doc.toObject();
+  delete obj._id;
+  delete obj.sort;
+  delete obj.folder;
+  delete obj.ownership;
+  if (obj.flags?.pf2e && "grantedBy" in obj.flags.pf2e) {
+    delete obj.flags.pf2e.grantedBy;
+  }
+  return obj;
+}
+
+/**
+ * Reads the persisted (non-Rule-Element) manual skill rank stored on the actor document.
+ * Prevents accidentally decrementing skills auto-granted purely by PF2e Rule Elements.
+ */
+function getStoredSourceSkillRank(actor, slug) {
+  const srcSkills = actor?._source?.system?.skills;
+  if (srcSkills && typeof srcSkills === "object") {
+    return Math.max(0, Math.min(4, Number(srcSkills[slug]?.rank ?? 0)));
+  }
+  return Math.max(0, Math.min(4, Number(actor?.system?.skills?.[slug]?.rank ?? 0)));
+}
+
+/**
+ * Computes the maximum leveled spell rank legally available for a spellcasting source at `level`,
+ * accounting for any archetype spellcasting feats scheduled to be deleted on revert.
+ */
+function estimateMaxSpellRankAtLevel(src, level, deletedFeatSlugs = new Set()) {
+  if (!src || src.isFocus || src.castingType === "focus") return 10;
+  if (src.isDivineFont) return Math.min(10, Math.ceil(level / 2));
+
+  if (src.sourceKind === "archetype") {
+    const slugLower = String(src.classSlug || "").toLowerCase();
+    const deletedHas = (tier) => Array.from(deletedFeatSlugs).some(s =>
+      s.includes(tier) && s.includes("spellcasting") && (!slugLower || s.includes(slugLower))
+    );
+    const hasBasic = level >= 4 && !deletedHas("basic");
+    const hasExpert = level >= 12 && !deletedHas("expert");
+    const hasMaster = level >= 18 && !deletedHas("master");
+
+    if (hasMaster && level >= 20) return 8;
+    if (hasMaster && level >= 18) return 7;
+    if (hasExpert && level >= 16) return 6;
+    if (hasExpert && level >= 14) return 5;
+    if (hasExpert && level >= 12) return 4;
+    if (hasBasic && level >= 8) return 3;
+    if (hasBasic && level >= 6) return 2;
+    if (hasBasic && level >= 4) return 1;
+    return 0;
+  }
+
+  const slug = String(src.classSlug || "").toLowerCase();
+  const cap = (slug === "magus" || slug === "summoner" || (slug === "animist" && src.castingType === "spontaneous")) ? 9 : 10;
+  return Math.min(cap, Math.ceil(level / 2));
+}
+
+/**
+ * Infers which level in `[minLevel..maxLevel]` unlocked a given spell rank for a casting source.
+ */
+function inferSpellUnlockLevel(src, spellRank, minLevel, maxLevel) {
+  let rawUnlock = spellRank * 2 - 1;
+  if (src?.sourceKind === "archetype") {
+    const archMap = { 1: 4, 2: 6, 3: 8, 4: 12, 5: 14, 6: 16, 7: 18, 8: 20 };
+    rawUnlock = archMap[spellRank] || maxLevel;
+  }
+  return Math.max(minLevel, Math.min(maxLevel, rawUnlock));
+}
+
+/**
+ * Non-destructively inspects everything that will be saved into the character's Level Plan
+ * and reverted on the live sheet when de-leveling from `actor.level` down to `targetLevel`.
+ *
+ * @param {Actor} actor
+ * @param {number} targetLevel
+ * @returns {Promise<object>}
+ */
+export async function inspectLevelRevert(actor, targetLevel) {
+  const currentLevel = Math.max(1, Math.min(20, Number(actor?.level ?? actor?.system?.details?.level?.value ?? 1)));
+  const cleanTarget = Math.max(1, Math.min(currentLevel - 1, Math.floor(Number(targetLevel) || (currentLevel - 1))));
+
+  if (!actor || actor.type !== "character" || currentLevel <= 1 || cleanTarget >= currentLevel) {
+    return {
+      ok: false,
+      actorId: actor?.id || null,
+      actorName: actor?.name || "",
+      currentLevel,
+      targetLevel: cleanTarget,
+      revertedLevels: [],
+      levels: [],
+      untrackedSkillCandidates: [],
+      totals: {
+        boostLevelsCount: 0,
+        boostPicksCount: 0,
+        featsCount: 0,
+        customFeatsCount: 0,
+        trackedSkillsCount: 0,
+        untrackedSkillSlotsCount: 0,
+        overCapSkillsCount: 0,
+        intDropsCount: 0,
+        spellsCount: 0,
+        formulasCount: 0,
+        classFeaturesCount: 0,
+        dualClassFeaturesCount: 0,
+        spellEntriesToSync: []
+      },
+      reminders: []
+    };
+  }
+
+  const revertedLevels = [];
+  for (let l = cleanTarget + 1; l <= currentLevel; l++) {
+    revertedLevels.push(l);
+  }
+
+  const roadmap = buildLevelRoadmap(actor, { effectiveCurrentLevel: currentLevel });
+  const existingPlan = getActorLevelPlan(actor);
+  const dualInfo = getActorDualClassInfo(actor);
+  const checkerReport = roadmap?.checkerReport || analyzeCharacter(actor);
+  const manualAttributes = Boolean(actor.system?.build?.attributes?.manual);
+  const liveAttrBoosts = actor.system?.build?.attributes?.boosts || {};
+
+  // Build per-level skeleton
+  const levelMap = new Map();
+  for (const lvl of revertedLevels) {
+    const lvlData = roadmap?.levels?.find(x => x.level === lvl) || null;
+    levelMap.set(lvl, {
+      level: lvl,
+      lvlData,
+      hasBoostsTier: Boolean(lvlData?.hasBoosts),
+      boosts: [],
+      boostLabels: "",
+      intModDrop: null,
+      trackedIntBonusSkill: null,
+      trackedIntBonusSkillRevert: null,
+      trackedIntBonusLanguage: "",
+      trackedIntBonusLanguageWillRemove: false,
+      feats: [],
+      hasSkillIncreaseSlot: Boolean(lvlData?.hasSkillIncrease),
+      skillIncreaseMaxLegal: maxSkillRankForLevel(lvl),
+      trackedSkillIncrease: null,
+      overCapExtraAdjustments: [],
+      untrackedSkillIncrease: false,
+      spells: [],
+      formulas: [],
+      classFeaturesRemoved: (lvlData?.classFeatures || []).map(f => f.name),
+      dualClassFeaturesToDelete: []
+    });
+  }
+
+  // 1. Attribute Boosts & INT Modifier Drop Detection (ascending from targetLevel+1..currentLevel)
+  const runningBoosts = getBaseBoostCounts(actor, cleanTarget, dualInfo);
+  if (!manualAttributes) {
+    for (const lvl of revertedLevels) {
+      const info = levelMap.get(lvl);
+      const prevIntMod = computeModFromBoostCount(runningBoosts.int || 0).mod;
+      const tierRaw = Array.isArray(liveAttrBoosts[lvl])
+        ? liveAttrBoosts[lvl].filter(a => ABILITY_KEYS.includes(a))
+        : [];
+      if (tierRaw.length > 0) {
+        info.boosts = [...tierRaw];
+        info.boostLabels = tierRaw.map(a => ABILITY_LABELS[a]).join(", ");
+        for (const a of tierRaw) {
+          runningBoosts[a] = (runningBoosts[a] || 0) + 1;
+        }
+      }
+      const newIntMod = computeModFromBoostCount(runningBoosts.int || 0).mod;
+      if (newIntMod > prevIntMod) {
+        info.intModDrop = {
+          fromMod: newIntMod,
+          toMod: prevIntMod,
+          fromModStr: `${newIntMod >= 0 ? "+" : ""}${newIntMod}`,
+          toModStr: `${prevIntMod >= 0 ? "+" : ""}${prevIntMod}`
+        };
+        const lp = existingPlan.levels[String(lvl)];
+        if (lp?.intBonusSkill === "__lore__" || (typeof lp?.intBonusSkill === "string" && CORE_SKILL_SLUGS.includes(lp.intBonusSkill))) {
+          info.trackedIntBonusSkill = lp.intBonusSkill;
+        }
+        if (typeof lp?.intBonusLanguage === "string" && lp.intBonusLanguage.trim()) {
+          info.trackedIntBonusLanguage = lp.intBonusLanguage.trim();
+        }
+      }
+    }
+  }
+
+  // 2. Live Slotted Feats at Reverted Levels (targetLevel+1 .. currentLevel)
+  const seenFeatIds = new Set();
+  const deletedFeatSlugs = new Set();
+  const pushLiveFeat = (lvl, slotKey, groupId, groupLabel, feat) => {
+    if (!feat || seenFeatIds.has(feat.id)) return;
+    if (feat.flags?.pf2e?.grantedBy?.id) return; // Granted sub-item; PF2e cascades deletion automatically
+    const cat = String(feat.system?.category || "").toLowerCase();
+    if (cat === "classfeature" || cat === "ancestryfeature") return;
+    const info = levelMap.get(lvl);
+    if (!info) return;
+
+    seenFeatIds.add(feat.id);
+    const featSlug = normalizeSlug(feat.slug || feat.system?.slug || feat.name);
+    if (featSlug) deletedFeatSlugs.add(featSlug);
+
+    const { uuid: sourceUuid, isCustomSnapshot } = resolveReusableSourceUuid(feat, "feat");
+    const fTraits = toStringArray(feat.system?.traits?.value).map(normalizeSlug);
+    info.feats.push({
+      slotKey,
+      groupId,
+      groupLabel,
+      itemId: feat.id,
+      name: feat.name,
+      img: feat.img || "systems/pf2e/icons/default-icons/feat.svg",
+      level: Number(feat.system?.level?.value ?? lvl),
+      category: feat.system?.category || "",
+      sourceUuid,
+      isCustomSnapshot,
+      isDedication: fTraits.includes("dedication") || /\bdedication\b/i.test(feat.name || ""),
+      prerequisites: (feat.system?.prerequisites?.value || []).map(p => p?.value || p).filter(Boolean)
+    });
+  };
+
+  // Scan authoritative `actor.feats` groups first
+  if (actor.feats && typeof actor.feats.values === "function") {
+    for (const group of actor.feats.values()) {
+      if (!group || SKIP_REVERT_FEAT_GROUPS.has(group.id)) continue;
+      const slots = Array.isArray(group.slots)
+        ? group.slots
+        : (typeof group.slots?.values === "function" ? Array.from(group.slots.values()) : Object.values(group.slots || {}));
+      const groupLabel = game.i18n?.localize?.(group.label) || group.label || capitalize(group.id);
+      for (const slot of slots) {
+        const slotLvl = Number(slot?.level);
+        if (!slot?.feat || !levelMap.has(slotLvl)) continue;
+        const slotKey = `${group.id}-${slotLvl}`;
+        pushLiveFeat(slotLvl, slotKey, group.id, groupLabel, slot.feat);
+      }
+    }
+  }
+
+  // Fallback scan of embedded feat `system.location` (e.g. "class-5", "archetype-4")
+  for (const feat of actor.itemTypes?.feat || []) {
+    if (seenFeatIds.has(feat.id)) continue;
+    const loc = typeof feat.system?.location === "string" ? feat.system.location : "";
+    const match = loc.match(/^([a-z0-9_]+)-(\d+)$/i);
+    if (!match) continue;
+    const groupId = match[1].toLowerCase();
+    const slotLvl = Number(match[2]);
+    if (SKIP_REVERT_FEAT_GROUPS.has(groupId) || !levelMap.has(slotLvl)) continue;
+    const roadmapSlot = levelMap.get(slotLvl)?.lvlData?.featSlots?.find(s => s.slotKey === loc);
+    pushLiveFeat(slotLvl, loc, groupId, roadmapSlot?.groupLabel || capitalize(groupId), feat);
+  }
+
+  // 3. Dual Class Features above targetLevel (in case variant module doesn't prune on level-down)
+  if (dualInfo?.system?.items) {
+    for (const item of actor.items || []) {
+      const dcFlags = item.flags?.[VARIANT_RULES_MODULE_ID];
+      if (!dcFlags?.grantedByDualClass) continue;
+      const dcKey = dcFlags.dualClassFeatureKey;
+      const entryMeta = dcKey ? dualInfo.system.items[dcKey] : null;
+      const grantLvl = Number(entryMeta?.level ?? item.system?.level?.value ?? 1);
+      if (grantLvl > cleanTarget) {
+        const bucketLvl = Math.max(cleanTarget + 1, Math.min(currentLevel, grantLvl));
+        levelMap.get(bucketLvl)?.dualClassFeaturesToDelete.push({
+          itemId: item.id,
+          name: item.name,
+          level: grantLvl
+        });
+      }
+    }
+  }
+
+  // 4. Skill Increases & INT Bonus Skill/Language (descending pass from currentLevel -> targetLevel+1)
+  const workingSourceRanks = {};
+  for (const slug of CORE_SKILL_SLUGS) {
+    workingSourceRanks[slug] = getStoredSourceSkillRank(actor, slug);
+  }
+
+  const baseAncestryLangs = new Set(
+    (Array.isArray(actor.ancestry?.system?.languages?.value) ? actor.ancestry.system.languages.value : [])
+      .map(s => String(s || "").toLowerCase())
+      .filter(Boolean)
+  );
+  const liveLangSet = new Set(
+    (Array.isArray(actor.system?.details?.languages?.value) ? actor.system.details.languages.value : [])
+      .map(s => String(s || "").toLowerCase())
+      .filter(Boolean)
+  );
+  const customLangLower = String(actor.system?.details?.languages?.details || "").toLowerCase();
+
+  for (let i = revertedLevels.length - 1; i >= 0; i--) {
+    const lvl = revertedLevels[i];
+    const info = levelMap.get(lvl);
+    const lp = existingPlan.levels[String(lvl)];
+
+    // Undo Skill Increase BEFORE INT Bonus Skill (reverse of level-up application order)
+    if (info.hasSkillIncreaseSlot && typeof lp?.skillIncrease === "string" && CORE_SKILL_SLUGS.includes(lp.skillIncrease)) {
+      const slug = lp.skillIncrease;
+      const curRank = workingSourceRanks[slug] || 0;
+      if (curRank >= 1) {
+        info.trackedSkillIncrease = {
+          slug,
+          label: capitalize(slug),
+          fromRank: curRank,
+          toRank: curRank - 1,
+          transition: `${capitalize(slug)} (${RANK_SHORT[curRank]} → ${RANK_SHORT[curRank - 1]})`,
+          source: "plan"
+        };
+        workingSourceRanks[slug] = curRank - 1;
+      }
+    }
+
+    if (info.intModDrop) {
+      if (info.trackedIntBonusSkill && info.trackedIntBonusSkill !== "__lore__") {
+        const slug = info.trackedIntBonusSkill;
+        const curRank = workingSourceRanks[slug] || 0;
+        if (curRank >= 1) {
+          info.trackedIntBonusSkillRevert = {
+            slug,
+            label: capitalize(slug),
+            fromRank: curRank,
+            toRank: curRank - 1,
+            transition: `${capitalize(slug)} (${RANK_SHORT[curRank]} → ${RANK_SHORT[curRank - 1]})`
+          };
+          workingSourceRanks[slug] = curRank - 1;
+        }
+      }
+      if (info.trackedIntBonusLanguage) {
+        const matchedSlug = resolveLanguageSlug(info.trackedIntBonusLanguage);
+        if (matchedSlug && liveLangSet.has(matchedSlug) && !baseAncestryLangs.has(matchedSlug)) {
+          info.trackedIntBonusLanguageWillRemove = true;
+          liveLangSet.delete(matchedSlug);
+        } else if (!matchedSlug && customLangLower.includes(info.trackedIntBonusLanguage.toLowerCase())) {
+          info.trackedIntBonusLanguageWillRemove = true;
+        }
+      }
+    }
+  }
+
+  // Over-Cap Legal Rank Enforcement (catches Master/Legendary/Expert increases even without prior Level Plan!)
+  const capAtTarget = maxSkillRankForLevel(cleanTarget);
+  for (const slug of CORE_SKILL_SLUGS) {
+    while ((workingSourceRanks[slug] || 0) > capAtTarget) {
+      const curRank = workingSourceRanks[slug];
+      const nextRank = curRank - 1;
+      // Assign to the highest unassigned reverted skill-increase level that legally allowed `curRank`
+      let assignedInfo = null;
+      for (let i = revertedLevels.length - 1; i >= 0; i--) {
+        const cand = levelMap.get(revertedLevels[i]);
+        if (cand.hasSkillIncreaseSlot && !cand.trackedSkillIncrease && cand.skillIncreaseMaxLegal >= curRank) {
+          assignedInfo = cand;
+          break;
+        }
+      }
+      const record = {
+        slug,
+        label: capitalize(slug),
+        fromRank: curRank,
+        toRank: nextRank,
+        transition: `${capitalize(slug)} (${RANK_SHORT[curRank]} → ${RANK_SHORT[nextRank]})`,
+        source: "over-cap"
+      };
+      if (assignedInfo) {
+        assignedInfo.trackedSkillIncrease = record;
+      } else {
+        levelMap.get(currentLevel)?.overCapExtraAdjustments.push(record);
+      }
+      workingSourceRanks[slug] = nextRank;
+    }
+  }
+
+  for (const lvl of revertedLevels) {
+    const info = levelMap.get(lvl);
+    info.untrackedSkillIncrease = Boolean(info.hasSkillIncreaseSlot && !info.trackedSkillIncrease);
+  }
+
+  const untrackedSkillCandidates = CORE_SKILL_SLUGS
+    .filter(slug => (workingSourceRanks[slug] || 0) >= 1)
+    .map(slug => {
+      const curRank = workingSourceRanks[slug];
+      return {
+        slug,
+        label: capitalize(slug),
+        currentRank: curRank,
+        currentRankShort: RANK_SHORT[curRank],
+        nextRankShort: RANK_SHORT[curRank - 1],
+        optionLabel: `${capitalize(slug)} (${RANK_SHORT[curRank]} → ${RANK_SHORT[curRank - 1]})`
+      };
+    });
+
+  // 5. Spellcasting Over-Rank Spells, Tracked Planned Spells, and Slot Sync Preview
+  const spSources = checkerReport?.spellcasting?.sources || [];
+  const sourceByEntryId = new Map();
+  const spellEntriesToSync = [];
+
+  for (const src of spSources) {
+    if (!src.entryExists || !src.entryId) continue;
+    sourceByEntryId.set(src.entryId, src);
+    if (src.isFocus || src.castingType === "focus") continue;
+    const targetMaxRank = estimateMaxSpellRankAtLevel(src, cleanTarget, deletedFeatSlugs);
+    const curMaxRank = estimateMaxSpellRankAtLevel(src, currentLevel, new Set());
+    if (targetMaxRank !== curMaxRank || src.isDivineFont || cleanTarget < currentLevel) {
+      spellEntriesToSync.push({
+        entryId: src.entryId,
+        key: src.key,
+        name: src.matchedEntryName || src.title,
+        curMaxRank,
+        targetMaxRank
+      });
+    }
+  }
+
+  // Index planned spells in revertedLevels for tracked matching
+  const plannedSpellEntries = [];
+  for (const lvl of revertedLevels) {
+    const lp = existingPlan.levels[String(lvl)];
+    for (const sp of Array.isArray(lp?.spells) ? lp.spells : []) {
+      if (!sp) continue;
+      plannedSpellEntries.push({ level: lvl, sp, matched: false });
+    }
+  }
+
+  const seenSpellIds = new Set();
+  for (const spell of actor.itemTypes?.spell || []) {
+    if (seenSpellIds.has(spell.id)) continue;
+    const entryId = spell.system?.location?.value;
+    if (!entryId) continue;
+    const entryDoc = actor.items?.get(entryId);
+    if (!entryDoc || entryDoc.type !== "spellcastingEntry") continue;
+
+    const castingType = entryDoc.system?.prepared?.value;
+    const isCantrip = Boolean(spell.isCantrip || spell.system?.traits?.value?.includes("cantrip"));
+    const isRitual = castingType === "ritual" || Boolean(spell.isRitual);
+    const isFocus = castingType === "focus";
+    if (isRitual || isFocus) continue;
+
+    const src = sourceByEntryId.get(entryId) || null;
+    const effectiveRank = isCantrip
+      ? 0
+      : Number(spell.system?.location?.heightenedLevel ?? spell.rank ?? spell.system?.level?.value ?? 1);
+    const { uuid: sourceUuid, isCustomSnapshot } = resolveReusableSourceUuid(spell, "spell");
+    const spellNameLower = String(spell.name || "").trim().toLowerCase();
+
+    let assignedLevel = null;
+    let reason = null;
+
+    // Check 1: Explicitly tracked in existing Level Plan for a reverted level (matching rank & cantrip flag!)
+    const trackedMatch = plannedSpellEntries.find(pe => {
+      if (pe.matched) return false;
+      if (Boolean(pe.sp.isCantrip) !== isCantrip) return false;
+      if (!isCantrip && Number(pe.sp.rank) > 0 && Number(pe.sp.rank) !== effectiveRank) return false;
+      const pName = String(pe.sp.name || "").trim().toLowerCase();
+      const uuidMatch = sourceUuid && pe.sp.uuid && pe.sp.uuid === sourceUuid;
+      const nameMatch = pName && pName === spellNameLower;
+      if (!uuidMatch && !nameMatch) return false;
+      if (pe.sp.entryKey && src?.key && pe.sp.entryKey !== src.key) return false;
+      return true;
+    });
+
+    if (trackedMatch) {
+      trackedMatch.matched = true;
+      assignedLevel = trackedMatch.level;
+      reason = "plan";
+    } else if (!isCantrip && src && !src.isDivineFont && castingType !== "innate") {
+      // Check 2: Over-rank spell exceeding maximum legal rank at targetLevel
+      const maxAtTarget = estimateMaxSpellRankAtLevel(src, cleanTarget, deletedFeatSlugs);
+      if (effectiveRank > maxAtTarget) {
+        assignedLevel = inferSpellUnlockLevel(src, effectiveRank, cleanTarget + 1, currentLevel);
+        reason = "over-rank";
+      }
+    }
+
+    if (assignedLevel && levelMap.has(assignedLevel)) {
+      seenSpellIds.add(spell.id);
+      levelMap.get(assignedLevel).spells.push({
+        itemId: spell.id,
+        name: spell.name,
+        img: spell.img || "systems/pf2e/icons/default-icons/spell.svg",
+        rank: isCantrip ? 0 : effectiveRank,
+        isCantrip,
+        rankLabel: isCantrip ? "Cantrip" : `Rank ${effectiveRank}`,
+        tradition: entryDoc.system?.tradition?.value || src?.tradition || "",
+        entryKey: src?.key || "",
+        entryId,
+        sourceUuid,
+        isCustomSnapshot,
+        reason
+      });
+    }
+  }
+
+  // 6. Alchemist / Crafting Formulas (Tracked in Plan OR within reverted level band)
+  const knownFormulas = Array.isArray(actor.system?.crafting?.formulas) ? actor.system.crafting.formulas : [];
+  const plannedFormulaByUuid = new Map();
+  for (const lvl of revertedLevels) {
+    const lp = existingPlan.levels[String(lvl)];
+    for (const fm of Array.isArray(lp?.formulas) ? lp.formulas : []) {
+      if (fm?.uuid && !plannedFormulaByUuid.has(fm.uuid)) {
+        plannedFormulaByUuid.set(fm.uuid, { level: lvl, fm });
+      }
+    }
+  }
+
+  const isAlchemist = Boolean(roadmap?.isAlchemist);
+  const cacheByUuid = Array.isArray(_formulaIndexCache)
+    ? new Map(_formulaIndexCache.map(r => [r.uuid, r]))
+    : null;
+
+  for (const rawF of knownFormulas) {
+    const fUuid = rawF?.uuid;
+    if (!fUuid) continue;
+
+    if (plannedFormulaByUuid.has(fUuid)) {
+      const { level: pLvl, fm } = plannedFormulaByUuid.get(fUuid);
+      levelMap.get(pLvl)?.formulas.push({
+        uuid: fUuid,
+        name: fm.name || "Formula",
+        img: fm.img || "systems/pf2e/icons/default-icons/consumable.svg",
+        level: Number(fm.level ?? pLvl),
+        reason: "plan"
+      });
+      continue;
+    }
+
+    if (!isAlchemist) continue;
+
+    // Resolve item level cleanly (cache first, then fast fromUuid fallback)
+    let fName = "";
+    let fImg = "systems/pf2e/icons/default-icons/consumable.svg";
+    let fItemLvl = null;
+
+    const cached = cacheByUuid?.get(fUuid);
+    if (cached) {
+      fName = cached.name;
+      fImg = cached.img || fImg;
+      fItemLvl = Number(cached.level ?? 0);
+    } else {
+      try {
+        const doc = await fromUuid(fUuid);
+        if (doc) {
+          fName = doc.name || "Formula";
+          fImg = doc.img || fImg;
+          fItemLvl = Number(doc.system?.level?.value ?? 0);
+        }
+      } catch { /* ignore unresolvable formula UUID */ }
+    }
+
+    // Only capture formulas inside the exact reverted level band (never touch higher-level loot formulas!)
+    if (fItemLvl != null && fItemLvl > cleanTarget && fItemLvl <= currentLevel) {
+      levelMap.get(fItemLvl)?.formulas.push({
+        uuid: fUuid,
+        name: fName || "Formula",
+        img: fImg,
+        level: fItemLvl,
+        reason: "reverted-level-band"
+      });
+    }
+  }
+
+  // 7. Aggregate Totals & Honest Reminders
+  const levelsArr = revertedLevels.map(l => levelMap.get(l));
+  const reminders = [];
+
+  let boostLevelsCount = 0;
+  let boostPicksCount = 0;
+  let featsCount = 0;
+  let customFeatsCount = 0;
+  let trackedSkillsCount = 0;
+  let untrackedSkillSlotsCount = 0;
+  let overCapSkillsCount = 0;
+  let intDropsCount = 0;
+  let spellsCount = 0;
+  let formulasCount = 0;
+  let classFeaturesCount = 0;
+  let dualClassFeaturesCount = 0;
+
+  for (const info of levelsArr) {
+    if (info.boosts.length > 0) {
+      boostLevelsCount++;
+      boostPicksCount += info.boosts.length;
+    }
+    featsCount += info.feats.length;
+    customFeatsCount += info.feats.filter(f => f.isCustomSnapshot).length;
+    if (info.trackedSkillIncrease) {
+      trackedSkillsCount++;
+      if (info.trackedSkillIncrease.source === "over-cap") overCapSkillsCount++;
+    }
+    overCapSkillsCount += info.overCapExtraAdjustments.length;
+    if (info.untrackedSkillIncrease) untrackedSkillSlotsCount++;
+    if (info.intModDrop) {
+      intDropsCount++;
+      if (!info.trackedIntBonusSkillRevert || !info.trackedIntBonusLanguageWillRemove) {
+        const missingBits = [];
+        if (!info.trackedIntBonusSkillRevert) missingBits.push("-1 Trained Skill / Lore");
+        if (!info.trackedIntBonusLanguageWillRemove) missingBits.push("-1 Language");
+        reminders.push(
+          `Lv ${info.level} INT modifier drops (${info.intModDrop.fromModStr} → ${info.intModDrop.toModStr}): verify ${missingBits.join(" & ")} on the sheet.`
+        );
+      }
+    }
+    spellsCount += info.spells.length;
+    formulasCount += info.formulas.length;
+    classFeaturesCount += info.classFeaturesRemoved.length;
+    dualClassFeaturesCount += info.dualClassFeaturesToDelete.length;
+  }
+
+  if (manualAttributes) {
+    reminders.push("Attribute Builder is in Manual mode — adjust attribute modifiers manually on the Character Sheet if needed.");
+  }
+  if (customFeatsCount > 0) {
+    reminders.push(`${customFeatsCount} custom/homebrew feat(s) have no compendium source — their full item data will be saved inside the Build Plan so they restore cleanly.`);
+  }
+  if (isAlchemist && formulasCount === 0) {
+    const expectedLost = revertedLevels.length * 2;
+    reminders.push(`Alchemist gained +${expectedLost} free formula(s) across Lv ${cleanTarget + 1}–${currentLevel}. Lower-level formulas aren't auto-removed — review Known Formulas on the Crafting tab if desired.`);
+  }
+
+  return {
+    ok: true,
+    actorId: actor.id,
+    actorName: actor.name,
+    currentLevel,
+    targetLevel: cleanTarget,
+    revertedLevels,
+    manualAttributes,
+    levels: levelsArr,
+    untrackedSkillCandidates,
+    totals: {
+      boostLevelsCount,
+      boostPicksCount,
+      featsCount,
+      customFeatsCount,
+      trackedSkillsCount,
+      untrackedSkillSlotsCount,
+      overCapSkillsCount,
+      intDropsCount,
+      spellsCount,
+      formulasCount,
+      classFeaturesCount,
+      dualClassFeaturesCount,
+      spellEntriesToSync
+    },
+    reminders
+  };
+}
+
+/**
+ * Reverts a character actor from their current live level down to `targetLevel`,
+ * first saving their currently applied build choices for Levels `(targetLevel+1)..currentLevel`
+ * into the Level Planner build plan so they can easily tweak and re-apply later.
+ *
+ * @param {Actor} actor
+ * @param {number} targetLevel
+ * @param {object} [options]
+ * @returns {Promise<{ ok: boolean, oldLevel: number, newLevel: number, savedLevels: number[], summary: string[], reminders: string[] }>}
+ */
+export async function revertActorToLevel(actor, targetLevel, options = {}) {
+  const {
+    saveToPlan = true,
+    revertBoosts = true,
+    revertFeats = true,
+    revertSkills = true,
+    revertSpells = true,
+    revertFormulas = true,
+    manualSkillPicks = {}
+  } = options || {};
+
+  if (!actor || actor.type !== "character") {
+    return { ok: false, oldLevel: 0, newLevel: 0, savedLevels: [], summary: [], reminders: [] };
+  }
+  if (!game.user?.isGM && !actor.isOwner) {
+    ui.notifications?.warn("You do not have permission to update this character.");
+    return { ok: false, oldLevel: actor.level || 1, newLevel: actor.level || 1, savedLevels: [], summary: [], reminders: [] };
+  }
+
+  const preview = await inspectLevelRevert(actor, targetLevel);
+  if (!preview.ok) {
+    return {
+      ok: false,
+      oldLevel: preview.currentLevel,
+      newLevel: preview.currentLevel,
+      savedLevels: [],
+      summary: [],
+      reminders: []
+    };
+  }
+
+  const cleanTarget = preview.targetLevel;
+  const oldLevel = preview.currentLevel;
+  const preReport = analyzeCharacter(actor);
+  const summary = [];
+  const reminders = [];
+
+  // Normalize any manual skill picks provided by the user for untracked skill increase slots
+  const cleanManualSkills = {};
+  for (const [lvlKey, slug] of Object.entries(manualSkillPicks || {})) {
+    const lvlNum = Number(lvlKey);
+    if (preview.revertedLevels.includes(lvlNum) && typeof slug === "string" && CORE_SKILL_SLUGS.includes(slug)) {
+      cleanManualSkills[lvlNum] = slug;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // STEP 1: Save current live choices into Level Plan FIRST (zero data loss!)
+  // -------------------------------------------------------------------------
+  const savedLevels = [];
+  if (saveToPlan) {
+    const plan = getActorLevelPlan(actor);
+
+    for (const info of preview.levels) {
+      const key = String(info.level);
+      if (!plan.levels[key] || typeof plan.levels[key] !== "object") {
+        plan.levels[key] = {
+          boosts: [],
+          skillIncrease: null,
+          intBonusSkill: null,
+          intBonusLanguage: "",
+          feats: {},
+          spells: [],
+          formulas: []
+        };
+      }
+      const entry = plan.levels[key];
+      if (!Array.isArray(entry.boosts)) entry.boosts = [];
+      if (!("skillIncrease" in entry)) entry.skillIncrease = null;
+      if (!("intBonusSkill" in entry)) entry.intBonusSkill = null;
+      if (typeof entry.intBonusLanguage !== "string") entry.intBonusLanguage = "";
+      if (!entry.feats || typeof entry.feats !== "object") entry.feats = {};
+      if (!Array.isArray(entry.spells)) entry.spells = [];
+      if (!Array.isArray(entry.formulas)) entry.formulas = [];
+
+      let touched = false;
+
+      if (info.boosts.length > 0) {
+        entry.boosts = [...info.boosts];
+        touched = true;
+      }
+
+      for (const f of info.feats) {
+        const liveDoc = actor.items?.get(f.itemId);
+        const snapshot = {
+          uuid: f.sourceUuid || null,
+          name: f.name,
+          img: f.img,
+          level: f.level,
+          category: f.category,
+          isDedication: f.isDedication,
+          prerequisites: f.prerequisites
+        };
+        if (f.isCustomSnapshot && liveDoc) {
+          snapshot.itemData = sanitizeEmbeddedItemSnapshot(liveDoc);
+        }
+        entry.feats[f.slotKey] = snapshot;
+        touched = true;
+      }
+
+      if (info.trackedSkillIncrease?.slug) {
+        entry.skillIncrease = info.trackedSkillIncrease.slug;
+        touched = true;
+      } else if (cleanManualSkills[info.level]) {
+        entry.skillIncrease = cleanManualSkills[info.level];
+        touched = true;
+      }
+
+      if (info.trackedIntBonusSkill) {
+        entry.intBonusSkill = info.trackedIntBonusSkill;
+        touched = true;
+      }
+      if (info.trackedIntBonusLanguage) {
+        entry.intBonusLanguage = info.trackedIntBonusLanguage;
+        touched = true;
+      }
+
+      for (const sp of info.spells) {
+        const exists = entry.spells.some(existing =>
+          (sp.sourceUuid && existing.uuid === sp.sourceUuid && Number(existing.rank) === Number(sp.rank))
+          || (String(existing.name || "").toLowerCase() === String(sp.name || "").toLowerCase() && Number(existing.rank) === Number(sp.rank))
+        );
+        if (!exists) {
+          const liveDoc = actor.items?.get(sp.itemId);
+          const spSnap = {
+            id: foundry.utils.randomID(8),
+            uuid: sp.sourceUuid || null,
+            name: sp.name,
+            img: sp.img,
+            rank: sp.rank,
+            isCantrip: sp.isCantrip,
+            tradition: sp.tradition,
+            entryKey: sp.entryKey
+          };
+          if (sp.isCustomSnapshot && liveDoc) {
+            spSnap.itemData = sanitizeEmbeddedItemSnapshot(liveDoc);
+          }
+          entry.spells.push(spSnap);
+          touched = true;
+        }
+      }
+
+      for (const fm of info.formulas) {
+        const exists = entry.formulas.some(existing => existing.uuid === fm.uuid);
+        if (!exists) {
+          entry.formulas.push({
+            id: foundry.utils.randomID(8),
+            uuid: fm.uuid,
+            name: fm.name,
+            img: fm.img,
+            level: fm.level
+          });
+          touched = true;
+        }
+      }
+
+      if (touched) savedLevels.push(info.level);
+    }
+
+    await saveActorLevelPlan(actor, plan);
+    if (savedLevels.length > 0) {
+      summary.push(`Saved Plan: Lv ${savedLevels.join(", ")}`);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // STEP 2: Delete Reverted Slotted Feats & Reverted Over-Rank/Tracked Spells
+  // -------------------------------------------------------------------------
+  const itemIdsToDelete = new Set();
+  const removedFeatNames = [];
+  const removedSpellNames = [];
+
+  if (revertFeats) {
+    for (const info of preview.levels) {
+      for (const f of info.feats) {
+        if (actor.items?.has(f.itemId)) {
+          itemIdsToDelete.add(f.itemId);
+          removedFeatNames.push(f.name);
+        }
+      }
+    }
+  }
+
+  if (revertSpells) {
+    for (const info of preview.levels) {
+      for (const sp of info.spells) {
+        if (actor.items?.has(sp.itemId)) {
+          itemIdsToDelete.add(sp.itemId);
+          removedSpellNames.push(sp.name);
+        }
+      }
+    }
+  }
+
+  if (itemIdsToDelete.size > 0) {
+    try {
+      await actor.deleteEmbeddedDocuments("Item", Array.from(itemIdsToDelete));
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed deleting reverted feats/spells:", err);
+      reminders.push("Some reverted feats or spells could not be deleted automatically — check your sheet.");
+    }
+  }
+  if (removedFeatNames.length > 0) {
+    summary.push(`Reverted Feats (${removedFeatNames.length}): ${removedFeatNames.slice(0, 4).join(", ")}${removedFeatNames.length > 4 ? ` +${removedFeatNames.length - 4} more` : ""}`);
+  }
+  if (removedSpellNames.length > 0) {
+    summary.push(`Reverted Spells (${removedSpellNames.length}): ${removedSpellNames.slice(0, 4).join(", ")}${removedSpellNames.length > 4 ? ` +${removedSpellNames.length - 4} more` : ""}`);
+  }
+
+  // -------------------------------------------------------------------------
+  // STEP 3: Atomic Actor Update (Level, Boost Tiers, Skills, Languages, Formulas)
+  // -------------------------------------------------------------------------
+  const actorUpdates = {
+    "system.details.level.value": cleanTarget
+  };
+
+  // 3a. Clear reverted Attribute Boost tiers
+  if (revertBoosts && !preview.manualAttributes) {
+    const clearedBoostLvls = [];
+    for (const info of preview.levels) {
+      if (info.boosts.length > 0) {
+        actorUpdates[`system.build.attributes.boosts.${info.level}`] = [];
+        clearedBoostLvls.push(info.level);
+      }
+    }
+    if (clearedBoostLvls.length > 0) {
+      summary.push(`Cleared Boosts (Lv ${clearedBoostLvls.join(", ")})`);
+    }
+  } else if (preview.manualAttributes) {
+    reminders.push("Attributes are in Manual mode — adjust attribute modifiers manually on the sheet.");
+  }
+
+  // 3b. Revert Tracked / Over-Cap / User-Selected Skill Increases & Tracked INT Bonus Skill/Language
+  if (revertSkills) {
+    const initialSourceRanks = {};
+    const workingRanks = {};
+    for (const slug of CORE_SKILL_SLUGS) {
+      const r = getStoredSourceSkillRank(actor, slug);
+      initialSourceRanks[slug] = r;
+      workingRanks[slug] = r;
+    }
+
+    const baseAncestryLangs = new Set(
+      (Array.isArray(actor.ancestry?.system?.languages?.value) ? actor.ancestry.system.languages.value : [])
+        .map(s => String(s || "").toLowerCase())
+        .filter(Boolean)
+    );
+    const liveLangValues = Array.isArray(actor.system?.details?.languages?.value)
+      ? [...actor.system.details.languages.value]
+      : [];
+    let langValuesDirty = false;
+    let customLangText = String(actor.system?.details?.languages?.details || "").trim();
+    let customLangDirty = false;
+    const removedLangs = [];
+
+    for (let i = preview.levels.length - 1; i >= 0; i--) {
+      const info = preview.levels[i];
+
+      const skillSlug = info.trackedSkillIncrease?.slug || cleanManualSkills[info.level] || null;
+      if (skillSlug && (workingRanks[skillSlug] || 0) >= 1) {
+        workingRanks[skillSlug] = workingRanks[skillSlug] - 1;
+      }
+
+      for (const extra of info.overCapExtraAdjustments || []) {
+        if (extra?.slug && (workingRanks[extra.slug] || 0) >= 1) {
+          workingRanks[extra.slug] = workingRanks[extra.slug] - 1;
+        }
+      }
+
+      if (info.intModDrop) {
+        if (info.trackedIntBonusSkill && info.trackedIntBonusSkill !== "__lore__") {
+          const iSlug = info.trackedIntBonusSkill;
+          if ((workingRanks[iSlug] || 0) >= 1) {
+            workingRanks[iSlug] = workingRanks[iSlug] - 1;
+          }
+        }
+        if (info.trackedIntBonusLanguage) {
+          const matchedSlug = resolveLanguageSlug(info.trackedIntBonusLanguage);
+          if (matchedSlug && !baseAncestryLangs.has(matchedSlug)) {
+            const idx = liveLangValues.findIndex(v => String(v || "").toLowerCase() === matchedSlug);
+            if (idx >= 0) {
+              liveLangValues.splice(idx, 1);
+              langValuesDirty = true;
+              removedLangs.push(capitalize(matchedSlug));
+            }
+          } else if (!matchedSlug && customLangText) {
+            const parts = customLangText.split(",").map(s => s.trim()).filter(Boolean);
+            const filtered = parts.filter(p => p.toLowerCase() !== info.trackedIntBonusLanguage.toLowerCase());
+            if (filtered.length !== parts.length) {
+              customLangText = filtered.join(", ");
+              customLangDirty = true;
+              removedLangs.push(info.trackedIntBonusLanguage);
+            }
+          }
+        }
+      }
+    }
+
+    // Final safety clamp to targetLevel's legal skill rank cap
+    const capAtTarget = maxSkillRankForLevel(cleanTarget);
+    for (const slug of CORE_SKILL_SLUGS) {
+      if ((workingRanks[slug] || 0) > capAtTarget) {
+        workingRanks[slug] = capAtTarget;
+      }
+    }
+
+    const skillChanges = [];
+    for (const slug of CORE_SKILL_SLUGS) {
+      if (workingRanks[slug] !== initialSourceRanks[slug]) {
+        actorUpdates[`system.skills.${slug}.rank`] = workingRanks[slug];
+        skillChanges.push(`${capitalize(slug)} ${RANK_SHORT[initialSourceRanks[slug]]}→${RANK_SHORT[workingRanks[slug]]}`);
+      }
+    }
+    if (skillChanges.length > 0) {
+      summary.push(`Skills: ${skillChanges.join(", ")}`);
+    }
+    if (langValuesDirty) {
+      actorUpdates["system.details.languages.value"] = liveLangValues;
+    }
+    if (customLangDirty) {
+      actorUpdates["system.details.languages.details"] = customLangText;
+    }
+    if (removedLangs.length > 0) {
+      summary.push(`Removed Languages: ${removedLangs.join(", ")}`);
+    }
+
+    // Add concise reminder for any untracked skill increase slots the user left untouched
+    const stillUntracked = preview.levels
+      .filter(info => info.untrackedSkillIncrease && !cleanManualSkills[info.level])
+      .map(info => `Lv ${info.level}`);
+    if (stillUntracked.length > 0) {
+      reminders.push(`Skill Increase(s) at ${stillUntracked.join(", ")} weren't tracked — review skill ranks on the Skills tab.`);
+    }
+    for (const info of preview.levels) {
+      if (info.intModDrop && (!info.trackedIntBonusSkillRevert || !info.trackedIntBonusLanguageWillRemove)) {
+        reminders.push(`Lv ${info.level} INT drop (${info.intModDrop.fromModStr} → ${info.intModDrop.toModStr}): double-check Trained Skills & Languages on the sheet.`);
+      }
+    }
+  }
+
+  // 3c. Remove Tracked / Reverted-Level-Band Formulas
+  if (revertFormulas) {
+    const formulaUuidsToRemove = new Set();
+    const removedFormulaNames = [];
+    for (const info of preview.levels) {
+      for (const fm of info.formulas) {
+        if (fm?.uuid) {
+          formulaUuidsToRemove.add(fm.uuid);
+          removedFormulaNames.push(fm.name);
+        }
+      }
+    }
+    if (formulaUuidsToRemove.size > 0 && Array.isArray(actor.system?.crafting?.formulas)) {
+      const filtered = foundry.utils.deepClone(actor.system.crafting.formulas)
+        .filter(f => !formulaUuidsToRemove.has(f?.uuid));
+      actorUpdates["system.crafting.formulas"] = filtered;
+      summary.push(`Reverted Formulas (${removedFormulaNames.length}): ${removedFormulaNames.slice(0, 3).join(", ")}${removedFormulaNames.length > 3 ? ` +${removedFormulaNames.length - 3} more` : ""}`);
+    }
+  }
+
+  _plannerUpdatingActors.add(actor.id);
+  try {
+    await actor.update(actorUpdates, { [MODULE_ID]: { fromLevelPlanner: true } });
+  } finally {
+    setTimeout(() => _plannerUpdatingActors.delete(actor.id), 1500);
+  }
+
+  // Allow PF2e's native level-down feature cleanup & derived data recalculation to settle
+  await new Promise(resolve => setTimeout(resolve, 350));
+
+  // -------------------------------------------------------------------------
+  // STEP 4: Prune Any Remaining Higher-Level Dual Class Features
+  // -------------------------------------------------------------------------
+  const remainingDualIds = [];
+  for (const info of preview.levels) {
+    for (const dc of info.dualClassFeaturesToDelete || []) {
+      if (actor.items?.has(dc.itemId)) {
+        remainingDualIds.push(dc.itemId);
+      }
+    }
+  }
+  if (remainingDualIds.length > 0) {
+    try {
+      await actor.deleteEmbeddedDocuments("Item", Array.from(new Set(remainingDualIds)));
+      summary.push(`Removed ${remainingDualIds.length} Dual Class feature(s)`);
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed pruning higher-level Dual Class features:", err);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // STEP 5: Sync Spellcasting Entry Slots Down to targetLevel
+  // -------------------------------------------------------------------------
+  if (revertSpells) {
+    try {
+      const postReport = analyzeCharacter(actor);
+      const syncedNames = [];
+      const postMatchedEntryIds = new Set();
+
+      for (const src of postReport?.spellcasting?.sources || []) {
+        if (src.entryExists && src.entryId) {
+          postMatchedEntryIds.add(src.entryId);
+          if (src.slotsOutdated) {
+            const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src);
+            if (ok) syncedNames.push(src.matchedEntryName || src.title);
+          }
+        }
+      }
+
+      // If an archetype spellcasting entry had its granting feat reverted, zero its daily slots cleanly
+      for (const preSrc of preReport?.spellcasting?.sources || []) {
+        if (preSrc.sourceKind !== "archetype" || !preSrc.entryExists || !preSrc.entryId) continue;
+        if (postMatchedEntryIds.has(preSrc.entryId)) continue;
+        const entryDoc = actor.items?.get(preSrc.entryId);
+        if (!entryDoc || entryDoc.type !== "spellcastingEntry") continue;
+        const zeroUpdates = {};
+        for (let r = 1; r <= 10; r++) {
+          const curMax = Number(entryDoc.system?.slots?.[`slot${r}`]?.max ?? 0);
+          if (curMax > 0) {
+            zeroUpdates[`system.slots.slot${r}.max`] = 0;
+            zeroUpdates[`system.slots.slot${r}.value`] = 0;
+          }
+        }
+        if (Object.keys(zeroUpdates).length > 0) {
+          await entryDoc.update(zeroUpdates);
+          syncedNames.push(entryDoc.name);
+          reminders.push(`Spellcasting entry "${entryDoc.name}" had its granting feat reverted — slots zeroed.`);
+        }
+      }
+
+      if (syncedNames.length > 0) {
+        summary.push(`Synced spell slots: ${syncedNames.join(", ")}`);
+      }
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Spellcasting sync during de-level failed:", err);
+    }
+  }
+
+  return {
+    ok: true,
+    oldLevel,
+    newLevel: cleanTarget,
+    savedLevels,
+    summary,
+    reminders
+  };
 }

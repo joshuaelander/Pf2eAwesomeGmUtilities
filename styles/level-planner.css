@@ -515,6 +515,19 @@
   color: var(--pf2e-gm-text-white);
 }
 
+.pf2e-lp-container .pf2e-lp-btn-revert {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.12);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.58);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-container .pf2e-lp-btn-revert:hover:not(:disabled) {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.24);
+  border-color: var(--pf2e-gm-yellow-bright);
+  color: var(--pf2e-gm-text-white);
+  box-shadow: 0 0 9px rgba(var(--pf2e-gm-yellow-rgb), 0.35);
+}
+
 .pf2e-lp-container .pf2e-lp-btn-sm {
   padding: 3px 8px;
   font-size: 0.77em;
@@ -562,6 +575,13 @@
 .pf2e-lp-container .pf2e-lp-level-banner-left {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.pf2e-lp-container .pf2e-lp-level-banner-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -1646,4 +1666,233 @@
 .pf2e-lp-prompt-warn-box ul {
   margin: 4px 0 0 0;
   padding-left: 18px;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 8. DE-LEVEL / REVERT PREVIEW DIALOG (.pf2e-lp-revert-dialog)              */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-revert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  font-size: 0.9em;
+  color: var(--pf2e-gm-text-primary);
+}
+
+.pf2e-lp-revert-intro {
+  margin: 0;
+  line-height: 1.42;
+  color: var(--pf2e-gm-text-secondary);
+}
+
+.pf2e-lp-revert-target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pf2e-gm-bg-card);
+  border: 1px solid var(--pf2e-gm-border-red);
+}
+
+.pf2e-lp-revert-target-row label {
+  font-weight: 700;
+  color: var(--pf2e-gm-text-cream);
+  white-space: nowrap;
+}
+
+.pf2e-lp-revert-target {
+  flex: 1 1 auto;
+  height: 30px;
+  padding: 2px 8px;
+  background: var(--pf2e-gm-bg-input);
+  color: var(--pf2e-gm-text-white);
+  border: 1px solid var(--pf2e-gm-border-input);
+  border-radius: 5px;
+  font-weight: 600;
+}
+
+.pf2e-lp-revert-target:focus {
+  outline: none;
+  border-color: var(--pf2e-gm-yellow);
+  box-shadow: 0 0 8px rgba(var(--pf2e-gm-yellow-rgb), 0.35);
+}
+
+.pf2e-lp-revert-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.pf2e-lp-revert-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pf2e-gm-bg-sidebar);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-lp-revert-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 0.88em;
+  line-height: 1.35;
+  color: var(--pf2e-gm-text-secondary);
+  cursor: pointer;
+}
+
+.pf2e-lp-revert-opt.is-highlight {
+  color: var(--pf2e-gm-cyan-tint-text);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-lp-revert-opt input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--pf2e-gm-cyan);
+}
+
+.pf2e-lp-revert-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pf2e-lp-revert-card {
+  border-radius: 6px;
+  background: var(--pf2e-gm-bg-card);
+  border: 1px solid var(--pf2e-gm-border-card);
+  border-left: 3px solid var(--pf2e-gm-yellow);
+  overflow: hidden;
+}
+
+.pf2e-lp-revert-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--pf2e-gm-bg-sidebar);
+  border-bottom: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-lp-revert-lvl {
+  font-weight: 700;
+  color: var(--pf2e-gm-text-white);
+  font-size: 0.94em;
+}
+
+.pf2e-lp-revert-card-body {
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pf2e-lp-revert-row {
+  font-size: 0.86em;
+  line-height: 1.4;
+  color: var(--pf2e-gm-text-secondary);
+}
+
+.pf2e-lp-revert-row strong {
+  color: var(--pf2e-gm-text-cream);
+}
+
+.pf2e-lp-revert-row.is-muted {
+  color: var(--pf2e-gm-text-muted);
+  font-size: 0.82em;
+}
+
+.pf2e-lp-revert-skill-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.pf2e-lp-revert-skill-pick {
+  flex: 1 1 210px;
+  height: 26px;
+  padding: 1px 6px;
+  background: var(--pf2e-gm-bg-input);
+  color: var(--pf2e-gm-text-white);
+  border: 1px solid var(--pf2e-gm-border-input);
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+
+.pf2e-lp-revert-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.pf2e-lp-revert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.42);
+  color: var(--pf2e-gm-text-white);
+  font-size: 0.9em;
+}
+
+.pf2e-lp-revert-chip em {
+  font-style: normal;
+  color: var(--pf2e-gm-text-muted);
+}
+
+.pf2e-lp-revert-chip.is-spell {
+  border-color: rgba(var(--pf2e-gm-purple-rgb), 0.55);
+}
+
+.pf2e-lp-revert-chip.is-formula {
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.5);
+}
+
+.pf2e-lp-revert-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 700;
+}
+
+.pf2e-lp-revert-tag.is-save {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  color: var(--pf2e-gm-cyan-bright);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.45);
+}
+
+.pf2e-lp-revert-tag.is-info {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.22);
+  color: var(--pf2e-gm-purple-soft);
+}
+
+.pf2e-lp-revert-tag.is-warn {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.2);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-revert-sync-note {
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.14);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.45);
+  color: var(--pf2e-gm-purple-pale);
+  font-size: 0.85em;
+  line-height: 1.4;
 }

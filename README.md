@@ -71,6 +71,7 @@ A lightweight, opt-in character roadmap planner and guided level-up assistant (d
 - **Native PF2e Compendium Browser & Quick Pickers:** Open PF2e's built-in Compendium Browser pre-filtered for any feat slot, spell rank, or alchemical formula level and drag-and-drop items directly onto future levels, or use the optional lazy-loaded inline Quick Pick modals to search and bookmark feats, spells, and formulas rapidly.
 - **Live Attribute, INT Bonus & Skill Projections:** Projects exact PF2e partial-boost attribute modifiers and U/T/E/M/L skill ranks across Levels 1-20 with soft prerequisite warnings, and automatically unlocks an INT Increase Bonus panel (+1 Trained Skill or Lore and +1 Language) whenever a planned boost raises the character's Intelligence modifier.
 - **Guided 1-Click Level-Up & Sheet Auto-Prompt:** Reviews all planned choices for the next level (calling out any unplanned slots, boosts, skills, or formulas) and applies them natively—updating level, attribute boosts, INT bonus skill/language, skill increases, formulas, feats, and spells—and automatically prompts to apply saved planner choices if a player raises their level directly on the Character Sheet.
+- **Safe De-Level / Revert to Earlier Level:** Revert a character back to any lower level (e.g. Level 5 → Level 4, or multi-level respecs) while automatically snapshotting their applied boosts, slotted feats (including custom/homebrew items), tracked/over-cap skill increases, over-rank spells, and formulas into the Build Plan so they can tweak choices and re-apply cleanly later.
 
 ---
 
