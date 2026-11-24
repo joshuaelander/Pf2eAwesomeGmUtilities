@@ -14,127 +14,113 @@
  */
 
 :root {
-  /* -------------------------------------------------------------------------
+    /* -------------------------------------------------------------------------
      1. BASE SURFACES (Foundry Obsidian Black Scale: Darkest -> Lightest)
      ------------------------------------------------------------------------- */
-  --pf2e-gm-bg-input: #08080a;         /* Recessed inputs, selects, bar tracks */
-  --pf2e-gm-bg-sidebar: #0a0a0d;       /* Sidebars, nav strips, footers, empty wells */
-  --pf2e-gm-bg-inset: #0e0e12;         /* Nested rows, chips, pips, sub-cards */
-  --pf2e-gm-bg-window: #0f0f12;        /* Window frames & dialog roots */
-  --pf2e-gm-bg-main: #111115;          /* Main scrolling pane / app container */
-  --pf2e-gm-bg-btn: #141418;           /* Standard buttons, cards, unselected tabs */
-  --pf2e-gm-bg-card: #16161b;          /* Cards, panels, floating HUD items */
-  --pf2e-gm-bg-elevated: #1b1b22;      /* Elevated active tabs / hover states */
-  --pf2e-gm-bg-btn-hover: #221618;     /* Standard button & row hover (crimson tint) */
-  --pf2e-gm-bg-overlay: rgba(15, 15, 18, 0.94); /* Translucent floating HUD backdrop */
-
-  /* -------------------------------------------------------------------------
+    --pf2e-gm-bg-input: #08080a; /* Recessed inputs, selects, bar tracks */
+    --pf2e-gm-bg-sidebar: #0a0a0d; /* Sidebars, nav strips, footers, empty wells */
+    --pf2e-gm-bg-inset: #0e0e12; /* Nested rows, chips, pips, sub-cards */
+    --pf2e-gm-bg-window: #0f0f12; /* Window frames & dialog roots */
+    --pf2e-gm-bg-main: #111115; /* Main scrolling pane / app container */
+    --pf2e-gm-bg-btn: #141418; /* Standard buttons, cards, unselected tabs */
+    --pf2e-gm-bg-card: #16161b; /* Cards, panels, floating HUD items */
+    --pf2e-gm-bg-elevated: #1b1b22; /* Elevated active tabs / hover states */
+    --pf2e-gm-bg-btn-hover: #221618; /* Standard button & row hover (crimson tint) */
+    --pf2e-gm-bg-overlay: rgba(15, 15, 18, 0.94); /* Translucent floating HUD backdrop */
+    /* -------------------------------------------------------------------------
      2. FOUNDRY / PATHFINDER CRIMSON RED STRUCTURAL CHROME
      ------------------------------------------------------------------------- */
-  --pf2e-gm-red-deep: #420505;
-  --pf2e-gm-red: #6e0808;
-  --pf2e-gm-red-mid: #7a0b0b;
-  --pf2e-gm-red-accent: #991515;
-  --pf2e-gm-red-rgb: 176, 24, 24;
-  --pf2e-gm-red-dark-rgb: 139, 17, 17;
-
-  /* Reusable Structural Gradients */
-  --pf2e-gm-header-bg: linear-gradient(180deg, var(--pf2e-gm-red) 0%, var(--pf2e-gm-red-deep) 70%, #1c080a 100%);
-  --pf2e-gm-crimson-btn-bg: linear-gradient(180deg, var(--pf2e-gm-red) 0%, #3d0505 100%);
-  --pf2e-gm-hero-bg: linear-gradient(180deg, #1b1315 0%, #121216 100%);
-  --pf2e-gm-strip-bg: linear-gradient(135deg, #121216 0%, #1c1012 100%);
-  --pf2e-gm-selected-row-bg: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.55) 0%, #1c1418 100%);
-  --pf2e-gm-table-head-bg: #1a1214;
-
-  /* -------------------------------------------------------------------------
+    --pf2e-gm-red-deep: #420505;
+    --pf2e-gm-red: #6e0808;
+    --pf2e-gm-red-mid: #7a0b0b;
+    --pf2e-gm-red-accent: #991515;
+    --pf2e-gm-red-rgb: 176, 24, 24;
+    --pf2e-gm-red-dark-rgb: 139, 17, 17;
+    /* Reusable Structural Gradients */
+    --pf2e-gm-header-bg: linear-gradient(180deg, var(--pf2e-gm-red) 0%, var(--pf2e-gm-red-deep) 70%, #1c080a 100%);
+    --pf2e-gm-crimson-btn-bg: linear-gradient(180deg, var(--pf2e-gm-red) 0%, #3d0505 100%);
+    --pf2e-gm-hero-bg: linear-gradient(180deg, #1b1315 0%, #121216 100%);
+    --pf2e-gm-strip-bg: linear-gradient(135deg, #121216 0%, #1c1012 100%);
+    --pf2e-gm-selected-row-bg: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.55) 0%, #1c1418 100%);
+    --pf2e-gm-table-head-bg: #1a1214;
+    /* -------------------------------------------------------------------------
      3. TYPOGRAPHY (Crisp White & Pathfinder Parchment Cream Scale)
      ------------------------------------------------------------------------- */
-  --pf2e-gm-text-white: #ffffff;       /* Primary titles, numbers, hover text */
-  --pf2e-gm-text-header: #fffaf0;      /* Window header titles on crimson */
-  --pf2e-gm-text-primary: #f5f0e6;     /* Default body text */
-  --pf2e-gm-text-cream: #f2e5cb;       /* Panel headers, form labels, cream accents */
-  --pf2e-gm-text-btn: #f2ead9;         /* Standard button labels */
-  --pf2e-gm-text-label: #e6dcc8;       /* Sub-labels & tags */
-  --pf2e-gm-text-secondary: #ded5c6;   /* Descriptions & table body copy */
-  --pf2e-gm-text-subtle: #c9bfb0;      /* Subtitles, inactive tabs, hints */
-  --pf2e-gm-text-muted: #a89f91;       /* Secondary meta (e.g. Level 5, placeholders) */
-  --pf2e-gm-text-dim: #857d72;         /* Dimmed placeholders & icons */
-
-  /* -------------------------------------------------------------------------
+    --pf2e-gm-text-white: #ffffff; /* Primary titles, numbers, hover text */
+    --pf2e-gm-text-header: #fffaf0; /* Window header titles on crimson */
+    --pf2e-gm-text-primary: #f5f0e6; /* Default body text */
+    --pf2e-gm-text-cream: #f2e5cb; /* Panel headers, form labels, cream accents */
+    --pf2e-gm-text-btn: #f2ead9; /* Standard button labels */
+    --pf2e-gm-text-label: #e6dcc8; /* Sub-labels & tags */
+    --pf2e-gm-text-secondary: #ded5c6; /* Descriptions & table body copy */
+    --pf2e-gm-text-subtle: #c9bfb0; /* Subtitles, inactive tabs, hints */
+    --pf2e-gm-text-muted: #a89f91; /* Secondary meta (e.g. Level 5, placeholders) */
+    --pf2e-gm-text-dim: #857d72; /* Dimmed placeholders & icons */
+    /* -------------------------------------------------------------------------
      4. BORDERS, SHADOWS & SCROLLBARS
      ------------------------------------------------------------------------- */
-  --pf2e-gm-cream-rgb: 242, 232, 208;
-  --pf2e-gm-border-subtle: rgba(var(--pf2e-gm-cream-rgb), 0.14);
-  --pf2e-gm-border-card: rgba(var(--pf2e-gm-cream-rgb), 0.18);
-  --pf2e-gm-border-window: rgba(238, 226, 202, 0.28);
-  --pf2e-gm-border-input: rgba(var(--pf2e-gm-cream-rgb), 0.28);
-  --pf2e-gm-border-btn: rgba(var(--pf2e-gm-cream-rgb), 0.35);
-  --pf2e-gm-border-bright: #f5ecdb;
-  --pf2e-gm-border-red: rgba(var(--pf2e-gm-red-rgb), 0.45);
-  --pf2e-gm-border-red-strong: rgba(var(--pf2e-gm-red-rgb), 0.6);
-
-  --pf2e-gm-shadow-window: 0 16px 44px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(var(--pf2e-gm-red-dark-rgb), 0.55);
-  --pf2e-gm-shadow-card: 0 4px 14px rgba(0, 0, 0, 0.55);
-  --pf2e-gm-shadow-hud: 0 6px 24px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(var(--pf2e-gm-red-dark-rgb), 0.5);
-
-  --pf2e-gm-scroll-track: var(--pf2e-gm-bg-sidebar);
-  --pf2e-gm-scroll-thumb: #3a1a1c;
-  --pf2e-gm-scroll-thumb-hover: var(--pf2e-gm-red-accent);
-
-  /* -------------------------------------------------------------------------
+    --pf2e-gm-cream-rgb: 242, 232, 208;
+    --pf2e-gm-border-subtle: rgba(var(--pf2e-gm-cream-rgb), 0.14);
+    --pf2e-gm-border-card: rgba(var(--pf2e-gm-cream-rgb), 0.18);
+    --pf2e-gm-border-window: rgba(238, 226, 202, 0.28);
+    --pf2e-gm-border-input: rgba(var(--pf2e-gm-cream-rgb), 0.28);
+    --pf2e-gm-border-btn: rgba(var(--pf2e-gm-cream-rgb), 0.35);
+    --pf2e-gm-border-bright: #f5ecdb;
+    --pf2e-gm-border-red: rgba(var(--pf2e-gm-red-rgb), 0.45);
+    --pf2e-gm-border-red-strong: rgba(var(--pf2e-gm-red-rgb), 0.6);
+    --pf2e-gm-shadow-window: 0 16px 44px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(var(--pf2e-gm-red-dark-rgb), 0.55);
+    --pf2e-gm-shadow-card: 0 4px 14px rgba(0, 0, 0, 0.55);
+    --pf2e-gm-shadow-hud: 0 6px 24px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(var(--pf2e-gm-red-dark-rgb), 0.5);
+    --pf2e-gm-scroll-track: var(--pf2e-gm-bg-sidebar);
+    --pf2e-gm-scroll-thumb: #3a1a1c;
+    --pf2e-gm-scroll-thumb-hover: var(--pf2e-gm-red-accent);
+    /* -------------------------------------------------------------------------
      5. PATHFINDER ACCENT LAYER (Gold, Royal Blue, Expert Purple & Ruby)
         Each accent has solid shades + an `-rgb` triplet for translucent tints.
         (Zero Green Anywhere)
      ------------------------------------------------------------------------- */
-
-  /* Pathfinder Royal Blue — Healthy, Complete, Active Tabs, View, Formulas */
-  --pf2e-gm-cyan: #5c8ef2;
-  --pf2e-gm-cyan-mid: #7ba8ff;
-  --pf2e-gm-cyan-bright: #a3c2ff;
-  --pf2e-gm-cyan-soft: #c9ddff;
-  --pf2e-gm-cyan-tint-text: #e8f0ff;
-  --pf2e-gm-cyan-rgb: 92, 142, 242;
-
-  /* Pathfinder Ruby-Crimson — Critical Alerts, Missing, Delete, Combat */
-  --pf2e-gm-pink: #d9485b;
-  --pf2e-gm-pink-deep: #9e1b2d;
-  --pf2e-gm-pink-bright: #ea6c7d;
-  --pf2e-gm-pink-soft: #f59ba7;
-  --pf2e-gm-pink-pale: #ffd4da;
-  --pf2e-gm-pink-rgb: 217, 72, 91;
-
-  /* Pathfinder Deep Rose — Hazards */
-  --pf2e-gm-rose: #c93b4b;
-  --pf2e-gm-rose-soft: #f08c98;
-  --pf2e-gm-rose-rgb: 201, 59, 75;
-
-  /* Pathfinder Expert Purple — Spells, Dual Class, Shared, Culprits, Secrets */
-  --pf2e-gm-purple: #8e6ce6;
-  --pf2e-gm-purple-deep: #4b2d8f;
-  --pf2e-gm-purple-mid: #6440b8;
-  --pf2e-gm-purple-bright: #a78bfa;
-  --pf2e-gm-purple-soft: #c8b6ff;
-  --pf2e-gm-purple-pale: #ece4ff;
-  --pf2e-gm-purple-rgb: 142, 108, 230;
-
-  /* Pathfinder Antique Gold — Warnings, Next Level, Boosts, Activate, Recommendations */
-  --pf2e-gm-yellow: #d8aa4b;
-  --pf2e-gm-yellow-bright: #efd080;
-  --pf2e-gm-yellow-rgb: 216, 170, 75;
-
-  /* -------------------------------------------------------------------------
+    /* Pathfinder Royal Blue — Healthy, Complete, Active Tabs, View, Formulas */
+    --pf2e-gm-cyan: #5c8ef2;
+    --pf2e-gm-cyan-mid: #7ba8ff;
+    --pf2e-gm-cyan-bright: #a3c2ff;
+    --pf2e-gm-cyan-soft: #c9ddff;
+    --pf2e-gm-cyan-tint-text: #e8f0ff;
+    --pf2e-gm-cyan-rgb: 92, 142, 242;
+    /* Pathfinder Ruby-Crimson — Critical Alerts, Missing, Delete, Combat */
+    --pf2e-gm-pink: #d60020;
+    --pf2e-gm-pink-deep: #d60020;
+    --pf2e-gm-pink-bright: #d60020;
+    --pf2e-gm-pink-soft: #d60020;
+    --pf2e-gm-pink-pale: #d60020;
+    --pf2e-gm-pink-rgb: 214, 0, 32;
+    /* Pathfinder Deep Rose — Hazards */
+    --pf2e-gm-rose: #c93b4b;
+    --pf2e-gm-rose-soft: #f08c98;
+    --pf2e-gm-rose-rgb: 201, 59, 75;
+    /* Pathfinder Expert Purple — Spells, Dual Class, Shared, Culprits, Secrets */
+    --pf2e-gm-purple: #8e6ce6;
+    --pf2e-gm-purple-deep: #4b2d8f;
+    --pf2e-gm-purple-mid: #6440b8;
+    --pf2e-gm-purple-bright: #a78bfa;
+    --pf2e-gm-purple-soft: #c8b6ff;
+    --pf2e-gm-purple-pale: #ece4ff;
+    --pf2e-gm-purple-rgb: 142, 108, 230;
+    /* Pathfinder Antique Gold — Warnings, Next Level, Boosts, Activate, Recommendations */
+    --pf2e-gm-yellow: #d8aa4b;
+    --pf2e-gm-yellow-bright: #efd080;
+    --pf2e-gm-yellow-rgb: 216, 170, 75;
+    /* -------------------------------------------------------------------------
      6. COMPOSITE ACCENT GRADIENTS (CTAs, Danger, Metric Bars)
      ------------------------------------------------------------------------- */
-  /* Primary CTA: Pathfinder Royal Blue -> Pathfinder Expert Purple with Gold trim */
-  --pf2e-gm-cta-bg: linear-gradient(135deg, #243a85 0%, var(--pf2e-gm-purple-deep) 100%);
-  --pf2e-gm-cta-bg-hover: linear-gradient(135deg, #3250b5 0%, var(--pf2e-gm-purple-mid) 100%);
-  --pf2e-gm-cta-border: rgba(var(--pf2e-gm-yellow-rgb), 0.78);
-  --pf2e-gm-cta-shadow: 0 2px 10px rgba(36, 58, 133, 0.45);
-  --pf2e-gm-cta-shadow-hover: 0 0 12px rgba(var(--pf2e-gm-purple-rgb), 0.5);
-
-  --pf2e-gm-danger-btn-bg: linear-gradient(135deg, #7a0b0b 0%, #b82538 100%);
-  --pf2e-gm-panic-bg: linear-gradient(135deg, #8f1422 0%, #5c0912 100%);
-  --pf2e-gm-panic-bg-hover: linear-gradient(135deg, #b82234 0%, #7d0f1d 100%);
-  --pf2e-gm-live-btn-bg: linear-gradient(135deg, var(--pf2e-gm-yellow) 0%, var(--pf2e-gm-yellow-bright) 100%);
-  --pf2e-gm-metric-bar-bg: linear-gradient(90deg, var(--pf2e-gm-cyan), var(--pf2e-gm-purple), var(--pf2e-gm-yellow));
+    /* Primary CTA: Pathfinder Royal Blue -> Pathfinder Expert Purple with Gold trim */
+    --pf2e-gm-cta-bg: linear-gradient(135deg, #243a85 0%, var(--pf2e-gm-purple-deep) 100%);
+    --pf2e-gm-cta-bg-hover: linear-gradient(135deg, #3250b5 0%, var(--pf2e-gm-purple-mid) 100%);
+    --pf2e-gm-cta-border: rgba(var(--pf2e-gm-yellow-rgb), 0.78);
+    --pf2e-gm-cta-shadow: 0 2px 10px rgba(36, 58, 133, 0.45);
+    --pf2e-gm-cta-shadow-hover: 0 0 12px rgba(var(--pf2e-gm-purple-rgb), 0.5);
+    --pf2e-gm-danger-btn-bg: linear-gradient(135deg, #7a0b0b 0%, #b82538 100%);
+    --pf2e-gm-panic-bg: linear-gradient(135deg, #8f1422 0%, #5c0912 100%);
+    --pf2e-gm-panic-bg-hover: linear-gradient(135deg, #b82234 0%, #7d0f1d 100%);
+    --pf2e-gm-live-btn-bg: linear-gradient(135deg, var(--pf2e-gm-yellow) 0%, var(--pf2e-gm-yellow-bright) 100%);
+    --pf2e-gm-metric-bar-bg: linear-gradient(90deg, var(--pf2e-gm-cyan), var(--pf2e-gm-purple), var(--pf2e-gm-yellow));
 }
