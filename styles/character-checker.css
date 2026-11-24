@@ -696,7 +696,7 @@
   justify-content: space-between;
   gap: 8px;
   margin: 4px 0 8px 0;
-  padding: 6px 10px;
+  padding: 5px 9px;
   background: var(--pf2e-gm-strip-bg);
   border: 1px solid var(--pf2e-gm-border-window);
   border-left: 3px solid var(--pf2e-gm-red-accent);
@@ -708,6 +708,7 @@
 }
 
 .pf2e-cc-sheet-banner.status-complete {
+  padding: 4px 9px;
   border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.45);
   border-left-color: var(--pf2e-gm-cyan);
 }
@@ -849,13 +850,13 @@
   width: auto !important;
   height: auto !important;
   min-height: 0;
-  padding: 3px 8px;
+  padding: 2px 7px;
   margin: 0;
   border-radius: 4px;
   background: var(--pf2e-gm-bg-btn);
   border: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.42);
   color: var(--pf2e-gm-text-btn);
-  font-size: 0.88em;
+  font-size: 0.86em;
   font-weight: 700;
   line-height: 1.25;
   cursor: pointer;
@@ -904,16 +905,15 @@
   border-radius: 3px;
 }
 
-/* Spellcasting Tab Inline Panel (Unified Banner + Collapsible Rows) */
-.pf2e-cc-sheet-spells-bar {
+/* Unified Collapsible Inline Strips (Skills, Spellcasting, Alchemist/Formulas) */
+.pf2e-cc-sheet-collapsible {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  padding: 6px 10px;
 }
 
-.pf2e-cc-sheet-spells-header {
+.pf2e-cc-sheet-collapsible-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -924,34 +924,51 @@
   border-bottom: 1px solid var(--pf2e-gm-border-red);
 }
 
-.pf2e-cc-sheet-spells-bar.is-collapsed .pf2e-cc-sheet-spells-header {
+.pf2e-cc-sheet-collapsible.is-collapsed .pf2e-cc-sheet-collapsible-head {
   padding-bottom: 0;
   margin-bottom: 0;
   border-bottom: none;
 }
 
-.pf2e-cc-sheet-spells-title-toggle {
+.pf2e-cc-sheet-title-toggle {
   flex: 1 1 auto;
   min-width: 0;
   cursor: pointer;
   user-select: none;
 }
 
-.pf2e-cc-sheet-spells-title-toggle:hover strong {
+.pf2e-cc-sheet-title-toggle:hover strong {
   text-decoration: underline;
 }
 
-.pf2e-cc-sheet-spells-list {
+.pf2e-cc-sheet-collapsible-body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+.pf2e-cc-sheet-collapsible.is-collapsed .pf2e-cc-sheet-collapsible-body {
+  display: none;
+}
+
+.pf2e-cc-sheet-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px 8px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  border-radius: 4px;
+}
+
+.pf2e-cc-sheet-detail-card strong {
+  color: var(--pf2e-gm-text-cream);
+}
+
+.pf2e-cc-sheet-spells-list {
   max-height: 210px;
   overflow-y: auto;
   padding-right: 2px;
-}
-
-.pf2e-cc-sheet-spells-bar.is-collapsed .pf2e-cc-sheet-spells-list {
-  display: none;
 }
 
 .pf2e-cc-sheet-spell-row {
