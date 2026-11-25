@@ -1445,6 +1445,19 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       extraNote = "Includes +1 Arcane School curriculum slot per rank & +1 cantrip";
     }
 
+    // Check Psychic Conscious Mind Psi Cantrips (+3 at Lv 1-5, +4 at Lv 6-9, +5 at Lv 10+)
+    // and Conscious Mind Granted Spells (+1 bonus repertoire spell per spell rank 1-9)
+    let bonusGrantedLeveled = 0;
+    if (classSlug === "psychic") {
+      const hasConsciousMind = feats.some(f => isPsychicConsciousMindFeat(f));
+      if (hasConsciousMind) {
+        const psiCount = level >= 10 ? 5 : (level >= 6 ? 4 : 3);
+        cantrips = def.cantrips + psiCount;
+        bonusGrantedLeveled = Math.min(9, Math.ceil(level / 2));
+        extraNote = `Includes ${def.cantrips} Occult + ${psiCount} Psi Cantrips & +${bonusGrantedLeveled} Conscious Mind granted spell(s)`;
+      }
+    }
+
     const slots = buildFullCasterSlots(level, def.baseSlotsPerRank, {
       bonusPerRank,
       hasTenthFeat,
@@ -1471,7 +1484,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     let signatureExpected = 0;
 
     if (def.repertoireMatchesSlots) {
-      repertoireExpected = totalLeveledSlots;
+      repertoireExpected = totalLeveledSlots + bonusGrantedLeveled;
       if (def.signatureFromLevel && level >= def.signatureFromLevel) {
         signatureExpected = Math.min(9, Math.ceil(level / 2));
       }
@@ -1516,8 +1529,8 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       const fontCount = level >= 19 ? 6 : (level >= 15 ? 5 : 4);
       const fontSlots = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
       fontSlots[fontRank] = fontCount;
-      const isHarm = featSlugs.has("harmful-font");
-      const fontSpell = isHarm ? "Harm" : "Heal";
+      const fontChoice = detectClericDivineFontChoice(actor, feats, featSlugs);
+      const fontSpell = fontChoice === "harm" ? "Harm" : (fontChoice === "heal" ? "Heal" : "Heal / Harm");
 
       sources.push({
         key: `class:cleric:divine-font:${sourceKind}`,
@@ -1535,10 +1548,16 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
         slots: fontSlots,
         totalLeveledSlots: fontCount,
         slotsSummary: `R${fontRank}: ${fontCount} (${fontSpell})`,
-        expectedSpellsNote: `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} ${fontSpell} slot(s) per day`,
+        expectedSpellsNote: fontChoice
+          ? `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} ${fontSpell} slot(s) per day (auto-prepared on Sync)`
+          : `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} Heal or Harm slot(s) per day — pick Healing or Harmful Font on Level 1 to auto-prepare`,
         repertoireExpected: null,
         signatureExpected: 0,
-        isDivineFont: true
+        isDivineFont: true,
+        divineFontChoice: fontChoice,
+        divineFontRank: fontRank,
+        divineFontCount: fontCount,
+        divineFontSpellName: fontChoice ? fontSpell : ""
       });
     }
   };
@@ -2331,8 +2350,106 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
 
 const SPELL_UUID_TOKEN_REGEX = /@UUID\[([^\]]+)\](?:\{([^}]+)\})?/g;
 const NON_SPELL_PACK_REGEX = /(?:^|[._-])(?:spell-effects|effects?|actions?|conditions?|feats?|equipment|journals?|macros?|tables?|rolltables?|ancestr|heritage|background|class|deit|hazard|bestiary|boon|campaign)/i;
-const RANK_SUBHEADER_REGEX = /^(?:cantrips?|1st|2nd|3rd|[4-9]th|1[0-9]th|20th)(?:\s+rank)?\s*:?$/i;
-const TIER_SUBHEADER_REGEX = /^(?:initial|advanced|greater|surface|deeper|deepest)\s*:?$/i;
+const RANK_SUBHEADER_REGEX = /^(?:cantrips?|1st|2nd|3rd|[4-9]th|1[0-9]th|20th)(?:[\s-]+(?:rank|level))?\s*:?$/i;
+const TIER_SUBHEADER_REGEX = /^(?:initial|advanced|greater|surface|deeper|deepest)(?:\s+(?:psi\s+cantrip|focus\s+spell|bloodline\s+spell|school\s+spell|revelation\s+spell|spell|cantrip))?\s*:?$/i;
+const INLINE_AMP_SUBHEADER_REGEX = /^(?:amp(?:\s+heightened.*)?|heightened(?:\s*\([^)]+\))?|trigger|requirements?|frequency|range|targets?|area|duration|defense|saving\s+throw|success|critical\s+success|failure|critical\s+failure)\s*:?$/i;
+
+/**
+ * Dynamically detects whether a Cleric has selected Healing Font (`"heal"`), Harmful Font (`"harm"`),
+ * or has not yet chosen (`""`), inspecting PF2e feats, `Divine Font (Healing/Harmful)` names,
+ * `flags.pf2e.rulesSelections`, `ChoiceSet` rules, `actor.rollOptions.all`, and `actor.deity.system.font`.
+ */
+function detectClericDivineFontChoice(actor, feats = null, featSlugs = null) {
+  const allFeats = Array.isArray(feats) ? feats : (actor?.itemTypes?.feat || []);
+  const slugs = featSlugs instanceof Set ? featSlugs : new Set(allFeats.map(getItemSlug));
+
+  if (slugs.has("harmful-font")) return "harm";
+  if (slugs.has("healing-font")) return "heal";
+
+  const parseFontToken = (raw) => {
+    if (!raw) return "";
+    const str = typeof raw === "string" ? raw : (typeof raw?.value === "string" ? raw.value : "");
+    if (!str) return "";
+    if (str.startsWith("Compendium.") || str.startsWith("Item.")) {
+      const meta = resolveSyncSpellMeta(str);
+      const n = String(meta?.name || "").toLowerCase();
+      if (/\bharm(?:ful)?(?:\s+font|-font)?\b/.test(n)) return "harm";
+      if (/\bheal(?:ing)?(?:\s+font|-font)?\b/.test(n)) return "heal";
+      return "";
+    }
+    const lower = str.toLowerCase();
+    if (/\bharm(?:ful)?(?:-font)?\b/.test(lower)) return "harm";
+    if (/\bheal(?:ing)?(?:-font)?\b/.test(lower)) return "heal";
+    return "";
+  };
+
+  for (const feat of allFeats) {
+    const slug = getItemSlug(feat);
+    const name = String(feat.name || "");
+    if (slug !== "divine-font" && !/\bdivine\s+font\b/i.test(name)) continue;
+
+    // 1. Check PF2e ChoiceSet / rulesSelections on Divine Font
+    const sels = feat.flags?.pf2e?.rulesSelections;
+    if (sels && typeof sels === "object") {
+      for (const val of Object.values(sels)) {
+        const hit = parseFontToken(val);
+        if (hit) return hit;
+      }
+    }
+    const rules = Array.isArray(feat.system?.rules) ? feat.system.rules : [];
+    for (const r of rules) {
+      if (r?.key === "ChoiceSet") {
+        const hit = parseFontToken(r.selection);
+        if (hit) return hit;
+      }
+    }
+
+    // 2. Check parenthetical / renamed item title e.g. "Divine Font (Healing)" or "Divine Font (Harmful Font)"
+    const paren = name.match(/\(([^)]+)\)/);
+    if (paren) {
+      const hit = parseFontToken(paren[1]);
+      if (hit) return hit;
+    }
+  }
+
+  // 3. Check live PF2e actor rollOptions
+  const rollAll = actor?.rollOptions?.all || {};
+  for (const [k, v] of Object.entries(rollAll)) {
+    if (!v) continue;
+    if (/(?:^|:)(?:divine-font|font):harm|feature:harmful-font/i.test(k)) return "harm";
+    if (/(?:^|:)(?:divine-font|font):heal|feature:healing-font/i.test(k)) return "heal";
+  }
+
+  // 4. Fallback to deity's allowed font when the deity only allows one choice
+  const deityFonts = Array.isArray(actor?.deity?.system?.font)
+    ? actor.deity.system.font.map(f => String(f || "").toLowerCase()).filter(Boolean)
+    : [];
+  if (deityFonts.length === 1) {
+    if (deityFonts[0] === "harm") return "harm";
+    if (deityFonts[0] === "heal") return "heal";
+  }
+
+  return "";
+}
+
+/**
+ * Checks whether an embedded feat/classfeature is a Psychic Conscious Mind subclass feature.
+ */
+function isPsychicConsciousMindFeat(feat) {
+  if (!feat) return false;
+  const slug = getItemSlug(feat);
+  if (slug === "conscious-mind") return false;
+  const desc = String(feat.system?.description?.value || "");
+  if (/<(?:strong|b|h[1-6])[^>]*>\s*(?:Standard\s+Psi\s+Cantrips?|Unique\s+Psi\s+Cantrips?|Surface\s+Psi\s+Cantrip|Deeper\s+Psi\s+Cantrip|Deepest\s+Psi\s+Cantrip|Psi\s+Cantrips?)\s*[:<]/i.test(desc)) {
+    return true;
+  }
+  const traits = Array.isArray(feat.system?.traits?.value) ? feat.system.traits.value : [];
+  const isPsychicFeature = traits.includes("psychic") || feat.system?.category === "classfeature";
+  if (isPsychicFeature && /<(?:strong|b|h[1-6])[^>]*>\s*Granted\s+Spells?\s*[:<]/i.test(desc) && /\bpsi\s+cantrip/i.test(desc)) {
+    return true;
+  }
+  return false;
+}
 
 /** Lazily populated per-pack `{ size, byName }` lookup for named `@UUID[Compendium...Item.Name]` links */
 const _packNameIndexCache = new Map();
@@ -2532,22 +2649,26 @@ function extractSpellRefsFromText(text) {
  * Extracts the HTML slice belonging to a named bold/heading section in a PF2e item description
  * (e.g. `Sorcerous Gifts`, `Granted Spells`, `Curriculum`, `Bloodline Spells`, `School Spells`,
  * `Revelation Spells`, `Standard Psi Cantrips`, `Unique Psi Cantrips`, `Hex Cantrip`, `Conflux Spell`).
- * Stops cleanly at the next major bold/heading section or `<hr>` while keeping rank/tier sub-labels inside.
+ * Respects HTML heading hierarchy (`h1`..`h6` vs `strong`) and keeps rank/tier (and optional Amp)
+ * sub-labels inside the section while stopping cleanly at the next sibling/major heading.
  */
-function extractNamedSectionHtml(descHtml, headingPatterns) {
+function extractNamedSectionHtml(descHtml, headingPatterns, { stopAtHr = true, ignoreAmpSubheaders = false } = {}) {
   const html = String(descHtml || "");
   if (!html) return "";
 
-  const headingRegex = /<(?:strong|b|h[1-6])[^>]*>([^<]{1,64})<\/(?:strong|b|h[1-6])>|<hr\b[^>]*>/gi;
+  const headingRegex = /<(strong|b|h[1-6])\b[^>]*>([^<]{1,80})<\/\1>|<hr\b[^>]*>/gi;
   const markers = [];
   let m;
   while ((m = headingRegex.exec(html)) !== null) {
     const isHr = /^<hr/i.test(m[0]);
+    const tag = isHr ? "hr" : String(m[1] || "").toLowerCase();
+    const level = isHr ? 0 : (tag.startsWith("h") ? Number.parseInt(tag.slice(1), 10) : 7);
     const label = isHr
       ? "---HR---"
-      : decodeHtmlEntities(m[1] || "").replace(/[:—–-]+\s*$/, "").trim();
+      : decodeHtmlEntities(m[2] || "").replace(/[:—–-]+\s*$/, "").trim();
     markers.push({
       isHr,
+      level,
       label,
       start: m.index,
       end: m.index + m[0].length
@@ -2559,15 +2680,28 @@ function extractNamedSectionHtml(descHtml, headingPatterns) {
     if (mk.isHr) continue;
     if (!headingPatterns.some(pat => pat.test(mk.label))) continue;
 
-    // Collect content until the next major heading (ignoring rank labels like "1st" or tier labels like "initial")
+    // Collect content until the next major heading of equal or higher prominence
     let endPos = html.length;
     for (let j = i + 1; j < markers.length; j++) {
       const next = markers[j];
       if (next.isHr) {
-        endPos = next.start;
-        break;
+        if (stopAtHr) {
+          endPos = next.start;
+          break;
+        }
+        continue;
+      }
+      // If the section started at <h1>..<h6>, keep all lower-level subheadings (e.g. <h4>, <strong>) inside it!
+      if (mk.level <= 6 && next.level > mk.level) {
+        continue;
+      }
+      if (/@UUID\[/i.test(next.label)) {
+        continue;
       }
       if (RANK_SUBHEADER_REGEX.test(next.label) || TIER_SUBHEADER_REGEX.test(next.label)) {
+        continue;
+      }
+      if (ignoreAmpSubheaders && INLINE_AMP_SUBHEADER_REGEX.test(next.label)) {
         continue;
       }
       endPos = next.start;
@@ -2577,6 +2711,18 @@ function extractNamedSectionHtml(descHtml, headingPatterns) {
   }
 
   return "";
+}
+
+/**
+ * Strips `<p><strong>Amp...</strong>...</p>` and `<p><strong>Heightened...</strong>...</p>`
+ * paragraphs from a Psychic Psi Cantrip HTML snippet so flavor spells cited inside Amp rules
+ * are not misread as granted cantrips.
+ */
+function stripAmpParagraphs(html) {
+  return String(html || "").replace(
+    /<p[^>]*>\s*<(?:strong|b)[^>]*>\s*(?:Amp(?:\s+Heightened[^<]*)?|Heightened[^<]*)\s*[:<][\s\S]*?<\/p>/gi,
+    "\n"
+  );
 }
 
 /**
@@ -2814,11 +2960,12 @@ function parseRankedSpellSection(sectionHtml, actorQualifiers, {
   if (!plain.includes("@UUID[")) return { autoSpells, choiceGroups };
 
   // Find every rank marker (`cantrip(s)`, `1st`..`10th`) that introduces spells
-  const rankRe = /(?:^|[\n;•])\s*(cantrips?|1st|2nd|3rd|[4-9]th|10th)(?:\s+rank)?\s*[:—–-]?\s*/gi;
+  // Supports line/list/semicolon delimiters AND comma-separated `1st: ..., 2nd: ...` or `1st @UUID[...], 2nd @UUID[...]`
+  const rankRe = /(?:(?:^|[\n;•])\s*(cantrips?|1st|2nd|3rd|[4-9]th|10th)(?:[\s-]+(?:rank|level))?\s*[:—–-]?\s*|,\s*(cantrips?|1st|2nd|3rd|[4-9]th|10th)(?:[\s-]+(?:rank|level))?\s*(?::\s*|\s+(?=@UUID\[)))/gi;
   const rankMatches = [];
   let m;
   while ((m = rankRe.exec(plain)) !== null) {
-    const rawToken = m[1].toLowerCase();
+    const rawToken = (m[1] || m[2] || "").toLowerCase();
     const rank = rawToken.startsWith("cantrip") ? 0 : Number.parseInt(rawToken, 10);
     if (!Number.isFinite(rank) || rank < 0 || rank > 10) continue;
     rankMatches.push({
@@ -2977,13 +3124,14 @@ function parseRankedSpellSection(sectionHtml, actorQualifiers, {
  * Parses a tiered focus/psi section (`initial:`, `advanced:`, `greater:` OR `surface:`, `deeper:`, `deepest:`)
  * into a map `{ tierName -> SpellRef[] }`.
  */
-function parseTieredSpellSection(sectionHtml) {
+function parseTieredSpellSection(sectionHtml, { stripAmps = false } = {}) {
   const byTier = {};
   if (!sectionHtml) return byTier;
-  const plain = htmlToPlainLines(sectionHtml);
+  const cleanedHtml = stripAmps ? stripAmpParagraphs(sectionHtml) : sectionHtml;
+  const plain = htmlToPlainLines(cleanedHtml);
   if (!plain.includes("@UUID[")) return byTier;
 
-  const tierRe = /(?:^|[\n;•])\s*(initial|advanced|greater|surface|deeper|deepest)\s*[:—–-]?\s*/gi;
+  const tierRe = /(?:^|[\n;,•])\s*(initial|advanced|greater|surface|deeper|deepest)(?:\s+(?:psi\s+cantrip|focus\s+spell|bloodline\s+spell|school\s+spell|revelation\s+spell|spell|cantrip))?\s*[:—–-]?\s*/gi;
   const matches = [];
   let m;
   while ((m = tierRe.exec(plain)) !== null) {
@@ -3301,19 +3449,44 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       }
     }
 
-    // Divine Font spell (Heal / Harm) resolved dynamically from healing-font / harmful-font / divine-font feature
-    const isHarm = featBySlug.has("harmful-font");
-    const fontFeat = featBySlug.get(isHarm ? "harmful-font" : "healing-font")
-      || featBySlug.get("divine-font")
-      || null;
-    if (fontFeat) {
-      const refs = extractSpellRefsFromText(fontFeat.system?.description?.value || "");
-      const desiredName = isHarm ? "harm" : "heal";
-      const matchedFont = refs.find(r => normalizeSlug(r.name) === desiredName) || refs[0] || null;
+    // Divine Font spell (Heal / Harm) resolved dynamically from Divine Font / Healing Font / Harmful Font
+    const fontChoice = detectClericDivineFontChoice(actor, feats);
+    if (fontChoice) {
+      const desiredName = fontChoice === "harm" ? "harm" : "heal";
+      const desiredTitle = fontChoice === "harm" ? "Harm" : "Heal";
+      const fontFeats = [
+        featBySlug.get(fontChoice === "harm" ? "harmful-font" : "healing-font"),
+        featBySlug.get("divine-font"),
+        ...feats.filter(f => /\bdivine\s+font\b/i.test(String(f.name || "")))
+      ].filter(Boolean);
+
+      let matchedFont = null;
+      let fontLabel = `Divine Font (${desiredTitle})`;
+      for (const ff of fontFeats) {
+        fontLabel = ff.name || fontLabel;
+        const directRefs = extractDirectRuleSpellUuids(ff);
+        const directHit = directRefs.find(r => normalizeSlug(r.name) === desiredName);
+        if (directHit) {
+          matchedFont = directHit;
+          break;
+        }
+        const descRefs = extractSpellRefsFromText(ff.system?.description?.value || "");
+        const descHit = descRefs.find(r => normalizeSlug(r.name) === desiredName);
+        if (descHit) {
+          matchedFont = descHit;
+          break;
+        }
+      }
+
+      // Live PF2e spells-srd index fallback (zero hardcoded IDs) if Divine Font text omits a @UUID link
+      if (!matchedFont) {
+        matchedFont = resolveSyncSpellMeta(`Compendium.pf2e.spells-srd.Item.${desiredTitle}`, desiredTitle);
+      }
+
       if (matchedFont) {
         pushAutoSpell({
           uuid: matchedFont.uuid,
-          name: matchedFont.name,
+          name: matchedFont.name || desiredTitle,
           img: matchedFont.img,
           rank: 1,
           isCantrip: false,
@@ -3321,7 +3494,7 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
           unlockLevel: 1,
           targetSourceKey: fontEntryKey,
           targetClassSlug: "cleric",
-          sourceLabel: fontFeat.name || "Divine Font",
+          sourceLabel: fontLabel,
           tier: "font",
           countsTowardRepertoire: false
         });
@@ -3576,10 +3749,7 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     const kind = classKind("psychic");
     const psySpellKey = `class:psychic:${kind}`;
 
-    const mindFeat = feats.find(f => {
-      const desc = String(f.system?.description?.value || "");
-      return /<(?:strong|b|h[1-6])[^>]*>\s*(?:Standard\s+Psi\s+Cantrips?|Unique\s+Psi\s+Cantrips?)\s*[:<]/i.test(desc);
-    });
+    const mindFeat = feats.find(f => isPsychicConsciousMindFeat(f));
 
     if (mindFeat) {
       const desc = String(mindFeat.system?.description?.value || "");
@@ -3597,8 +3767,19 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       for (const sp of parsed.autoSpells) pushAutoSpell(sp);
       choiceGroups.push(...parsed.choiceGroups);
 
-      const stdPsiHtml = extractNamedSectionHtml(desc, [/^standard\s+psi\s+cantrips?$/i]);
-      for (const r of extractSpellRefsFromText(stdPsiHtml)) {
+      // Standard Psi Cantrips (handles both concise single-line AND multi-paragraph Amp blocks!)
+      const rawStdPsiHtml = extractNamedSectionHtml(
+        desc,
+        [/^standard\s+psi\s+cantrips?$/i, /^psi\s+cantrips?$/i],
+        { stopAtHr: false, ignoreAmpSubheaders: true }
+      );
+      // If heading was generic `Psi Cantrips`, trim off any nested Unique / Surface / Deeper / Deepest tail
+      const uniqueCutIdx = rawStdPsiHtml.search(/<(?:strong|b|h[1-6])\b[^>]*>\s*(?:Unique\s+Psi\s+Cantrips?|Surface(?:\s+Psi\s+Cantrip)?|Deeper(?:\s+Psi\s+Cantrip)?|Deepest(?:\s+Psi\s+Cantrip)?)\s*[:<]/i);
+      const stdPsiScope = uniqueCutIdx >= 0 ? rawStdPsiHtml.slice(0, uniqueCutIdx) : rawStdPsiHtml;
+      const stdPsiCleaned = stripAmpParagraphs(stdPsiScope);
+      let stdRefs = extractSpellRefsFromText(stdPsiCleaned);
+      if (stdRefs.length === 0 && stdPsiScope) stdRefs = extractSpellRefsFromText(stdPsiScope);
+      for (const r of stdRefs) {
         pushAutoSpell({
           uuid: r.uuid,
           name: r.name,
@@ -3615,42 +3796,80 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
         });
       }
 
-      const uniquePsiHtml = extractNamedSectionHtml(desc, [/^unique\s+psi\s+cantrips?$/i]);
-      const psiTiers = parseTieredSpellSection(uniquePsiHtml);
-      if (psiTiers.surface) {
-        pushTieredFocusRefs(psiTiers.surface, {
-          targetSourceKey: psySpellKey,
-          targetClassSlug: "psychic",
-          sourceLabel: mindFeat.name,
-          tier: "surface",
-          unlockLevel: 1,
-          isFocus: false,
-          isCantrip: true,
-          rank: 0
-        });
+      // Unique Psi Cantrips (handles BOTH grouped `Unique Psi Cantrips` AND standalone `Surface / Deeper / Deepest Psi Cantrip` headings!)
+      const uniquePsiHtml = extractNamedSectionHtml(
+        desc,
+        [/^unique\s+psi\s+cantrips?$/i],
+        { stopAtHr: false, ignoreAmpSubheaders: true }
+      );
+      const psiTiers = parseTieredSpellSection(uniquePsiHtml, { stripAmps: true });
+
+      const tierSpecs = [
+        { key: "surface", unlockLevel: 1, headingRe: [/^surface(?:\s+psi\s+cantrip)?$/i] },
+        { key: "deeper", unlockLevel: 6, headingRe: [/^deeper(?:\s+psi\s+cantrip)?$/i] },
+        { key: "deepest", unlockLevel: 10, headingRe: [/^deepest(?:\s+psi\s+cantrip)?$/i] }
+      ];
+      for (const ts of tierSpecs) {
+        let refs = psiTiers[ts.key];
+        if (!refs || refs.length === 0) {
+          const standaloneHtml = extractNamedSectionHtml(desc, ts.headingRe, { stopAtHr: false, ignoreAmpSubheaders: true });
+          const cleaned = stripAmpParagraphs(standaloneHtml);
+          refs = extractSpellRefsFromText(cleaned);
+          if (refs.length === 0 && standaloneHtml) refs = extractSpellRefsFromText(standaloneHtml);
+        }
+        if (refs && refs.length > 0) {
+          pushTieredFocusRefs(refs, {
+            targetSourceKey: psySpellKey,
+            targetClassSlug: "psychic",
+            sourceLabel: mindFeat.name,
+            tier: ts.key,
+            unlockLevel: ts.unlockLevel,
+            isFocus: false,
+            isCantrip: true,
+            rank: 0
+          });
+        }
       }
-      if (psiTiers.deeper) {
-        pushTieredFocusRefs(psiTiers.deeper, {
-          targetSourceKey: psySpellKey,
-          targetClassSlug: "psychic",
-          sourceLabel: mindFeat.name,
-          tier: "deeper",
-          unlockLevel: 6,
-          isFocus: false,
-          isCantrip: true,
-          rank: 0
-        });
+    }
+
+    // Also inspect Psychic child features/feats that grant extra psi cantrips directly via rulesSelections/GrantItem
+    // OR via description grant text (e.g. Parallel Breakthrough, Psi Development, or Conscious Mind child features)
+    const passivePsychicExclusions = /(?:^|-)(?:conscious-mind|subconscious-mind|unleash-psyche|conservation-of-energy|emotional-acceptance|gathered-lore|precise-discipline|wandering-reverie|psi-strikes|strain-mind|violent-unleash|dark-persona|psi-burst|psi-cantrips-and-amps|signature-spells|mind-over-matter|infinite-mind)(?:$|-)/;
+    for (const f of feats) {
+      if (f === mindFeat) continue;
+      const slug = getItemSlug(f);
+      if (passivePsychicExclusions.test(slug)) continue;
+      const traits = Array.isArray(f.system?.traits?.value) ? f.system.traits.value : [];
+      const desc = String(f.system?.description?.value || "");
+      const isPsiGrantFeat = traits.includes("psychic")
+        || slug.includes("psi-cantrip")
+        || slug === "parallel-breakthrough"
+        || slug === "psi-development"
+        || /\b(?:surface|deeper|deepest)\s+psi\s+cantrip\b/i.test(String(f.name || ""));
+      if (!isPsiGrantFeat) continue;
+
+      const uLvl = inferFeatAcquiredLevel(f, 1);
+      const directRefs = extractDirectRuleSpellUuids(f);
+      let refsToAdd = directRefs;
+      if (refsToAdd.length === 0 && /\bpsi\s+cantrip\b|\badd\s+the\b|\byou\s+(?:gain|learn)\b/i.test(desc)) {
+        const cleanedDescFeat = { ...f, system: { ...f.system, description: { value: stripAmpParagraphs(desc) } } };
+        refsToAdd = parseDirectFeatSpells(cleanedDescFeat, extractActorQualifiers(actor, f), { allowAllIfSingle: false }).auto;
       }
-      if (psiTiers.deepest) {
-        pushTieredFocusRefs(psiTiers.deepest, {
+
+      for (const r of refsToAdd) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: r.isCantrip === false ? (r.baseRank || 1) : 0,
+          isCantrip: r.isCantrip !== false,
+          isFocus: false,
+          unlockLevel: uLvl,
           targetSourceKey: psySpellKey,
           targetClassSlug: "psychic",
-          sourceLabel: mindFeat.name,
-          tier: "deepest",
-          unlockLevel: 10,
-          isFocus: false,
-          isCantrip: true,
-          rank: 0
+          sourceLabel: f.name,
+          tier: "psi",
+          countsTowardRepertoire: false
         });
       }
     }
@@ -4460,7 +4679,43 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     }
 
     const missingAutoSpells = unlockedAutoSpells.filter(sp => !isSpellAlreadyInEntry(sp, existingUuids, existingNames));
-    if (missingAutoSpells.length > 0) {
+
+    // For Cleric Divine Font: check whether the chosen Heal / Harm spell is already prepared in all fontRank slots!
+    let needsFontPrepare = false;
+    let preparedFontCount = 0;
+    if (src.isDivineFont && src.divineFontChoice && src.divineFontRank > 0 && src.divineFontCount > 0) {
+      const targetSlot = entry.system?.slots?.[`slot${src.divineFontRank}`];
+      const prepList = Array.isArray(targetSlot?.prepared)
+        ? targetSlot.prepared
+        : (targetSlot?.prepared && typeof targetSlot.prepared === "object" ? Object.values(targetSlot.prepared) : []);
+      const desiredLower = src.divineFontChoice === "harm" ? "harm" : "heal";
+      const hasVersatileFont = actorHasFeatSlug(actor, ["versatile-font"]);
+      const matchingFontIds = new Set(
+        entrySpells
+          .filter(sp => {
+            const spSlug = normalizeSlug(sp.slug || sp.system?.slug || sp.name);
+            return hasVersatileFont ? (spSlug === "heal" || spSlug === "harm") : spSlug === desiredLower;
+          })
+          .map(sp => sp.id)
+      );
+      preparedFontCount = prepList.filter(slot => slot?.id && matchingFontIds.has(slot.id)).length;
+
+      let hasStalePrepared = false;
+      for (let r = 1; r <= 10; r++) {
+        if (r === src.divineFontRank) continue;
+        const otherPrep = entry.system?.slots?.[`slot${r}`]?.prepared;
+        const otherList = Array.isArray(otherPrep)
+          ? otherPrep
+          : (otherPrep && typeof otherPrep === "object" ? Object.values(otherPrep) : []);
+        if (otherList.some(slot => Boolean(slot?.id))) {
+          hasStalePrepared = true;
+          break;
+        }
+      }
+      needsFontPrepare = preparedFontCount < src.divineFontCount || hasStalePrepared;
+    }
+
+    if (missingAutoSpells.length > 0 || needsFontPrepare) {
       entriesNeedingAutoSpellsCount++;
       totalMissingAutoSpells += missingAutoSpells.length;
     }
@@ -4586,6 +4841,9 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     } else if (missingAutoSpells.length > 0) {
       status = "incomplete";
       statusLabel = `${missingAutoSpells.length} Auto Spell${missingAutoSpells.length === 1 ? "" : "s"}`;
+    } else if (needsFontPrepare) {
+      status = "incomplete";
+      statusLabel = `Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
     } else if (missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       status = "incomplete";
       statusLabel = "Needs Spells";
@@ -4594,6 +4852,9 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     const missingParts = [];
     if (missingAutoSpells.length > 0) {
       missingParts.push(`${missingAutoSpells.length} auto-granted (${missingAutoSpells.slice(0, 2).map(s => s.name).join(", ")}${missingAutoSpells.length > 2 ? ` +${missingAutoSpells.length - 2}` : ""})`);
+    }
+    if (needsFontPrepare) {
+      missingParts.push(`${preparedFontCount}/${src.divineFontCount} Rank ${src.divineFontRank} ${src.divineFontSpellName} slots prepared`);
     }
     if (missingCantrips > 0) missingParts.push(`${missingCantrips} cantrip${missingCantrips === 1 ? "" : "s"}`);
     if (src.repertoireExpected != null && missingRepertoire > 0) {
@@ -4627,6 +4888,8 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       missingAutoSpellsCount: missingAutoSpells.length,
       hasMissingAutoSpells: missingAutoSpells.length > 0,
       missingAutoSpellsText: missingAutoSpells.map(s => s.name).join(", "),
+      needsFontPrepare,
+      preparedFontCount,
       pendingChoiceGroups,
       hasPendingChoices: pendingChoiceGroups.length > 0,
       spellsMissingNote: missingParts.length > 0 ? `Missing ${missingParts.join(" · ")}` : "Spells & slots look good"
@@ -4639,12 +4902,14 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         title: `Spell Slots Outdated: ${entry.name}`,
         detail: `Level ${level} expects ${src.slotsSummary} (diffs: ${slotDiffs.map(d => `${d.label} ${d.current}→${d.expected}`).join(", ")}).${missingAutoSpells.length > 0 ? ` Also ${missingAutoSpells.length} auto-granted spell(s) ready to add.` : ""}`
       });
-    } else if (missingAutoSpells.length > 0 || missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
+    } else if (missingAutoSpells.length > 0 || needsFontPrepare || missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       issues.push({
         severity: "info",
         category: "Spellcasting",
         title: `${entry.name}: ${missingParts.join(" · ")}`,
-        detail: `Cantrips: ${currentCantrips}/${src.cantrips} · Leveled spells added: ${currentLeveledSpells}${src.repertoireExpected != null ? `/${src.repertoireExpected}` : ""}${missingAutoSpells.length > 0 ? ` · Ready to auto-add: ${missingAutoSpells.map(s => s.name).join(", ")}` : ""}.`
+        detail: needsFontPrepare
+          ? `Divine Font (${src.divineFontSpellName}): ${preparedFontCount}/${src.divineFontCount} Rank ${src.divineFontRank} slots prepared — click Sync to prepare automatically.`
+          : `Cantrips: ${currentCantrips}/${src.cantrips} · Leveled spells added: ${currentLeveledSpells}${src.repertoireExpected != null ? `/${src.repertoireExpected}` : ""}${missingAutoSpells.length > 0 ? ` · Ready to auto-add: ${missingAutoSpells.map(s => s.name).join(", ")}` : ""}.`
       });
     }
   }
@@ -4692,7 +4957,10 @@ export async function syncAutoGrantedSpellsForEntry(actor, entryId, spec) {
     : collectActorGrantedSpellsProgression(actor, getActorDualClassInfo(actor, getActiveVariantRules()))
       .autoSpells.filter(sp => sp.targetSourceKey === spec.key && sp.unlockLevel <= level);
 
-  if (candidates.length === 0) return { addedNames: [], addedCount: 0 };
+  if (candidates.length === 0) {
+    const preparedFont = spec.isDivineFont ? await prepareDivineFontSlots(actor, entryId, spec) : null;
+    return { addedNames: [], addedCount: 0, preparedFont };
+  }
 
   // Ensure dynamic PF2e domain journal lookup is warm if any candidate is a deferred Domain spell
   if (candidates.some(c => c.domainSlug && !c.uuid)) {
@@ -4769,7 +5037,148 @@ export async function syncAutoGrantedSpellsForEntry(actor, entryId, spec) {
     await actor.createEmbeddedDocuments("Item", toCreate);
   }
 
-  return { addedNames, addedCount: addedNames.length };
+  // Auto-prepare Cleric Divine Font (Heal / Harm) into all highest-rank Font slots!
+  let preparedFont = null;
+  if (spec.isDivineFont) {
+    preparedFont = await prepareDivineFontSlots(actor, entryId, spec);
+  }
+
+  return { addedNames, addedCount: addedNames.length, preparedFont };
+}
+
+/**
+ * Automatically prepares the Cleric's chosen Divine Font spell (`Heal` or `Harm`) into all
+ * highest-rank Font slots (preserving any already-expended slots at the current rank and clearing
+ * stale lower-rank prepared slots after a level-up).
+ */
+async function prepareDivineFontSlots(actor, entryId, spec) {
+  if (!actor || !entryId || !spec?.isDivineFont) return null;
+  const entry = actor.items?.get(entryId);
+  if (!entry || entry.type !== "spellcastingEntry") return null;
+  if (entry.system?.prepared?.value !== "prepared") return null;
+
+  const fontChoice = spec.divineFontChoice || detectClericDivineFontChoice(actor);
+  if (!fontChoice) return null;
+
+  const level = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+  const fontRank = Math.max(1, Math.min(10, Number(spec.divineFontRank || Math.ceil(level / 2))));
+  const fontCount = Math.max(1, Number(spec.divineFontCount || spec.slots?.[fontRank] || (level >= 19 ? 6 : (level >= 15 ? 5 : 4))));
+  const desiredLower = fontChoice === "harm" ? "harm" : "heal";
+  const fontSpellTitle = fontChoice === "harm" ? "Harm" : "Heal";
+  const hasVersatileFont = actorHasFeatSlug(actor, ["versatile-font"]);
+  const entrySpells = (actor.itemTypes?.spell || []).filter(sp => sp.system?.location?.value === entryId);
+  const fontSpellDoc = entrySpells.find(sp => normalizeSlug(sp.slug || sp.system?.slug || sp.name) === desiredLower);
+  if (!fontSpellDoc) return null;
+
+  const validFontIds = new Set(
+    entrySpells
+      .filter(sp => {
+        const spSlug = normalizeSlug(sp.slug || sp.system?.slug || sp.name);
+        return hasVersatileFont ? (spSlug === "heal" || spSlug === "harm") : spSlug === desiredLower;
+      })
+      .map(sp => sp.id)
+  );
+
+  const makeDeleteOp = () => (typeof foundry?.data?.operators?.ForcedDeletion === "function"
+    ? new foundry.data.operators.ForcedDeletion()
+    : { id: null, expended: false });
+
+  const prepUpdates = {};
+  let changed = false;
+
+  // 1. Fill all `fontCount` slots at `fontRank` (preserving existing expended state on matching slots)
+  const curTargetSlot = entry.system?.slots?.[`slot${fontRank}`];
+  const curPrepared = curTargetSlot?.prepared;
+  const useObjectShape = Boolean(curPrepared && typeof curPrepared === "object" && !Array.isArray(curPrepared));
+
+  if (useObjectShape) {
+    const nextObj = {};
+    for (let i = 0; i < fontCount; i++) {
+      const existing = curPrepared[String(i)] ?? curPrepared[i];
+      if (existing?.id && validFontIds.has(existing.id)) {
+        nextObj[i] = { ...existing };
+      } else {
+        nextObj[i] = { id: fontSpellDoc.id, expended: false };
+        changed = true;
+      }
+    }
+    for (const k of Object.keys(curPrepared)) {
+      const idx = Number(k);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= fontCount) {
+        nextObj[k] = makeDeleteOp();
+        changed = true;
+      }
+    }
+    if (changed) prepUpdates[`system.slots.slot${fontRank}.prepared`] = nextObj;
+  } else {
+    const curArr = Array.isArray(curPrepared) ? curPrepared : [];
+    const nextArr = [];
+    for (let i = 0; i < fontCount; i++) {
+      const existing = curArr[i];
+      if (existing?.id && validFontIds.has(existing.id)) {
+        nextArr.push({ ...existing });
+      } else {
+        nextArr.push({ id: fontSpellDoc.id, expended: false });
+        changed = true;
+      }
+    }
+    if (curArr.length !== fontCount) changed = true;
+    if (changed) prepUpdates[`system.slots.slot${fontRank}.prepared`] = nextArr;
+  }
+
+  // 2. Clear stale prepared slots on zeroed ranks (e.g. Rank 1 slots after leveling up to Lv 3 / Rank 2)
+  for (let r = 1; r <= 10; r++) {
+    if (r === fontRank) continue;
+    if (Number(spec.slots?.[r] || 0) > 0) continue;
+    const otherPrep = entry.system?.slots?.[`slot${r}`]?.prepared;
+    const otherList = Array.isArray(otherPrep)
+      ? otherPrep
+      : (otherPrep && typeof otherPrep === "object" ? Object.values(otherPrep) : []);
+    if (otherList.some(s => Boolean(s?.id))) {
+      if (Array.isArray(otherPrep)) {
+        prepUpdates[`system.slots.slot${r}.prepared`] = [];
+      } else if (otherPrep && typeof otherPrep === "object") {
+        const cleared = {};
+        for (const k of Object.keys(otherPrep)) {
+          cleared[k] = makeDeleteOp();
+        }
+        prepUpdates[`system.slots.slot${r}.prepared`] = cleared;
+      }
+      changed = true;
+    }
+  }
+
+  if (Object.keys(prepUpdates).length > 0) {
+    try {
+      await entry.update(prepUpdates);
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Atomic Divine Font preparation update failed, trying native prepareSpell fallback:", err);
+      changed = false;
+    }
+  }
+
+  // 3. Fallback verification via PF2e's native `entry.spells.prepareSpell` if any slot remained empty
+  const liveAfter = entry.system?.slots?.[`slot${fontRank}`]?.prepared;
+  const liveArr = Array.isArray(liveAfter)
+    ? liveAfter
+    : (liveAfter && typeof liveAfter === "object" ? Object.values(liveAfter) : []);
+  const filledAfter = liveArr.filter(s => s?.id && validFontIds.has(s.id)).length;
+  if (filledAfter < fontCount && typeof entry.spells?.prepareSpell === "function") {
+    for (let i = 0; i < fontCount; i++) {
+      const slotEntry = Array.isArray(liveAfter) ? liveAfter[i] : (liveAfter?.[String(i)] ?? liveAfter?.[i]);
+      if (slotEntry?.id && validFontIds.has(slotEntry.id)) continue;
+      try {
+        await entry.spells.prepareSpell(fontSpellDoc, fontRank, i);
+        changed = true;
+      } catch (err) {
+        console.warn(`PF2e Awesome GM Utilities | Fallback prepareSpell failed for Divine Font slot ${i}:`, err);
+      }
+    }
+  }
+
+  return changed
+    ? { count: fontCount, rank: fontRank, spellName: fontSpellDoc.name || fontSpellTitle }
+    : null;
 }
 
 /**
@@ -4883,6 +5292,7 @@ export async function createSpellcastingEntry(actor, spec, overrides = {}) {
       const spellRes = await syncAutoGrantedSpellsForEntry(actor, createdEntry.id, spec);
       if (overrides.resultOut && typeof overrides.resultOut === "object") {
         overrides.resultOut.addedSpells = spellRes.addedNames;
+        overrides.resultOut.preparedFont = spellRes.preparedFont || null;
       }
     } catch (err) {
       console.warn(`PF2e Awesome GM Utilities | Failed auto-adding spells to "${createdEntry.name}":`, err);
@@ -4944,10 +5354,12 @@ export async function syncSpellcastingEntrySlots(actor, entryId, spec, { include
   }
 
   let addedSpells = [];
+  let preparedFont = null;
   if (includeAutoSpells) {
     try {
       const spellRes = await syncAutoGrantedSpellsForEntry(actor, entryId, spec);
       addedSpells = spellRes.addedNames;
+      preparedFont = spellRes.preparedFont || null;
     } catch (err) {
       console.warn(`PF2e Awesome GM Utilities | Failed syncing auto-granted spells for "${entry.name}":`, err);
     }
@@ -4956,26 +5368,28 @@ export async function syncSpellcastingEntrySlots(actor, entryId, spec, { include
   if (resultOut && typeof resultOut === "object") {
     resultOut.slotsChanged = slotsChanged;
     resultOut.addedSpells = addedSpells;
+    resultOut.preparedFont = preparedFont;
   }
 
-  return slotsChanged || addedSpells.length > 0;
+  return slotsChanged || addedSpells.length > 0 || Boolean(preparedFont);
 }
 
 /**
  * Creates all missing spellcasting entries, syncs outdated spell slots, AND auto-adds
- * dynamically discovered focus / subclass / deity spells on an actor.
+ * dynamically discovered focus / subclass / deity spells (plus prepares Cleric Divine Font slots).
  *
  * @param {Actor} actor
- * @returns {Promise<{ created: string[], synced: string[], addedSpells: string[], skippedNeedsTradition: string[] }>}
+ * @returns {Promise<{ created: string[], synced: string[], addedSpells: string[], preparedFonts: string[], skippedNeedsTradition: string[] }>}
  */
 export async function createOrSyncAllSpellcastingEntries(actor) {
   const analysis = analyzeCharacter(actor);
   const created = [];
   const synced = [];
   const addedSpells = [];
+  const preparedFonts = [];
   const skippedNeedsTradition = [];
 
-  if (!analysis) return { created, synced, addedSpells, skippedNeedsTradition };
+  if (!analysis) return { created, synced, addedSpells, preparedFonts, skippedNeedsTradition };
 
   for (const src of analysis.spellcasting.sources) {
     if (!src.entryExists) {
@@ -4989,17 +5403,23 @@ export async function createOrSyncAllSpellcastingEntries(actor) {
       if (Array.isArray(resOut.addedSpells) && resOut.addedSpells.length > 0) {
         addedSpells.push(...resOut.addedSpells);
       }
-    } else if ((src.slotsOutdated || src.hasMissingAutoSpells) && src.entryId) {
+      if (resOut.preparedFont) {
+        preparedFonts.push(`${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
+      }
+    } else if ((src.slotsOutdated || src.hasMissingAutoSpells || src.needsFontPrepare) && src.entryId) {
       const resOut = {};
       const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src, { includeAutoSpells: true, resultOut: resOut });
       if (ok && resOut.slotsChanged) synced.push(src.matchedEntryName || src.title);
       if (Array.isArray(resOut.addedSpells) && resOut.addedSpells.length > 0) {
         addedSpells.push(...resOut.addedSpells);
       }
+      if (resOut.preparedFont) {
+        preparedFonts.push(`${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
+      }
     }
   }
 
-  return { created, synced, addedSpells, skippedNeedsTradition };
+  return { created, synced, addedSpells, preparedFonts, skippedNeedsTradition };
 }
 
 /* ------------------------------------------------------------------------- */

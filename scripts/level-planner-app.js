@@ -26,6 +26,7 @@ import {
   clearActorLevelPlan,
   clearPlannedFeat,
   computeMatchingArchetypeFeatUuids,
+  evaluateFeatPrerequisites,
   getActorLevelPlan,
   getLightweightFeatIndex,
   getLightweightFormulaIndex,
@@ -151,7 +152,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   static PARTS = {
     main: {
-      template: `modules/${MODULE_ID}/templates/level-planner.hbs`
+      template: `modules/${MODULE_ID}/templates/level-planner.hbs`,
+      scrollable: [".pf2e-lp-scroll", ".pf2e-lp-level-list"]
     }
   };
 
@@ -670,9 +672,10 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const levelNum = Number(el.dataset.level);
         const slotKey = el.dataset.slotKey;
         const roadmap = buildLevelRoadmap(actor);
-        const slot = roadmap?.levels?.find(l => l.level === levelNum)?.featSlots?.find(s => s.slotKey === slotKey);
+        const lvlRow = roadmap?.levels?.find(l => l.level === levelNum);
+        const slot = lvlRow?.featSlots?.find(s => s.slotKey === slotKey);
         if (slot) {
-          await this._openFeatQuickPicker(actor, levelNum, slot);
+          await this._openFeatQuickPicker(actor, levelNum, slot, lvlRow?.prereqState || null);
         }
         break;
       }
@@ -1005,10 +1008,11 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const query = (searchInput?.value || "").trim().toLowerCase();
         const matched = filterItems(allItems, { root, query, ctx });
         const capped = matched.slice(0, 120);
-        statusEl.textContent = formatStatus(matched.length);
+        statusEl.textContent = formatStatus(matched.length, ctx);
 
         if (capped.length === 0) {
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">${emptyText}</div>`;
+          const emptyMsg = typeof emptyText === "function" ? emptyText(ctx) : emptyText;
+          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">${emptyMsg}</div>`;
           return;
         }
 
@@ -1048,7 +1052,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     dialog.render({ force: true });
   }
 
-  async _openFeatQuickPicker(actor, levelNum, slot) {
+  async _openFeatQuickPicker(actor, levelNum, slot, rawPrereqState = null) {
     const esc = foundry.utils.escapeHTML;
     const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
     const hasDedications = slotDedications.length > 0;
@@ -1060,6 +1064,23 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const defaultScope = slot.groupId === "archetype"
       ? (hasDedications ? "my-archetypes" : "archetype-dedications")
       : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot");
+
+    const defaultPrereqsOnly = slot.category === "skill" || slot.category === "general";
+
+    // Build a clean prereq snapshot for this slot (excluding the feat currently sitting in THIS slot if replacing it)
+    let prereqState = rawPrereqState;
+    if (prereqState && slot.feat?.name) {
+      const replacingName = String(slot.feat.name).trim().toLowerCase();
+      const liveOwned = (actor.itemTypes?.feat || []).some(f => String(f.name || "").trim().toLowerCase() === replacingName);
+      if (!liveOwned && prereqState.knownFeatNamesLower?.has?.(replacingName)) {
+        const nextKnown = new Set(prereqState.knownFeatNamesLower);
+        nextKnown.delete(replacingName);
+        const nextBase = new Set(prereqState.knownFeatBaseNamesLower || []);
+        const baseName = replacingName.replace(/\s*\([^)]*\)\s*/g, "").trim();
+        if (baseName) nextBase.delete(baseName);
+        prereqState = { ...prereqState, knownFeatNamesLower: nextKnown, knownFeatBaseNamesLower: nextBase };
+      }
+    }
 
     const traitDisplayList = (slot.traits || [])
       .filter(Boolean)
@@ -1111,33 +1132,65 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._openQuickPickerDialog({
       title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
       icon: "fa-solid fa-star",
-      width: 640,
+      width: 680,
       closeAction: "close",
       closeLabel: "Close",
       closeIcon: "fa-solid fa-xmark",
       controlsHtml: `
         <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
         <select class="pf2e-lp-picker-scope" title="Filter scope">${scopeOptionsHtml}</select>
+        <label class="pf2e-lp-picker-check" title="Show only feats whose skill, attribute, and feat prerequisites are met by your character sheet (and planned increases up to Level ${levelNum}). Uncheck to show all with unmet prereqs sorted to the bottom.">
+          <input type="checkbox" class="pf2e-lp-picker-prereqs" ${defaultPrereqsOnly ? "checked" : ""} />
+          <span>Prereqs Met</span>
+        </label>
         <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
           <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
           <span>Any Lv</span>
         </label>
       `,
       loadingText: "Loading lightweight feat index...",
-      changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-any-lvl"],
+      changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-prereqs", ".pf2e-lp-picker-any-lvl"],
       onBrowse: () => openNativeBrowserForFeatSlot(slot),
-      loadItems: async (_root, ctx) => {
+      loadItems: async (root, ctx) => {
         const allFeats = await getLightweightFeatIndex();
         ctx.myArchetypeUuids = hasDedications ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications) : new Set();
         ctx.perDedicationUuids = slotDedications.length > 1
           ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
           : [];
+        ctx.allFeatNamesLower = new Set();
+        for (const f of allFeats) {
+          if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
+          const lower = String(f.name || "").trim().toLowerCase();
+          if (lower) {
+            ctx.allFeatNamesLower.add(lower);
+            const stripped = lower.replace(/\s*\([^)]*\)\s*/g, "").trim();
+            if (stripped) ctx.allFeatNamesLower.add(stripped);
+          }
+        }
+
+        // For Free Archetype slots: if no dedication feats exist yet OR the character's current
+        // dedication(s) have 0 follow-up feats available at this level (e.g. Level 2), automatically
+        // switch the dropdown to Archetype Dedications so the list is never empty by default!
+        const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
+        if (slot.groupId === "archetype" && scopeSelect) {
+          const hasEligibleOwnedAtLevel = hasDedications && allFeats.some(f =>
+            ctx.myArchetypeUuids.has(f.uuid) && f.level <= slot.level
+          );
+          if (!hasEligibleOwnedAtLevel) {
+            scopeSelect.value = "archetype-dedications";
+          }
+        }
+
         return allFeats;
       },
       filterItems: (allFeats, { root, query, ctx }) => {
         const scope = root.querySelector(".pf2e-lp-picker-scope")?.value || defaultScope;
         const anyLvl = Boolean(root.querySelector(".pf2e-lp-picker-any-lvl")?.checked);
+        const prereqsOnly = Boolean(root.querySelector(".pf2e-lp-picker-prereqs")?.checked);
         const matched = [];
+        let eligibleCount = 0;
+        let unmetCount = 0;
+
         for (const f of allFeats) {
           if (!anyLvl && f.level > slot.level) continue;
           if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
@@ -1155,9 +1208,9 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const set = ctx.perDedicationUuids[Number(scope.slice(4))];
             if (!set || !set.has(f.uuid)) continue;
           } else if (scope === "archetype-dedications") {
-            if (!f.traits.includes("dedication")) continue;
+            if (!f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
           } else if (scope === "archetype") {
-            if (!f.traits.includes("archetype") && !f.traits.includes("dedication")) continue;
+            if (!f.traits.includes("archetype") && !f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
           } else if (scope === "all-ancestry") {
             if (f.category !== "ancestry") continue;
           } else if (scope === "general-only") {
@@ -1173,29 +1226,73 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
           }
 
-          if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query))) continue;
-          matched.push(f);
+          if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query)) && !f.prerequisites.some(p => p.toLowerCase().includes(query))) {
+            continue;
+          }
+
+          const evalRes = prereqState
+            ? evaluateFeatPrerequisites(f, prereqState, ctx.allFeatNamesLower)
+            : { met: true, unmetReasons: [] };
+
+          if (evalRes.met) {
+            eligibleCount++;
+          } else {
+            unmetCount++;
+            if (prereqsOnly) continue;
+          }
+
+          matched.push({
+            ...f,
+            _prereqMet: evalRes.met,
+            _prereqUnmetReasons: evalRes.unmetReasons
+          });
         }
-        // Sort highest level first (near slot level) then alphabetical
-        return matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
+
+        ctx.prereqsOnly = prereqsOnly;
+        ctx.eligibleCount = eligibleCount;
+        ctx.unmetCount = unmetCount;
+
+        // Sort eligible feats first, unmet-prereq feats to the bottom, then highest level first & alphabetical
+        return matched.sort((a, b) =>
+          (a._prereqMet === b._prereqMet ? 0 : (a._prereqMet ? -1 : 1))
+          || (b.level - a.level)
+          || a.name.localeCompare(b.name)
+        );
       },
-      formatStatus: (total) => total > 120
-        ? `Showing top 120 of ${total} matching feats — type to narrow search`
-        : `${total} matching feat(s)`,
-      emptyText: `No feats match the current filter. Try switching filter to "All Feats" or clearing search.`,
+      formatStatus: (total, ctx) => {
+        const prefix = total > 120 ? `Showing top 120 of ${total}` : `${total}`;
+        if (ctx.prereqsOnly && ctx.unmetCount > 0) {
+          return `${prefix} eligible feat(s) (${ctx.unmetCount} hidden: prereqs not met)`;
+        }
+        if (!ctx.prereqsOnly && ctx.unmetCount > 0) {
+          return `${prefix} matching feat(s) — ${ctx.eligibleCount} eligible first, ${ctx.unmetCount} prereqs not met at bottom`;
+        }
+        return total > 120
+          ? `${prefix} matching feats — type to narrow search`
+          : `${total} matching feat(s)`;
+      },
+      emptyText: (ctx) => ctx.prereqsOnly && ctx.unmetCount > 0
+        ? `No feats match your current character sheet prerequisites (${ctx.unmetCount} hidden). Uncheck "Prereqs Met" above to browse all feats.`
+        : `No feats match the current filter. Try switching filter scope or clearing search.`,
       renderRow: (f, idx) => {
         const prereqStr = f.prerequisites.length > 0 ? `Prereq: ${f.prerequisites.join(", ")}` : "";
         const traitStr = f.traits.slice(0, 4).join(" · ");
         const sub = [traitStr, prereqStr].filter(Boolean).join(" — ");
+        const unmet = f._prereqMet === false;
+        const unmetReasonsStr = unmet && f._prereqUnmetReasons?.length > 0
+          ? f._prereqUnmetReasons.join(" · ")
+          : "";
         return `
-          <div class="pf2e-lp-picker-row">
+          <div class="pf2e-lp-picker-row ${unmet ? "is-prereq-unmet" : ""}">
             <img src="${esc(f.img)}" alt="" class="pf2e-lp-picker-img" />
             <div class="pf2e-lp-picker-info">
               <div class="pf2e-lp-picker-name-line">
                 <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full feat sheet">${esc(f.name)}</a>
                 <span class="pf2e-lp-picker-lvl">Lv ${f.level}</span>
                 ${f.rarity && f.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(f.rarity)}">${esc(capitalize(f.rarity))}</span>` : ""}
+                ${unmet ? `<span class="pf2e-lp-picker-unmet-badge" title="${esc(unmetReasonsStr ? `Missing: ${unmetReasonsStr}` : "Prerequisites not met")}">Prereq Not Met</span>` : ""}
               </div>
+              ${unmetReasonsStr ? `<div class="pf2e-lp-picker-unmet-note">Missing: ${esc(unmetReasonsStr)}</div>` : ""}
               ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
             </div>
             <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>

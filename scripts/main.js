@@ -106,6 +106,49 @@ function getPerformanceMonitor() {
   return performanceMonitorInstance;
 }
 
+function getSelectedCanvasPcActor() {
+  const controlled = canvas?.tokens?.controlled || [];
+  for (const token of controlled) {
+    const actor = token?.actor;
+    if (actor?.type === "character" && (game.user?.isGM || actor.isOwner)) {
+      return actor;
+    }
+  }
+  return null;
+}
+
+function toggleCharacterCheckerForSelection() {
+  const app = getCharacterChecker();
+  const selectedPc = getSelectedCanvasPcActor();
+  if (app.rendered) {
+    if (selectedPc && app._selectedActorId !== selectedPc.id) {
+      app.openForActor(selectedPc);
+    } else {
+      app.close();
+    }
+  } else if (selectedPc) {
+    app.openForActor(selectedPc);
+  } else {
+    app.toggle();
+  }
+}
+
+function toggleLevelPlannerForSelection() {
+  const app = getLevelPlanner();
+  const selectedPc = getSelectedCanvasPcActor();
+  if (app.rendered) {
+    if (selectedPc && app._selectedActorId !== selectedPc.id) {
+      app.openForActor(selectedPc);
+    } else {
+      app.close();
+    }
+  } else if (selectedPc) {
+    app.openForActor(selectedPc);
+  } else {
+    app.toggle();
+  }
+}
+
 function getCharacterChecker() {
   if (!characterCheckerInstance) {
     characterCheckerInstance = new CharacterCheckerApp({
@@ -795,7 +838,7 @@ function registerSceneControls(controls) {
     visible: true,
     button: true,
     onClick: () => {
-      getCharacterChecker().toggle();
+      toggleCharacterCheckerForSelection();
     }
   };
 
@@ -806,8 +849,20 @@ function registerSceneControls(controls) {
     visible: true,
     button: true,
     onClick: () => {
-      getLevelPlanner().toggle();
+      toggleLevelPlannerForSelection();
     }
+  };
+
+  // Native Token Select tool so clicking PCs, hovering tokens, and drag-box selection
+  // work normally while the GM Utilities menu is active (and action buttons preserve `select`)
+  const selectTokensTool = {
+    name: "select",
+    title: game.i18n?.has?.("CONTROLS.BasicSelect")
+      ? game.i18n.localize("CONTROLS.BasicSelect")
+      : "Select Tokens",
+    icon: "fa-solid fa-expand",
+    order: 0,
+    visible: true
   };
 
   // GM-only tools added to Foundry built-in control groups
@@ -821,9 +876,10 @@ function registerSceneControls(controls) {
   // Primary Utilities control group (Performance Checker is strictly GM-only; Level Planner is opt-in)
   const perfEnabled = isGM && performanceMonitor.isEnabled();
   const plannerEnabled = isLevelPlannerEnabled();
-  const activeTools = isGM
-    ? [openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(plannerEnabled ? [openLevelPlannerTool] : []), ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
-    : [openResourceWidgetTool, ...(plannerEnabled ? [openLevelPlannerTool] : [])];
+  const activeTools = (isGM
+    ? [selectTokensTool, openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(plannerEnabled ? [openLevelPlannerTool] : []), ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
+    : [selectTokensTool, openResourceWidgetTool, ...(plannerEnabled ? [openLevelPlannerTool] : [])]
+  ).map((tool, index) => ({ ...tool, order: index }));
 
   const activeToolsObj = {};
   for (const t of activeTools) {
@@ -835,17 +891,8 @@ function registerSceneControls(controls) {
     title: isGM ? "PF2e GM Utilities" : "PF2e Trackers HUD",
     icon: isGM ? GM_UTILITIES_MENU_ICON : "fa-solid fa-layer-group",
     layer: tokenLayerName,
+    activeTool: "select",
     visible: true,
-    onChange: (event, active) => {
-      if (active && canvas?.ready && canvas.tokens) {
-        // Clear any stuck hover highlights on tokens when entering Utilities menu
-        for (const token of canvas.tokens.placeables) {
-          if (token.hover) {
-            token._onHoverOut(event);
-          }
-        }
-      }
-    },
     tools: Array.isArray(controls) ? activeTools : activeToolsObj
   };
 
@@ -858,63 +905,6 @@ function registerSceneControls(controls) {
   } else if (controls && typeof controls === "object") {
     controls["pf2e-gm-utilities"] = gmUtilitiesControls;
   }
-}
-
-/* ------------------------------------------------------------------------- */
-/* 3.1 TOKEN HOVER SAFETY ON GM UTILITIES MENU                               */
-/* ------------------------------------------------------------------------- */
-
-function isGmUtilitiesActive() {
-  return ui.controls?.control?.name === "pf2e-gm-utilities";
-}
-
-function patchClassHover(cls) {
-  if (!cls?.prototype || cls.prototype._gmUtilitiesHoverPatched) return;
-  cls.prototype._gmUtilitiesHoverPatched = true;
-
-  if (typeof cls.prototype._canHover === "function") {
-    const origCanHover = cls.prototype._canHover;
-    cls.prototype._canHover = function (user, event) {
-      const allowed = origCanHover.call(this, user, event);
-      if (isGmUtilitiesActive()) return false;
-      return allowed;
-    };
-  }
-}
-
-function patchTokenHover() {
-  if (patchTokenHover._done) return;
-
-  const libWrapperActive = Boolean(game.modules?.get?.("lib-wrapper")?.active);
-  if (libWrapperActive && !globalThis.libWrapper?.register) {
-    // Wait until libWrapper finishes initializing (setup/ready) rather than monkey-patching behind it
-    return;
-  }
-
-  patchTokenHover._done = true;
-
-  // Pure boolean predicate: always invoke wrapped() so we can register as conflict-free "WRAPPER"
-  // (zero conflict warnings with PF2e Toolbelt, PF2e Exploit Vulnerability, Monk's Active Tile Triggers, etc.)
-  const canHoverWrapper = function (wrapped, user, event) {
-    const allowed = wrapped(user, event);
-    if (isGmUtilitiesActive()) return false;
-    return allowed;
-  };
-
-  // 1. Cooperative wrapping with libWrapper when available
-  if (globalThis.libWrapper?.register) {
-    try {
-      libWrapper.register(MODULE_ID, "foundry.canvas.placeables.Token.prototype._canHover", canHoverWrapper, "WRAPPER");
-      return;
-    } catch (err) {
-      console.warn("PF2e Awesome GM Utilities | Failed to register Token._canHover wrapper with libWrapper:", err);
-      if (libWrapperActive) return; // Never monkey-patch directly while libWrapper is active
-    }
-  }
-
-  // 2. Direct monkey-patching fallback ONLY when libWrapper is not installed/active
-  const tokenClass = CONFIG.Token?.objectClass || foundry.canvas?.placeables?.Token;
-  if (tokenClass) patchClassHover(tokenClass);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1073,18 +1063,11 @@ Hooks.once("init", () => {
   performanceMonitor.onInit();
   registerKeybindings();
   JournalEditor.initialize();
-
-  Hooks.on("hoverToken", (token, hovered) => {
-    if (hovered && isGmUtilitiesActive()) {
-      token._onHoverOut();
-    }
-  });
 });
 
 Hooks.once("setup", () => {
   // Register libWrapper wrappers during `setup` (after lib-wrapper initializes in `init`)
   SceneLinks._patchNotePlaceables();
-  patchTokenHover();
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
@@ -1129,7 +1112,6 @@ Hooks.once("ready", async () => {
     const reg = game.settings?.settings?.get?.(`${MODULE_ID}.${key}`);
     if (reg) reg.config = Boolean(game.user?.isGM);
   }
-  patchTokenHover();
   // Global API namespace
   game.pf2eAwesomeGmUtilities = game.pf2eAwesomeGmUtilities || {};
   
@@ -1212,7 +1194,7 @@ Hooks.once("ready", async () => {
   registerSheetLevelUpPrompt((actor, focusLevel) => getLevelPlanner().openForActor(actor, focusLevel));
   game.pf2eAwesomeGmUtilities.characterChecker = {
     get app() { return getCharacterChecker(); },
-    toggle: () => getCharacterChecker().toggle(),
+    toggle: () => toggleCharacterCheckerForSelection(),
     open: (actorOrId) => getCharacterChecker().openForActor(actorOrId),
     analyze: (actor) => analyzeCharacter(actor),
     syncSpellcasting: (actor) => createOrSyncAllSpellcastingEntries(actor)
@@ -1220,7 +1202,7 @@ Hooks.once("ready", async () => {
   game.pf2eAwesomeGmUtilities.levelPlanner = {
     get app() { return getLevelPlanner(); },
     isEnabled: () => isLevelPlannerEnabled(),
-    toggle: () => getLevelPlanner().toggle(),
+    toggle: () => toggleLevelPlannerForSelection(),
     open: (actorOrId, focusLevel) => getLevelPlanner().openForActor(actorOrId, focusLevel),
     buildRoadmap: (actor) => buildLevelRoadmap(actor),
     applyLevelUp: (actor) => applyPlannedLevelUp(actor),

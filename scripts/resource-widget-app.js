@@ -29,6 +29,8 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     this._onPointerMoveBound = null;
     this._onPointerUpBound = null;
     this._userClosed = false;
+    this._savedScrollTop = 0;
+    this._isRestoringScroll = false;
   }
 
   static DEFAULT_OPTIONS = {
@@ -51,7 +53,8 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
 
   static PARTS = {
     main: {
-      template: `modules/${MODULE_ID}/templates/resource-widget.hbs`
+      template: `modules/${MODULE_ID}/templates/resource-widget.hbs`,
+      scrollable: [".widget-body"]
     }
   };
 
@@ -108,6 +111,13 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       // Setting may not be registered yet during early init
       this._currentPosition.left = 18;
       this._currentPosition.top = 320;
+    }
+
+    if (this.element && !this._isRestoringScroll) {
+      const body = this.element.querySelector(".widget-body");
+      if (body && body.scrollHeight > body.clientHeight) {
+        this._savedScrollTop = body.scrollTop;
+      }
     }
 
     return super.render(options, _legacyOptions);
@@ -355,6 +365,30 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         e.stopPropagation();
         await this.toggleCollapse();
       });
+    }
+
+    // Preserve scroll position on scrollable HUD tracker body across updates
+    const widgetBody = root.querySelector(".widget-body");
+    if (widgetBody) {
+      const targetScroll = Math.max(0, Number(this._savedScrollTop) || 0);
+      if (targetScroll > 0) {
+        const token = (this._scrollRestoreToken = (this._scrollRestoreToken || 0) + 1);
+        this._isRestoringScroll = true;
+        widgetBody.scrollTop = targetScroll;
+        requestAnimationFrame(() => {
+          if (widgetBody.isConnected) {
+            widgetBody.scrollTop = targetScroll;
+          }
+          if (this._scrollRestoreToken === token) {
+            this._isRestoringScroll = false;
+          }
+        });
+      }
+      widgetBody.addEventListener("scroll", () => {
+        if (!this._isRestoringScroll) {
+          this._savedScrollTop = widgetBody.scrollTop;
+        }
+      }, { passive: true });
     }
 
     // Attach data-action click listeners

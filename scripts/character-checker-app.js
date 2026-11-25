@@ -192,18 +192,25 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
       selectedReport.spellcasting.sources = selectedReport.spellcasting.sources.map(src => {
         const isFocus = src.castingType === "focus";
         const autoCount = Number(src.missingAutoSpellsCount || 0);
-        const canSyncEntry = Boolean(src.entryExists && (src.slotsOutdated || autoCount > 0));
+        const needsFontPrep = Boolean(src.needsFontPrepare);
+        const canSyncEntry = Boolean(src.entryExists && (src.slotsOutdated || autoCount > 0 || needsFontPrep));
         let syncBtnLabel = `Sync Slots to Level ${selectedReport.level}`;
-        if (src.slotsOutdated && autoCount > 0) {
+        if (src.slotsOutdated && needsFontPrep) {
+          syncBtnLabel = `Sync & Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
+        } else if (src.slotsOutdated && autoCount > 0) {
           syncBtnLabel = `Sync Slots & Add ${autoCount} Spell${autoCount === 1 ? "" : "s"}`;
+        } else if (!src.slotsOutdated && needsFontPrep) {
+          syncBtnLabel = `Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
         } else if (!src.slotsOutdated && autoCount > 0) {
           syncBtnLabel = isFocus
             ? `Add ${autoCount} Focus Spell${autoCount === 1 ? "" : "s"}`
             : `Add ${autoCount} Auto Spell${autoCount === 1 ? "" : "s"}`;
         }
-        const createBtnLabel = autoCount > 0
-          ? `Add Entry + ${autoCount} Spell${autoCount === 1 ? "" : "s"}`
-          : "Add Spellcasting Entry";
+        const createBtnLabel = src.isDivineFont && src.divineFontChoice
+          ? `Add Entry & Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`
+          : (autoCount > 0
+            ? `Add Entry + ${autoCount} Spell${autoCount === 1 ? "" : "s"}`
+            : "Add Spellcasting Entry");
 
         const missingAutoSpellsDisplay = (src.missingAutoSpells || []).map(sp => ({
           ...sp,
@@ -403,9 +410,10 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
         const created = await createSpellcastingEntry(actor, spec, overrides);
         if (created) {
-          const spellNote = resOut.addedSpells?.length
-            ? ` (auto-added: ${resOut.addedSpells.join(", ")})`
-            : "";
+          const extras = [];
+          if (resOut.addedSpells?.length) extras.push(`auto-added: ${resOut.addedSpells.join(", ")}`);
+          if (resOut.preparedFont) extras.push(`prepared ${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
+          const spellNote = extras.length ? ` (${extras.join("; ")})` : "";
           ui.notifications?.info(`Created spellcasting entry "${created.name}" on ${actor.name}${spellNote}!`);
           this.render({ force: false });
         }
@@ -426,6 +434,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
           const parts = [];
           if (resOut.slotsChanged) parts.push(`synced slots to Level ${report.level}`);
           if (resOut.addedSpells?.length) parts.push(`added ${resOut.addedSpells.join(", ")}`);
+          if (resOut.preparedFont) parts.push(`prepared ${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
           ui.notifications?.info(`${spec.matchedEntryName || spec.title}: ${parts.join(" & ") || "up to date"}!`);
           this.render({ force: false });
         } else {
@@ -458,6 +467,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         if (res.created.length > 0) parts.push(`Created: ${res.created.join(", ")}`);
         if (res.synced.length > 0) parts.push(`Synced slots: ${res.synced.join(", ")}`);
         if (res.addedSpells?.length > 0) parts.push(`Auto-added spells: ${res.addedSpells.join(", ")}`);
+        if (res.preparedFonts?.length > 0) parts.push(`Prepared Font: ${res.preparedFonts.join(", ")}`);
         if (res.skippedNeedsTradition.length > 0) {
           parts.push(`Choose tradition first for: ${res.skippedNeedsTradition.join(", ")}`);
         }
@@ -779,13 +789,16 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
 
         let actionHtml = "";
         const autoCount = Number(src.missingAutoSpellsCount || 0);
+        const needsFontPrep = Boolean(src.needsFontPrepare);
         if (!src.entryExists && isEditable) {
           const tradSelectHtml = src.traditionMissing ? `
             <select class="pf2e-cc-sheet-select pf2e-cc-sheet-trad" title="Choose Spellcasting Tradition">
               ${Object.entries(TRADITION_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}
             </select>
           ` : "";
-          const createLbl = autoCount > 0 ? `+ Entry (+${autoCount})` : "+ Add Entry";
+          const createLbl = src.isDivineFont && src.divineFontChoice
+            ? `+ Font (${src.divineFontCount}× ${src.divineFontSpellName})`
+            : (autoCount > 0 ? `+ Entry (+${autoCount})` : "+ Add Entry");
           actionHtml = `
             <div class="pf2e-cc-sheet-row-actions">
               ${tradSelectHtml}
@@ -794,16 +807,21 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
               </button>
             </div>
           `;
-        } else if (src.entryExists && (src.slotsOutdated || autoCount > 0) && isEditable) {
-          const syncLbl = src.slotsOutdated && autoCount > 0
-            ? `Sync + ${autoCount}`
-            : (src.slotsOutdated
-              ? "Sync Slots"
-              : (src.isFocus ? `+ ${autoCount} Focus` : `+ ${autoCount} Auto`));
+        } else if (src.entryExists && (src.slotsOutdated || autoCount > 0 || needsFontPrep) && isEditable) {
+          const syncLbl = src.slotsOutdated && needsFontPrep
+            ? `Sync & Prep ${src.divineFontSpellName}`
+            : (src.slotsOutdated && autoCount > 0
+              ? `Sync + ${autoCount}`
+              : (src.slotsOutdated
+                ? "Sync Slots"
+                : (needsFontPrep
+                  ? `Prep ${src.divineFontCount}× ${src.divineFontSpellName}`
+                  : (src.isFocus ? `+ ${autoCount} Focus` : `+ ${autoCount} Auto`))));
           const btnCls = src.slotsOutdated ? "is-warn" : "is-primary";
           const syncTip = [
             src.slotsOutdated ? `Update slots to Level ${report.level} (${src.slotDiffText})` : "",
-            autoCount > 0 ? `Auto-add: ${src.missingAutoSpellsText}` : ""
+            autoCount > 0 ? `Auto-add: ${src.missingAutoSpellsText}` : "",
+            needsFontPrep ? `Prepare ${src.divineFontCount}× Rank ${src.divineFontRank} ${src.divineFontSpellName}` : ""
           ].filter(Boolean).join(" · ");
           actionHtml = `
             <div class="pf2e-cc-sheet-row-actions">
@@ -907,6 +925,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         if (res.created.length) msg.push(`Created: ${res.created.join(", ")}`);
         if (res.synced.length) msg.push(`Synced: ${res.synced.join(", ")}`);
         if (res.addedSpells?.length) msg.push(`Auto-added spells: ${res.addedSpells.join(", ")}`);
+        if (res.preparedFonts?.length) msg.push(`Prepared Font: ${res.preparedFonts.join(", ")}`);
         if (res.skippedNeedsTradition.length) msg.push(`Pick tradition for: ${res.skippedNeedsTradition.join(", ")}`);
         ui.notifications?.info(msg.length ? `Spellcasting | ${msg.join(" | ")}` : "Spellcasting entries are already up to date.");
       });
@@ -926,7 +945,10 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
             resultOut: resOut
           });
           if (created) {
-            const spellNote = resOut.addedSpells?.length ? ` (auto-added: ${resOut.addedSpells.join(", ")})` : "";
+            const extras = [];
+            if (resOut.addedSpells?.length) extras.push(`auto-added: ${resOut.addedSpells.join(", ")}`);
+            if (resOut.preparedFont) extras.push(`prepared ${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
+            const spellNote = extras.length ? ` (${extras.join("; ")})` : "";
             ui.notifications?.info(`Added spellcasting entry "${created.name}" to ${actor.name}${spellNote}!`);
           }
         });
@@ -946,6 +968,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
             const parts = [];
             if (resOut.slotsChanged) parts.push(`synced slots to Level ${report.level}`);
             if (resOut.addedSpells?.length) parts.push(`added ${resOut.addedSpells.join(", ")}`);
+            if (resOut.preparedFont) parts.push(`prepared ${resOut.preparedFont.count}× R${resOut.preparedFont.rank} ${resOut.preparedFont.spellName}`);
             ui.notifications?.info(`${spec.matchedEntryName || spec.title}: ${parts.join(" & ") || "up to date"}!`);
           }
         });

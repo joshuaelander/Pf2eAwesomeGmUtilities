@@ -1738,6 +1738,36 @@
   background: var(--pf2e-gm-bg-btn-hover);
 }
 
+.pf2e-lp-picker-row.is-prereq-unmet {
+  opacity: 0.72;
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.32);
+  background: var(--pf2e-gm-bg-inset);
+}
+
+.pf2e-lp-picker-row.is-prereq-unmet:hover {
+  opacity: 0.94;
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.58);
+}
+
+.pf2e-lp-picker-unmet-badge {
+  font-size: 0.68em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.22);
+  border: 1px solid rgba(var(--pf2e-gm-pink-rgb), 0.55);
+  color: var(--pf2e-gm-pink-soft);
+}
+
+.pf2e-lp-picker-unmet-note {
+  font-size: 0.74em;
+  color: var(--pf2e-gm-pink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .pf2e-lp-picker-img {
   width: 28px;
   height: 28px;

@@ -27,6 +27,9 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     this._activeCategory = "all"; // 'all' | 'party' | 'subsystem' | 'actor'
     this._filterQuery = "";
     this._onKeyDownBound = null;
+    this._savedScrollTop = 0;
+    this._isRestoringScroll = false;
+    this._renderCount = 0;
   }
 
   static DEFAULT_OPTIONS = {
@@ -50,7 +53,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
 
   static PARTS = {
     main: {
-      template: `modules/${MODULE_ID}/templates/resource-tracker.hbs`
+      template: `modules/${MODULE_ID}/templates/resource-tracker.hbs`,
+      scrollable: [".trackers-scroll-area"]
     }
   };
 
@@ -59,7 +63,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
   /* ------------------------------------------------------------------------- */
 
   /**
-   * Safe render wrapper ensuring compatibility with legacy boolean invocations.
+   * Safe render wrapper ensuring compatibility with legacy boolean invocations
+   * and preserving the vertical scroll position of `.trackers-scroll-area`.
    * @param {object|boolean} options
    * @param {object} [_legacyOptions]
    */
@@ -67,6 +72,13 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     if (typeof options === "boolean") {
       options = { force: options };
     }
+    if (this.element && !this._isRestoringScroll) {
+      const scrollArea = this.element.querySelector(".trackers-scroll-area");
+      if (scrollArea && scrollArea.scrollHeight > scrollArea.clientHeight) {
+        this._savedScrollTop = scrollArea.scrollTop;
+      }
+    }
+    this._renderCount++;
     return super.render(options, _legacyOptions);
   }
 
@@ -371,11 +383,38 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     // Scoped strictly to the container to avoid intercepting window header buttons
     const container = root.querySelector(".pf2e-resource-tracker-container") || root;
 
+    // Preserve and track scroll position so clicking +1/-1/pips on lower trackers never jumps back to top
+    const scrollArea = container.querySelector(".trackers-scroll-area");
+    if (scrollArea) {
+      const targetScroll = Math.max(0, Number(this._savedScrollTop) || 0);
+      if (targetScroll > 0) {
+        const token = (this._scrollRestoreToken = (this._scrollRestoreToken || 0) + 1);
+        this._isRestoringScroll = true;
+        scrollArea.scrollTop = targetScroll;
+        requestAnimationFrame(() => {
+          if (scrollArea.isConnected) {
+            scrollArea.scrollTop = targetScroll;
+          }
+          if (this._scrollRestoreToken === token) {
+            this._isRestoringScroll = false;
+          }
+        });
+      }
+      scrollArea.addEventListener("scroll", () => {
+        if (!this._isRestoringScroll) {
+          this._savedScrollTop = scrollArea.scrollTop;
+        }
+      }, { passive: true });
+    }
+
     // Category Tabs
     container.querySelectorAll(".tracker-category-tab").forEach(tab => {
       tab.addEventListener("click", (e) => {
         e.preventDefault();
         const cat = tab.dataset.category || "all";
+        if (cat !== this._activeCategory) {
+          this._savedScrollTop = 0;
+        }
         this._activeCategory = cat;
         this.render({ force: false });
       });
@@ -798,16 +837,23 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
    * @param {Array<object>} trackers
    */
   async saveTrackers(trackers) {
+    // Capture current scroll before updating settings (since settings.onChange triggers render)
+    if (this.element && !this._isRestoringScroll) {
+      const scrollArea = this.element.querySelector(".trackers-scroll-area");
+      if (scrollArea && scrollArea.scrollHeight > scrollArea.clientHeight) {
+        this._savedScrollTop = scrollArea.scrollTop;
+      }
+    }
+    const renderCountBefore = this._renderCount;
     await game.settings.set(MODULE_ID, "resourceTrackers", trackers);
-    this.render({ force: false });
+    // Avoid double-rendering if settings.onChange already queued a render
+    if (this._renderCount === renderCountBefore && this.rendered) {
+      this.render({ force: false });
+    }
 
     // Emit socket event to all connected player clients for instant live HUD sync
     if (game.socket) {
       game.socket.emit(SOCKET_EVENT, { action: "syncWidget" });
-    }
-
-    if (game.pf2eAwesomeGmUtilities?.resourceWidget?.sync) {
-      game.pf2eAwesomeGmUtilities.resourceWidget.sync();
     }
   }
 

@@ -479,11 +479,266 @@ function maxSkillRankForLevel(level) {
   return 1;
 }
 
+const RANK_WORD_MAP = { trained: 1, expert: 2, master: 3, legendary: 4 };
+const RECALL_KNOWLEDGE_SKILLS = ["arcana", "crafting", "medicine", "nature", "occultism", "religion", "society"];
+const ATTR_WORD_TO_KEY = {
+  str: "str", strength: "str",
+  dex: "dex", dexterity: "dex",
+  con: "con", constitution: "con",
+  int: "int", intelligence: "int",
+  wis: "wis", wisdom: "wis",
+  cha: "cha", charisma: "cha"
+};
+
+/**
+ * Evaluates a single PF2e prerequisite atom against the character's sheet/projected state.
+ * Returns `{ status: "met" | "unmet" | "unknown", reason?: string }`.
+ * Unknown/narrative prerequisites always return `"unknown"` (never false-hiding valid feats).
+ */
+function evaluateSinglePrereqAtom(rawAtom, prereqState, allFeatNamesLower = null) {
+  const text = String(rawAtom || "").trim().replace(/\.$/, "");
+  if (!text || !prereqState) return { status: "unknown" };
+  const lower = text.toLowerCase();
+
+  // 1. Proficiency rank prerequisites: "trained/expert/master/legendary in ..."
+  //    (Skip if target itself contains a second "<rank> in ..." phrase so outer OR-splitter handles mixed ranks)
+  const profMatch = lower.match(/\b(trained|expert|master|legendary)\s+in\s+(.+)$/i);
+  if (profMatch && !/\b(?:trained|expert|master|legendary)\s+in\b/i.test(profMatch[2])) {
+    const reqWord = profMatch[1].toLowerCase();
+    const reqRank = RANK_WORD_MAP[reqWord] || 0;
+    const target = profMatch[2].trim();
+
+    // 1a. Recall Knowledge skill prerequisite (e.g. "trained in at least one skill with the Recall Knowledge action")
+    if (/recall\s+knowledge/i.test(target)) {
+      const bestRk = Math.max(
+        Number(prereqState.maxLoreRank ?? 0),
+        ...RECALL_KNOWLEDGE_SKILLS.map(s => Number(prereqState.skillRanks?.[s] ?? 0))
+      );
+      return bestRk >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in a Recall Knowledge skill` };
+    }
+
+    // 1b. Generic Lore skill ("trained in a Lore skill", "expert in Lore", "trained in at least one Lore skill")
+    if (/(?:^|\b)(?:a|an|any|at\s+least\s+one)\s+lore\b|^lore(?:\s+skill)?$/i.test(target)) {
+      const bestLore = Number(prereqState.maxLoreRank ?? 0);
+      return bestLore >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in Lore (sheet: ${RANK_FULL[bestLore]})` };
+    }
+
+    // 1c. Generic "any skill" / "at least one skill" / "a skill"
+    if (/(?:at\s+least\s+(?:one|a)|any|a)\s+skill\b/i.test(target) && !CORE_SKILL_SLUGS.some(s => new RegExp(`\\b${s}\\b`, "i").test(target))) {
+      const bestAny = Math.max(
+        Number(prereqState.maxLoreRank ?? 0),
+        ...CORE_SKILL_SLUGS.map(s => Number(prereqState.skillRanks?.[s] ?? 0))
+      );
+      return bestAny >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in any skill (best: ${RANK_FULL[bestAny]})` };
+    }
+
+    // 1d. Perception
+    if (/\bperception\b/i.test(target)) {
+      const percRank = Number(prereqState.perceptionRank ?? 0);
+      return percRank >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in Perception (sheet: ${RANK_FULL[percRank]})` };
+    }
+
+    // 1e. Armor / Defense proficiency
+    const armorMatch = target.match(/\b(unarmored|light|medium|heavy)\s+(?:armor|defense)\b/i);
+    if (armorMatch && prereqState.armorRanks) {
+      const k = armorMatch[1].toLowerCase();
+      const cur = Number(prereqState.armorRanks[k] ?? 0);
+      return cur >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in ${armorMatch[0]} (sheet: ${RANK_FULL[cur]})` };
+    }
+
+    // 1f. Weapon / Attack proficiency
+    const weapMatch = target.match(/\b(unarmed|simple|martial|advanced)\s+(?:weapons?|attacks?)\b/i);
+    if (weapMatch && prereqState.weaponRanks) {
+      const k = weapMatch[1].toLowerCase();
+      const cur = Number(prereqState.weaponRanks[k] ?? 0);
+      return cur >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in ${weapMatch[0]} (sheet: ${RANK_FULL[cur]})` };
+    }
+
+    // 1g. Saving throws
+    const saveMatch = target.match(/\b(fortitude|reflex|will)(?:\s+saves?)?\b/i);
+    if (saveMatch && prereqState.saveRanks) {
+      const k = saveMatch[1].toLowerCase();
+      const cur = Number(prereqState.saveRanks[k] ?? 0);
+      return cur >= reqRank
+        ? { status: "met" }
+        : { status: "unmet", reason: `${capitalize(reqWord)} in ${capitalize(k)} (sheet: ${RANK_FULL[cur]})` };
+    }
+
+    // 1h. Named core skill(s) (and optional Lore): supports single, "A or B", "A, B, or C", and "A and B"
+    const mentionedSkills = CORE_SKILL_SLUGS.filter(s => new RegExp(`\\b${s}\\b`, "i").test(target));
+    const mentionsLore = /\blore\b/i.test(target);
+    if (mentionedSkills.length > 0 || mentionsLore) {
+      const checks = mentionedSkills.map(s => ({
+        label: capitalize(s),
+        cur: Number(prereqState.skillRanks?.[s] ?? 0)
+      }));
+      if (mentionsLore) {
+        checks.push({ label: "Lore", cur: Number(prereqState.maxLoreRank ?? 0) });
+      }
+      const isAndList = /\band\b/i.test(target) && !/\bor\b/i.test(target);
+      if (isAndList) {
+        const failed = checks.filter(c => c.cur < reqRank);
+        if (failed.length === 0) return { status: "met" };
+        const missingStr = failed.map(c => `${c.label} (${RANK_FULL[c.cur]})`).join(", ");
+        return { status: "unmet", reason: `${capitalize(reqWord)} in ${missingStr}` };
+      }
+      const anyPassed = checks.some(c => c.cur >= reqRank);
+      if (anyPassed) return { status: "met" };
+      if (checks.length === 1) {
+        return { status: "unmet", reason: `${capitalize(reqWord)} in ${checks[0].label} (current: ${RANK_FULL[checks[0].cur]})` };
+      }
+      return { status: "unmet", reason: `${capitalize(reqWord)} in ${checks.map(c => c.label).join(" or ")}` };
+    }
+
+    return { status: "unknown" };
+  }
+
+  // 2. Attribute modifier or legacy ability score prerequisites ("Strength +2", "Dexterity 14", "Strength +2, Constitution +2")
+  const attrRegex = /\b(strength|dexterity|constitution|intelligence|wisdom|charisma|str|dex|con|int|wis|cha)\s*(?:\+(\d+)|(\d+))\b/gi;
+  const attrMatches = [];
+  let am;
+  while ((am = attrRegex.exec(lower)) !== null) {
+    const key = ATTR_WORD_TO_KEY[am[1].toLowerCase()];
+    const rawNum = Number(am[2] ?? am[3]);
+    if (!key || !Number.isFinite(rawNum)) continue;
+    // Remaster uses modifiers (+2, +3); Legacy uses scores (12, 14, 16, 18)
+    const reqMod = am[2] !== undefined ? rawNum : (rawNum >= 10 ? Math.floor((rawNum - 10) / 2) : rawNum);
+    attrMatches.push({ key, reqMod });
+  }
+  if (attrMatches.length > 0) {
+    const isOrList = /\bor\b/i.test(lower) && !/\band\b/i.test(lower);
+    if (isOrList) {
+      const anyPassed = attrMatches.some(req => Number(prereqState.attrMods?.[req.key] ?? 0) >= req.reqMod);
+      if (anyPassed) return { status: "met" };
+      const summary = attrMatches.map(req => `${ABILITY_LABELS[req.key]} +${req.reqMod}`).join(" or ");
+      return { status: "unmet", reason: summary };
+    }
+    const failed = attrMatches.filter(req => Number(prereqState.attrMods?.[req.key] ?? 0) < req.reqMod);
+    if (failed.length === 0) return { status: "met" };
+    const missingStr = failed
+      .map(req => `${ABILITY_LABELS[req.key]} +${req.reqMod} (current: ${Number(prereqState.attrMods?.[req.key] ?? 0) >= 0 ? "+" : ""}${Number(prereqState.attrMods?.[req.key] ?? 0)})`)
+      .join(", ");
+    return { status: "unmet", reason: missingStr };
+  }
+
+  // 3. Spellcasting / Tradition / Focus Pool / Deity prerequisites
+  const tradCastMatch = lower.match(/\bability\s+to\s+cast\s+(arcane|divine|occult|primal)\s+spells?\b/i);
+  if (tradCastMatch) {
+    const trad = tradCastMatch[1].toLowerCase();
+    const hasTrad = Boolean(prereqState.spellcastingTraditions?.has?.(trad));
+    return hasTrad
+      ? { status: "met" }
+      : { status: "unmet", reason: `${capitalize(trad)} spellcasting` };
+  }
+  if (/\bability\s+to\s+cast\s+focus\s+spells?\b|\bfocus\s+pool\b/i.test(lower)) {
+    return prereqState.hasFocusPool
+      ? { status: "met" }
+      : { status: "unmet", reason: "Focus pool" };
+  }
+  if (/\bability\s+to\s+cast\s+spells?\b|\bspellcasting\s+class\s+feature\b/i.test(lower)) {
+    return prereqState.isSpellcaster
+      ? { status: "met" }
+      : { status: "unmet", reason: "Spellcasting ability" };
+  }
+  if (/^you\s+follow\s+a\s+deity\b/i.test(lower)) {
+    return prereqState.hasDeity
+      ? { status: "met" }
+      : { status: "unmet", reason: "Follow a deity" };
+  }
+
+  // 4. Dedication or known PF2e Feat prerequisite
+  const knownFeats = prereqState.knownFeatNamesLower;
+  const knownBase = prereqState.knownFeatBaseNamesLower;
+  const hasKnownFeat = (targetLower) => {
+    if (!targetLower) return false;
+    if (knownFeats?.has?.(targetLower) || knownBase?.has?.(targetLower)) return true;
+    const stripped = targetLower.replace(/\s*\([^)]*\)\s*/g, "").trim();
+    if (stripped && (knownFeats?.has?.(stripped) || knownBase?.has?.(stripped))) return true;
+    return false;
+  };
+
+  if (lower.includes("dedication")) {
+    if (hasKnownFeat(lower)) return { status: "met" };
+    const foundPartial = knownFeats && Array.from(knownFeats).some(n => n.length >= 6 && (n.includes(lower) || lower.includes(n)));
+    return foundPartial ? { status: "met" } : { status: "unmet", reason: text };
+  }
+
+  if (allFeatNamesLower && allFeatNamesLower.size > 0) {
+    const cleanLower = lower.replace(/\s*\([^)]*\)\s*/g, "").trim();
+    if (allFeatNamesLower.has(lower) || (cleanLower && allFeatNamesLower.has(cleanLower))) {
+      return hasKnownFeat(lower)
+        ? { status: "met" }
+        : { status: "unmet", reason: text };
+    }
+  }
+
+  return { status: "unknown" };
+}
+
+/**
+ * Evaluates all prerequisites on a PF2e feat against a character's live sheet & projected
+ * Level Planner state at `slotLevel`. Never falsely rejects unverified narrative prerequisites.
+ *
+ * @param {{ prerequisites?: Array<string|{value:string}>, level?: number }} feat
+ * @param {object} prereqState
+ * @param {Set<string>|null} [allFeatNamesLower]
+ * @returns {{ met: boolean, unmetReasons: string[] }}
+ */
+export function evaluateFeatPrerequisites(feat, prereqState, allFeatNamesLower = null) {
+  const unmetReasons = [];
+  if (!feat || !prereqState) return { met: true, unmetReasons };
+
+  const prereqs = Array.isArray(feat.prerequisites) ? feat.prerequisites : [];
+  for (const rawP of prereqs) {
+    const pText = (typeof rawP === "string" ? rawP : (rawP?.value || "")).trim();
+    if (!pText) continue;
+
+    // Split semicolon-separated AND clauses
+    const andClauses = pText.split(/\s*;\s*/).map(s => s.trim()).filter(Boolean);
+    for (const clause of andClauses) {
+      // First try evaluating the full clause directly (handles "trained in A, B, or C" as one proficiency check)
+      const direct = evaluateSinglePrereqAtom(clause, prereqState, allFeatNamesLower);
+      if (direct.status === "met") continue;
+
+      // If clause contains " or " (e.g. "Strength +2 or Dexterity +2", "expert in Acrobatics or trained in Athletics", "Feat A or Feat B")
+      if (/\bor\b/i.test(clause) && !/^\s*(?:trained|expert|master|legendary)\s+in\s+(?:(?!(?:trained|expert|master|legendary)\s+in\b).)+$/i.test(clause)) {
+        const orBranches = clause.split(/\s+or\s+/i).map(s => s.trim()).filter(Boolean);
+        if (orBranches.length > 1) {
+          const branchResults = orBranches.map(b => evaluateSinglePrereqAtom(b, prereqState, allFeatNamesLower));
+          // If ANY branch is met or unknown (unverifiable prose), give benefit of the doubt
+          if (branchResults.some(r => r.status === "met" || r.status === "unknown")) continue;
+          const summary = branchResults.map(r => r.reason).filter(Boolean).join(" or ");
+          unmetReasons.push(summary || clause);
+          continue;
+        }
+      }
+
+      if (direct.status === "unmet") {
+        unmetReasons.push(direct.reason || clause);
+      }
+    }
+  }
+
+  return { met: unmetReasons.length === 0, unmetReasons };
+}
+
 /**
  * Soft-checks a planned feat's level & text prerequisites against the character's
  * projected state at `slotLevel` (never blocks picking; returns friendly warning strings).
  */
-function checkPlannedFeatPrereqs(plannedFeat, slotLevel, projectedSkillRanks, knownFeatNamesLower) {
+function checkPlannedFeatPrereqs(plannedFeat, slotLevel, prereqState) {
   const warnings = [];
   if (!plannedFeat) return warnings;
 
@@ -492,35 +747,9 @@ function checkPlannedFeatPrereqs(plannedFeat, slotLevel, projectedSkillRanks, kn
     warnings.push(`Feat level ${featLvl} exceeds Level ${slotLevel} slot`);
   }
 
-  const prereqs = Array.isArray(plannedFeat.prerequisites) ? plannedFeat.prerequisites : [];
-  const rankWordMap = { trained: 1, expert: 2, master: 3, legendary: 4 };
-
-  for (const rawP of prereqs) {
-    const pText = typeof rawP === "string" ? rawP : (rawP?.value || "");
-    if (!pText) continue;
-    const pLower = pText.toLowerCase().trim();
-
-    // Check skill rank prerequisites like "expert in Athletics" or "master in Stealth"
-    const skillMatch = pLower.match(/\b(trained|expert|master|legendary)\s+in\s+([a-z]+)/i);
-    if (skillMatch) {
-      const reqRank = rankWordMap[skillMatch[1].toLowerCase()] || 0;
-      const skillName = skillMatch[2].toLowerCase();
-      if (CORE_SKILL_SLUGS.includes(skillName)) {
-        const projRank = Number(projectedSkillRanks[skillName] ?? 0);
-        if (projRank < reqRank) {
-          warnings.push(`Requires ${capitalize(skillMatch[1])} in ${capitalize(skillName)} (projected: ${RANK_FULL[projRank]})`);
-        }
-      }
-      continue;
-    }
-
-    // Check dedication/feat-name prereq (only flag if it looks clearly like a single feat name containing Dedication)
-    if (pLower.includes("dedication") && !knownFeatNamesLower.has(pLower)) {
-      const foundPartial = Array.from(knownFeatNamesLower).some(n => n.includes(pLower) || pLower.includes(n));
-      if (!foundPartial) {
-        warnings.push(`Requires ${pText}`);
-      }
-    }
+  const evalRes = evaluateFeatPrerequisites(plannedFeat, prereqState);
+  for (const reason of evalRes.unmetReasons) {
+    warnings.push(`Requires ${reason}`);
   }
 
   return warnings;
@@ -900,12 +1129,21 @@ export function buildLevelRoadmap(actor, options = {}) {
   // 3. Index live slotted feats currently on the actor (for Levels 1..currentLevel)
   const liveFeatsBySlotKey = new Map();
   const knownFeatNamesLower = new Set();
+  const knownFeatBaseNamesLower = new Set();
   const knownDedicationsMap = new Map();
+  const recordKnownFeatName = (rawName) => {
+    const clean = String(rawName || "").trim().toLowerCase();
+    if (!clean) return;
+    knownFeatNamesLower.add(clean);
+    const base = clean.replace(/\s*\([^)]*\)\s*/g, "").trim();
+    if (base) knownFeatBaseNamesLower.add(base);
+  };
   for (const feat of actor.itemTypes?.feat || []) {
     const fName = String(feat.name || "").trim();
-    knownFeatNamesLower.add(fName.toLowerCase());
+    recordKnownFeatName(fName);
+    const fCat = feat.system?.category || "";
     const fTraits = toStringArray(feat.system?.traits?.value).map(normalizeSlug);
-    if (fTraits.includes("dedication") || /\bdedication\b/i.test(fName)) {
+    if (fCat !== "classfeature" && fCat !== "ancestryfeature" && (fTraits.includes("dedication") || /\bdedication\b/i.test(fName))) {
       const desc = makeDedicationDescriptor(fName, feat.slug || feat.system?.slug);
       if (desc.nameLower) knownDedicationsMap.set(desc.nameLower, desc);
     }
@@ -914,6 +1152,10 @@ export function buildLevelRoadmap(actor, options = {}) {
       liveFeatsBySlotKey.set(loc, feat);
     }
   }
+  if (actor.heritage?.name) recordKnownFeatName(actor.heritage.name);
+  if (actor.ancestry?.name) recordKnownFeatName(actor.ancestry.name);
+  if (actor.class?.name) recordKnownFeatName(actor.class.name);
+  if (dualInfo?.name) recordKnownFeatName(dualInfo.name);
   // Also scan `actor.feats` groups directly (most authoritative mapping for PF2e v14!)
   if (actor.feats && typeof actor.feats.values === "function") {
     for (const group of actor.feats.values()) {
@@ -985,6 +1227,64 @@ export function buildLevelRoadmap(actor, options = {}) {
   for (const slug of CORE_SKILL_SLUGS) {
     projectedSkillRanks[slug] = Number(actor.system?.skills?.[slug]?.rank ?? 0);
   }
+  let projectedMaxLoreRank = 0;
+  for (const lore of actor.itemTypes?.lore || []) {
+    projectedMaxLoreRank = Math.max(projectedMaxLoreRank, Number(lore.system?.proficient?.value ?? 1));
+  }
+  const basePerceptionRank = Number(actor.system?.perception?.rank ?? 0);
+  const baseArmorRanks = {
+    unarmored: Number(actor.system?.proficiencies?.defenses?.unarmored?.rank ?? 0),
+    light: Number(actor.system?.proficiencies?.defenses?.light?.rank ?? 0),
+    medium: Number(actor.system?.proficiencies?.defenses?.medium?.rank ?? 0),
+    heavy: Number(actor.system?.proficiencies?.defenses?.heavy?.rank ?? 0)
+  };
+  const baseWeaponRanks = {
+    unarmed: Number(actor.system?.proficiencies?.attacks?.unarmed?.rank ?? 0),
+    simple: Number(actor.system?.proficiencies?.attacks?.simple?.rank ?? 0),
+    martial: Number(actor.system?.proficiencies?.attacks?.martial?.rank ?? 0),
+    advanced: Number(actor.system?.proficiencies?.attacks?.advanced?.rank ?? 0)
+  };
+  const baseSaveRanks = {
+    fortitude: Number(actor.system?.saves?.fortitude?.rank ?? 0),
+    reflex: Number(actor.system?.saves?.reflex?.rank ?? 0),
+    will: Number(actor.system?.saves?.will?.rank ?? 0)
+  };
+  const baseSpellTraditions = new Set();
+  for (const src of checkerReport?.spellcasting?.sources || []) {
+    if (src?.tradition) baseSpellTraditions.add(String(src.tradition).toLowerCase());
+  }
+  for (const entry of actor.itemTypes?.spellcastingEntry || []) {
+    const t = entry.system?.tradition?.value;
+    if (t) baseSpellTraditions.add(String(t).toLowerCase());
+  }
+  const baseIsSpellcaster = baseSpellTraditions.size > 0
+    || Boolean(checkerReport?.spellcasting?.hasExpectedSources)
+    || (actor.itemTypes?.spellcastingEntry?.length || 0) > 0;
+  const baseHasFocusPool = Number(actor.system?.resources?.focus?.max ?? 0) > 0
+    || (checkerReport?.spellcasting?.sources || []).some(s => Boolean(s.isFocus));
+  const baseHasDeity = Boolean(actor.deity);
+
+  const snapshotPrereqState = () => {
+    const attrMods = {};
+    for (const a of ABILITY_KEYS) {
+      attrMods[a] = computeModFromBoostCount(projectedBoostCounts[a] || 0).mod;
+    }
+    return {
+      skillRanks: { ...projectedSkillRanks },
+      attrMods,
+      maxLoreRank: projectedMaxLoreRank,
+      perceptionRank: basePerceptionRank,
+      armorRanks: baseArmorRanks,
+      weaponRanks: baseWeaponRanks,
+      saveRanks: baseSaveRanks,
+      spellcastingTraditions: baseSpellTraditions,
+      isSpellcaster: baseIsSpellcaster,
+      hasFocusPool: baseHasFocusPool,
+      hasDeity: baseHasDeity,
+      knownFeatNamesLower: new Set(knownFeatNamesLower),
+      knownFeatBaseNamesLower: new Set(knownFeatBaseNamesLower)
+    };
+  };
 
   const boostSetUsed = new Map(); // setIdx -> Set of attributes used in that gradual set (levels 2-5, 7-10, 12-15, 17-20)
   if (variants.gradualBoostsEnabled) {
@@ -1001,7 +1301,7 @@ export function buildLevelRoadmap(actor, options = {}) {
   }
 
   // Helper to build a feat slot descriptor
-  const buildFeatSlot = (groupId, groupLabel, category, traits, slotLevel, isFuture, levelPlanData, activeDedications = []) => {
+  const buildFeatSlot = (groupId, groupLabel, category, traits, slotLevel, isFuture, levelPlanData, activeDedications = [], levelPrereqState = null) => {
     const slotKey = `${groupId}-${slotLevel}`;
     const liveFeat = liveFeatsBySlotKey.get(slotKey) || null;
     const rawPlanned = levelPlanData?.feats?.[slotKey];
@@ -1029,9 +1329,9 @@ export function buildLevelRoadmap(actor, options = {}) {
       };
     }
 
-    const warnings = checkPlannedFeatPrereqs(plannedFeat, slotLevel, projectedSkillRanks, knownFeatNamesLower);
+    const warnings = checkPlannedFeatPrereqs(plannedFeat, slotLevel, levelPrereqState || snapshotPrereqState());
     if (plannedFeat?.name) {
-      knownFeatNamesLower.add(String(plannedFeat.name).toLowerCase().trim());
+      recordKnownFeatName(plannedFeat.name);
     }
 
     return {
@@ -1165,7 +1465,9 @@ export function buildLevelRoadmap(actor, options = {}) {
       });
 
       // Advance projected skill rank immediately BEFORE Skill Increase & Feat Prerequisite checks!
-      if (chosenSkill && chosenSkill !== "__lore__" && chosenValid) {
+      if (chosenSkill === "__lore__") {
+        projectedMaxLoreRank = Math.max(projectedMaxLoreRank, 1);
+      } else if (chosenSkill && chosenValid) {
         projectedSkillRanks[chosenSkill] = 1;
       }
 
@@ -1241,31 +1543,32 @@ export function buildLevelRoadmap(actor, options = {}) {
     }
 
     // C. Feat Slots at this level
-    // Snapshot dedications already active (live on sheet or planned at earlier levels)
+    // Snapshot dedications & projected prereq state already active (live on sheet + planned up through this level)
     const activeDedications = Array.from(knownDedicationsMap.values());
+    const levelPrereqState = snapshotPrereqState();
     const featSlots = [];
 
     if (ancestryLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("ancestry", "Ancestry Feat", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("ancestry", "Ancestry Feat", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (ancestryParagonLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("ancestryparagon", "Ancestry Paragon", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("ancestryparagon", "Ancestry Paragon", "ancestry", actorAncestryTraits, lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (classFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("class", `${primaryName} Feat`, "class", actorPrimaryClassTraits, lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("class", `${primaryName} Feat`, "class", actorPrimaryClassTraits, lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (dualClassFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("dualclass", `${dualName} Feat (Dual)`, "class", actorDualClassTraits, lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("dualclass", `${dualName} Feat (Dual)`, "class", actorDualClassTraits, lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (freeArchetypeLevels.includes(lvl)) {
       const archBrowserTraits = activeDedications.length > 0 ? ["archetype"] : ["dedication"];
-      featSlots.push(buildFeatSlot("archetype", "Free Archetype", "class", archBrowserTraits, lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("archetype", "Free Archetype", "class", archBrowserTraits, lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (skillFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("skill", "Skill Feat", "skill", [], lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("skill", "Skill Feat", "skill", [], lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
     if (generalFeatLevels.includes(lvl)) {
-      featSlots.push(buildFeatSlot("general", "General Feat", "general", [], lvl, isFuture, lp, activeDedications));
+      featSlots.push(buildFeatSlot("general", "General Feat", "general", [], lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
 
     // Record any newly planned Dedication feats at this level for subsequent future levels (lvl+1..20)
@@ -1277,6 +1580,8 @@ export function buildLevelRoadmap(actor, options = {}) {
         }
       }
     }
+    // Capture post-slot prereq state so Quick Pick for any slot at this level reflects sibling planned feats too
+    const finalLevelPrereqState = snapshotPrereqState();
 
     // D. Class Features unlocked at this level
     const classFeatures = classFeaturesByLevel[lvl] || [];
@@ -1480,6 +1785,7 @@ export function buildLevelRoadmap(actor, options = {}) {
       skillIncreaseInfo,
       featSlots,
       hasFeatSlots: featSlots.length > 0,
+      prereqState: finalLevelPrereqState,
       spellMilestones: milestones,
       hasSpellMilestones: milestones.length > 0,
       autoGrantedSpells,
@@ -1801,9 +2107,9 @@ export async function openNativeBrowserForFeatSlot(slotSpec) {
     // 1. Level slider
     applyBrowserLevelSlider(filter, Math.max(1, Number(slotSpec.level || 20)), 0);
 
-    // 2. Category checkboxes (Free Archetype filters strictly to `class` + archetype/dedication trait)
+    // 2. Category checkboxes (Free Archetype allows archetype/dedication feats across class & skill categories)
     const targetCats = slotSpec.groupId === "archetype"
-      ? ["class"]
+      ? []
       : (slotSpec.category === "general"
         ? ["general", "skill"]
         : (slotSpec.category ? [slotSpec.category] : []));
@@ -1955,7 +2261,7 @@ export async function getLightweightFeatIndex() {
 
   const featTab = game.pf2e?.compendiumBrowser?.tabs?.feat;
   const browserRecords = collectBrowserRecords(featTab?.indexData, buildFeatRecord);
-  if (browserRecords.some(r => r.prerequisites.length > 0)) {
+  if (browserRecords.some(r => r.traits.length > 0) && browserRecords.some(r => r.prerequisites.length > 0)) {
     _featIndexCache = browserRecords;
     return _featIndexCache;
   }
@@ -2001,19 +2307,37 @@ export async function getLightweightFeatIndex() {
     }
   }
 
-  // Tier 3 fallback for Feats: silently hydrate PF2e Compendium Browser feat index if pack index lacked traits
-  if (!results.some(r => r.traits.length > 0)) {
+  // Tier 3 fallback for Feats: silently hydrate PF2e Compendium Browser feat index if pack index lacked traits or prereqs
+  const traitRichCount = results.filter(r => r.traits.length > 0).length;
+  const hasAnyPrereqs = results.some(r => r.prerequisites.length > 0);
+  if (traitRichCount < Math.min(20, results.length) || !hasAnyPrereqs) {
     await hydrateBrowserTab(
       featTab,
       results,
       buildFeatRecord,
-      (prev, rec) => prev.traits.length === 0 && rec.traits.length > 0,
+      (prev, rec) => {
+        if (prev.traits.length === 0 && rec.traits.length > 0) {
+          if (rec.prerequisites.length === 0 && prev.prerequisites.length > 0) {
+            rec.prerequisites = prev.prerequisites;
+          }
+          return true;
+        }
+        if (prev.prerequisites.length === 0 && rec.prerequisites.length > 0) {
+          if (rec.traits.length === 0 && prev.traits.length > 0) {
+            rec.traits = prev.traits;
+          }
+          return true;
+        }
+        return false;
+      },
       "feat"
     );
   }
 
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
-  if (results.length > 0 && results.some(r => r.traits.length > 0)) _featIndexCache = results;
+  if (results.length > 0 && results.filter(r => r.traits.length > 0).length >= Math.min(20, results.length)) {
+    _featIndexCache = results;
+  }
   return results;
 }
 
@@ -2855,6 +3179,7 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     if (syncRes.created.length > 0) summary.push(`Created entries: ${syncRes.created.join(", ")}`);
     if (syncRes.synced.length > 0) summary.push(`Synced spell slots: ${syncRes.synced.join(", ")}`);
     if (syncRes.addedSpells?.length > 0) summary.push(`Auto-added spells: ${syncRes.addedSpells.join(", ")}`);
+    if (syncRes.preparedFonts?.length > 0) summary.push(`Prepared Font: ${syncRes.preparedFonts.join(", ")}`);
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Spellcasting sync during level-up failed:", err);
   }
