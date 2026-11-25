@@ -853,14 +853,20 @@ function registerSceneControls(controls) {
     }
   };
 
-  // Native Token Select tool so clicking PCs, hovering tokens, and drag-box selection
-  // work normally while the GM Utilities menu is active (and action buttons preserve `select`)
+  // Native Token Select tool (Foundry v14 requires `interaction: true` and `control: true`
+  // on the select tool so Token._canControl allows clicking & drag-selecting tokens)
+  const nativeSelectTool = Array.isArray(tokenControl?.tools)
+    ? tokenControl.tools.find(t => t?.name === "select")
+    : (tokenControl?.tools?.get?.("select") || tokenControl?.tools?.select || null);
   const selectTokensTool = {
+    ...(nativeSelectTool ? foundry.utils.deepClone(nativeSelectTool) : {}),
     name: "select",
-    title: game.i18n?.has?.("CONTROLS.BasicSelect")
+    title: nativeSelectTool?.title || (game.i18n?.has?.("CONTROLS.BasicSelect")
       ? game.i18n.localize("CONTROLS.BasicSelect")
-      : "Select Tokens",
-    icon: "fa-solid fa-expand",
+      : "Select Tokens"),
+    icon: nativeSelectTool?.icon || "fa-solid fa-expand",
+    interaction: true,
+    control: true,
     order: 0,
     visible: true
   };
@@ -886,6 +892,7 @@ function registerSceneControls(controls) {
     activeToolsObj[t.name] = t;
   }
 
+  let syncingTokenLayer = false;
   const gmUtilitiesControls = {
     name: "pf2e-gm-utilities",
     title: isGM ? "PF2e GM Utilities" : "PF2e Trackers HUD",
@@ -893,6 +900,23 @@ function registerSceneControls(controls) {
     layer: tokenLayerName,
     activeTool: "select",
     visible: true,
+    onChange: (_event, active) => {
+      if (!active || syncingTokenLayer || !canvas?.ready || !canvas.tokens) return;
+      if (!canvas.tokens.active) {
+        syncingTokenLayer = true;
+        try {
+          canvas.tokens.activate();
+          if (ui.controls?.control?.name !== "pf2e-gm-utilities" && typeof ui.controls?.activate === "function") {
+            ui.controls.activate({ control: "pf2e-gm-utilities", tool: "select" });
+          }
+        } finally {
+          syncingTokenLayer = false;
+        }
+      }
+    },
+    onToolChange: () => {
+      canvas?.tokens?.setAllRenderFlags?.({ refreshState: true });
+    },
     tools: Array.isArray(controls) ? activeTools : activeToolsObj
   };
 
