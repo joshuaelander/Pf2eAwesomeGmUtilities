@@ -298,6 +298,13 @@
   font-size: 0.78em;
 }
 
+.pf2e-cc-container .pf2e-cc-btn-xs {
+  padding: 2px 6px;
+  font-size: 0.85em;
+  gap: 4px;
+  border-radius: 4px;
+}
+
 .pf2e-cc-container .pf2e-cc-btn-icon {
   padding: 4px 7px;
 }
@@ -380,6 +387,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.pf2e-cc-container .pf2e-cc-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .pf2e-cc-container .pf2e-cc-hint {
@@ -734,6 +748,23 @@
 
 .pf2e-cc-container .pf2e-cc-kv-label {
   color: var(--pf2e-gm-text-label);
+  flex-shrink: 0;
+}
+
+.pf2e-cc-container .pf2e-cc-kv-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pf2e-cc-container .pf2e-cc-kv-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .pf2e-cc-container .pf2e-cc-kv-val {

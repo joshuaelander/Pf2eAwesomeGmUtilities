@@ -200,6 +200,21 @@
               </div>
             </div>
 
+            {{#if focusedLevel.showLevel1IncompleteBanner}}
+              <div class="pf2e-lp-lv1-callout">
+                <span>
+                  <i class="fa-solid fa-clipboard-check"></i>
+                  <strong>Level 1 still has {{focusedLevel.level1MissingCount}} incomplete item(s) on the live sheet</strong>
+                  &mdash; fill Ancestry, Background, Class, Boosts, Skills, or Level 1 Feats directly from the Checklist.
+                </span>
+                {{#if hasCheckerCallback}}
+                  <button type="button" class="pf2e-lp-btn pf2e-lp-btn-gold pf2e-lp-btn-sm" data-lp-action="open-checker">
+                    <i class="fa-solid fa-clipboard-check"></i> Finish Level 1 in Checklist
+                  </button>
+                {{/if}}
+              </div>
+            {{/if}}
+
             <!-- A. Class Features Unlocked at this Level -->
             {{#if focusedLevel.hasClassFeatures}}
               <section class="pf2e-lp-panel">

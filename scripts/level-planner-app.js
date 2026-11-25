@@ -14,10 +14,10 @@ import {
   TRADITION_LABELS,
   analyzeCharacter,
   capitalize,
+  collectCandidateActors,
   normalizeSlug,
   resolveSpellDocumentByUuid
 } from "./character-checker-engine.js";
-import { collectCandidateActors } from "./character-checker-app.js";
 import {
   FORMULA_CRAFTABLE_TYPES,
   applyPlannedLevelChoices,
@@ -26,8 +26,10 @@ import {
   clearActorLevelPlan,
   clearPlannedFeat,
   computeMatchingArchetypeFeatUuids,
+  embedLiveCoreItem,
   evaluateFeatPrerequisites,
   getActorLevelPlan,
+  getLightweightCoreBuildIndex,
   getLightweightFeatIndex,
   getLightweightFormulaIndex,
   getLightweightSpellIndex,
@@ -39,6 +41,7 @@ import {
   openNativeBrowserForFeatSlot,
   openNativeBrowserForFormulas,
   openNativeBrowserForSpells,
+  openNativePackForCoreBuild,
   revertActorToLevel,
   updatePlannedLevelData
 } from "./level-planner-engine.js";
@@ -112,6 +115,477 @@ async function inspectDocumentByUuid(uuid) {
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Failed to inspect UUID:", uuid, err);
   }
+}
+
+/* ------------------------------------------------------------------------- */
+/* SHARED LIGHTWEIGHT QUICK PICK DIALOGS (REUSED BY PLANNER & CHECKLIST)     */
+/* ------------------------------------------------------------------------- */
+
+export function openQuickPickerDialog({
+  title,
+  icon,
+  width = 650,
+  closeAction = "done",
+  closeLabel = "Done",
+  closeIcon = "fa-solid fa-check",
+  browseLabel = "PF2e Browser",
+  browseTitle = "Open PF2e's full native Compendium Browser",
+  showGoal = false,
+  controlsHtml,
+  loadingText,
+  onBrowse,
+  onReady,
+  loadItems,
+  filterItems,
+  formatStatus,
+  emptyText,
+  renderRow,
+  onSelect,
+  changeSelectors = []
+}) {
+  const DialogV2 = foundry.applications.api.DialogV2;
+  const esc = foundry.utils.escapeHTML;
+  const content = `
+    <div class="pf2e-lp-picker">
+      ${showGoal ? '<div class="pf2e-lp-picker-goal" style="display:none;"></div>' : ""}
+      <div class="pf2e-lp-picker-controls">
+        ${controlsHtml}
+        ${onBrowse ? `
+          <button type="button" class="pf2e-lp-picker-browser-btn" title="${esc(browseTitle)}">
+            <i class="fa-solid fa-compass"></i> ${esc(browseLabel)}
+          </button>
+        ` : ""}
+      </div>
+      <div class="pf2e-lp-picker-status">${loadingText}</div>
+      <div class="pf2e-lp-picker-list"></div>
+    </div>
+  `;
+
+  const dialog = new DialogV2({
+    window: { title, icon, resizable: true },
+    position: { width, height: 540 },
+    classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
+    content,
+    buttons: [{ action: closeAction, label: closeLabel, icon: closeIcon }]
+  });
+
+  dialog.addEventListener("render", async () => {
+    const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
+    if (!root) return;
+
+    const searchInput = root.querySelector(".pf2e-lp-picker-search");
+    const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
+    const statusEl = root.querySelector(".pf2e-lp-picker-status");
+    const listEl = root.querySelector(".pf2e-lp-picker-list");
+
+    browserBtn?.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      await onBrowse?.(root);
+    });
+
+    const ctx = (await onReady?.(root, dialog)) || {};
+    const allItems = await loadItems(root, ctx);
+
+    const renderList = () => {
+      const query = (searchInput?.value || "").trim().toLowerCase();
+      const matched = filterItems(allItems, { root, query, ctx });
+      const capped = matched.slice(0, 120);
+      statusEl.textContent = formatStatus(matched.length, ctx);
+
+      if (capped.length === 0) {
+        const emptyMsg = typeof emptyText === "function" ? emptyText(ctx) : emptyText;
+        listEl.innerHTML = `<div class="pf2e-lp-picker-empty">${emptyMsg}</div>`;
+        return;
+      }
+
+      listEl.innerHTML = capped.map((item, idx) => renderRow(item, idx, ctx)).join("");
+
+      listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
+        link.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          const item = capped[Number(link.dataset.idx)];
+          if (item?.uuid) await inspectDocumentByUuid(item.uuid);
+        });
+      });
+
+      listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
+        btn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          const chosen = capped[Number(btn.dataset.idx)];
+          if (!chosen) return;
+          await onSelect(chosen, { btn, root, dialog, ctx });
+        });
+      });
+    };
+
+    let debounce = null;
+    searchInput?.addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(renderList, 60);
+    });
+    for (const sel of changeSelectors) {
+      root.querySelector(sel)?.addEventListener("change", renderList);
+    }
+
+    renderList();
+    searchInput?.focus();
+  }, { once: true });
+
+  dialog.render({ force: true });
+}
+
+/**
+ * Shared Feat Quick Picker dialog (with prerequisite evaluation, sorting, `"Prereqs Met"` toggle,
+ * and Free Archetype Dedication auto-default). Used by both Level Planner and Character Checker!
+ */
+export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: rawPrereqState = null, onSelectFeat } = {}) {
+  const esc = foundry.utils.escapeHTML;
+  const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
+  const hasDedications = slotDedications.length > 0;
+  const dedShortNames = slotDedications.map(d => d.shortLabel).filter(Boolean).join(", ");
+  const myArchLabel = slotDedications.length > 1
+    ? `My Archetypes (${dedShortNames})`
+    : `My Archetype (${dedShortNames})`;
+
+  const defaultScope = slot.groupId === "archetype"
+    ? (hasDedications ? "my-archetypes" : "archetype-dedications")
+    : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot");
+
+  const defaultPrereqsOnly = slot.category === "skill" || slot.category === "general";
+
+  // Build a clean prereq snapshot for this slot (excluding the feat currently sitting in THIS slot if replacing it)
+  let prereqState = rawPrereqState;
+  if (prereqState && slot.feat?.name) {
+    const replacingName = String(slot.feat.name).trim().toLowerCase();
+    const liveOwned = (actor.itemTypes?.feat || []).some(f => String(f.name || "").trim().toLowerCase() === replacingName);
+    if (!liveOwned && prereqState.knownFeatNamesLower?.has?.(replacingName)) {
+      const nextKnown = new Set(prereqState.knownFeatNamesLower);
+      nextKnown.delete(replacingName);
+      const nextBase = new Set(prereqState.knownFeatBaseNamesLower || []);
+      const baseName = replacingName.replace(/\s*\([^)]*\)\s*/g, "").trim();
+      if (baseName) nextBase.delete(baseName);
+      prereqState = { ...prereqState, knownFeatNamesLower: nextKnown, knownFeatBaseNamesLower: nextBase };
+    }
+  }
+
+  const traitDisplayList = (slot.traits || [])
+    .filter(Boolean)
+    .map(t => capitalize(String(t).replace(/-/g, " ")));
+  const traitSummary = traitDisplayList.length > 0 ? ` (${traitDisplayList.join(", ")})` : "";
+
+  let scopeOptionsHtml = "";
+  if (slot.groupId === "class" || slot.groupId === "dualclass") {
+    scopeOptionsHtml = `
+      <option value="class-only" selected>Class Feats Only${esc(traitSummary)}</option>
+      ${hasDedications ? `<option value="my-archetypes">${esc(myArchLabel)}</option>` : ""}
+      <option value="class-and-archetype">Class + Archetypes</option>
+      <option value="archetype-dedications">Archetype Dedications</option>
+      <option value="archetype">All Archetype Feats</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  } else if (slot.groupId === "archetype") {
+    const perDedOptions = slotDedications.length > 1
+      ? slotDedications.map((d, idx) => `<option value="ded:${idx}">Only: ${esc(d.shortLabel)}</option>`).join("")
+      : "";
+    scopeOptionsHtml = `
+      ${hasDedications ? `<option value="my-archetypes" selected>${esc(myArchLabel)}</option>` : ""}
+      ${perDedOptions}
+      <option value="archetype-dedications" ${!hasDedications ? "selected" : ""}>Archetype Dedications</option>
+      <option value="archetype">All Archetype Feats &amp; Dedications</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  } else if (slot.category === "ancestry") {
+    scopeOptionsHtml = `
+      <option value="slot" selected>My Ancestry${esc(traitSummary)}</option>
+      <option value="all-ancestry">All Ancestry Feats</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  } else if (slot.category === "general") {
+    scopeOptionsHtml = `
+      <option value="slot" selected>General &amp; Skill Feats</option>
+      <option value="general-only">General Feats Only</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  } else {
+    scopeOptionsHtml = `
+      <option value="slot" selected>Matching Slot (${esc(capitalize(slot.category || "All"))})</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  }
+
+  const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
+
+  openQuickPickerDialog({
+    title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
+    icon: "fa-solid fa-star",
+    width: 680,
+    closeAction: "close",
+    closeLabel: "Close",
+    closeIcon: "fa-solid fa-xmark",
+    controlsHtml: `
+      <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
+      <select class="pf2e-lp-picker-scope" title="Filter scope">${scopeOptionsHtml}</select>
+      <label class="pf2e-lp-picker-check" title="Show only feats whose skill, attribute, and feat prerequisites are met by your character sheet (and planned increases up to Level ${levelNum}). Uncheck to show all with unmet prereqs sorted to the bottom.">
+        <input type="checkbox" class="pf2e-lp-picker-prereqs" ${defaultPrereqsOnly ? "checked" : ""} />
+        <span>Prereqs Met</span>
+      </label>
+      <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
+        <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
+        <span>Any Lv</span>
+      </label>
+    `,
+    loadingText: "Loading lightweight feat index...",
+    changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-prereqs", ".pf2e-lp-picker-any-lvl"],
+    onBrowse: () => openNativeBrowserForFeatSlot(slot),
+    loadItems: async (root, ctx) => {
+      const allFeats = await getLightweightFeatIndex();
+      ctx.myArchetypeUuids = hasDedications ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications) : new Set();
+      ctx.perDedicationUuids = slotDedications.length > 1
+        ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
+        : [];
+      ctx.allFeatNamesLower = new Set();
+      for (const f of allFeats) {
+        if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
+        const lower = String(f.name || "").trim().toLowerCase();
+        if (lower) {
+          ctx.allFeatNamesLower.add(lower);
+          const stripped = lower.replace(/\s*\([^)]*\)\s*/g, "").trim();
+          if (stripped) ctx.allFeatNamesLower.add(stripped);
+        }
+      }
+
+      const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
+      if (slot.groupId === "archetype" && scopeSelect) {
+        const hasEligibleOwnedAtLevel = hasDedications && allFeats.some(f =>
+          ctx.myArchetypeUuids.has(f.uuid) && f.level <= slot.level
+        );
+        if (!hasEligibleOwnedAtLevel) {
+          scopeSelect.value = "archetype-dedications";
+        }
+      }
+
+      return allFeats;
+    },
+    filterItems: (allFeats, { root, query, ctx }) => {
+      const scope = root.querySelector(".pf2e-lp-picker-scope")?.value || defaultScope;
+      const anyLvl = Boolean(root.querySelector(".pf2e-lp-picker-any-lvl")?.checked);
+      const prereqsOnly = Boolean(root.querySelector(".pf2e-lp-picker-prereqs")?.checked);
+      const matched = [];
+      let eligibleCount = 0;
+      let unmetCount = 0;
+
+      for (const f of allFeats) {
+        if (!anyLvl && f.level > slot.level) continue;
+        if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
+
+        if (scope === "class-only") {
+          if (f.category !== "class") continue;
+          if (slotTraits.length > 0 && !slotTraits.some(t => f.traits.includes(t))) continue;
+        } else if (scope === "class-and-archetype") {
+          const isMyClass = f.category === "class" && (slotTraits.length === 0 || slotTraits.some(t => f.traits.includes(t)));
+          const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
+          if (!isMyClass && !isArchetype) continue;
+        } else if (scope === "my-archetypes") {
+          if (!ctx.myArchetypeUuids.has(f.uuid)) continue;
+        } else if (scope.startsWith("ded:")) {
+          const set = ctx.perDedicationUuids[Number(scope.slice(4))];
+          if (!set || !set.has(f.uuid)) continue;
+        } else if (scope === "archetype-dedications") {
+          if (!f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
+        } else if (scope === "archetype") {
+          if (!f.traits.includes("archetype") && !f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
+        } else if (scope === "all-ancestry") {
+          if (f.category !== "ancestry") continue;
+        } else if (scope === "general-only") {
+          if (f.category !== "general") continue;
+        } else if (scope === "slot") {
+          if (slot.category === "general") {
+            if (f.category !== "general" && f.category !== "skill") continue;
+          } else if (slot.category === "ancestry") {
+            if (f.category !== "ancestry") continue;
+            if (slotTraits.length > 0 && !slotTraits.some(t => f.traits.includes(t))) continue;
+          } else if (slot.category && f.category !== slot.category) {
+            continue;
+          }
+        }
+
+        if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query)) && !f.prerequisites.some(p => p.toLowerCase().includes(query))) {
+          continue;
+        }
+
+        const evalRes = prereqState
+          ? evaluateFeatPrerequisites(f, prereqState, ctx.allFeatNamesLower)
+          : { met: true, unmetReasons: [] };
+
+        if (evalRes.met) {
+          eligibleCount++;
+        } else {
+          unmetCount++;
+          if (prereqsOnly) continue;
+        }
+
+        matched.push({
+          ...f,
+          _prereqMet: evalRes.met,
+          _prereqUnmetReasons: evalRes.unmetReasons
+        });
+      }
+
+      ctx.prereqsOnly = prereqsOnly;
+      ctx.eligibleCount = eligibleCount;
+      ctx.unmetCount = unmetCount;
+
+      return matched.sort((a, b) =>
+        (a._prereqMet === b._prereqMet ? 0 : (a._prereqMet ? -1 : 1))
+        || (b.level - a.level)
+        || a.name.localeCompare(b.name)
+      );
+    },
+    formatStatus: (total, ctx) => {
+      const prefix = total > 120 ? `Showing top 120 of ${total}` : `${total}`;
+      if (ctx.prereqsOnly && ctx.unmetCount > 0) {
+        return `${prefix} eligible feat(s) (${ctx.unmetCount} hidden: prereqs not met)`;
+      }
+      if (!ctx.prereqsOnly && ctx.unmetCount > 0) {
+        return `${prefix} matching feat(s) — ${ctx.eligibleCount} eligible first, ${ctx.unmetCount} prereqs not met at bottom`;
+      }
+      return total > 120
+        ? `${prefix} matching feats — type to narrow search`
+        : `${total} matching feat(s)`;
+    },
+    emptyText: (ctx) => ctx.prereqsOnly && ctx.unmetCount > 0
+      ? `No feats match your current character sheet prerequisites (${ctx.unmetCount} hidden). Uncheck "Prereqs Met" above to browse all feats.`
+      : `No feats match the current filter. Try switching filter scope or clearing search.`,
+    renderRow: (f, idx) => {
+      const prereqStr = f.prerequisites.length > 0 ? `Prereq: ${f.prerequisites.join(", ")}` : "";
+      const traitStr = f.traits.slice(0, 4).join(" · ");
+      const sub = [traitStr, prereqStr].filter(Boolean).join(" — ");
+      const unmet = f._prereqMet === false;
+      const unmetReasonsStr = unmet && f._prereqUnmetReasons?.length > 0
+        ? f._prereqUnmetReasons.join(" · ")
+        : "";
+      return `
+        <div class="pf2e-lp-picker-row ${unmet ? "is-prereq-unmet" : ""}">
+          <img src="${esc(f.img)}" alt="" class="pf2e-lp-picker-img" />
+          <div class="pf2e-lp-picker-info">
+            <div class="pf2e-lp-picker-name-line">
+              <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full feat sheet">${esc(f.name)}</a>
+              <span class="pf2e-lp-picker-lvl">Lv ${f.level}</span>
+              ${f.rarity && f.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(f.rarity)}">${esc(capitalize(f.rarity))}</span>` : ""}
+              ${unmet ? `<span class="pf2e-lp-picker-unmet-badge" title="${esc(unmetReasonsStr ? `Missing: ${unmetReasonsStr}` : "Prerequisites not met")}">Prereq Not Met</span>` : ""}
+            </div>
+            ${unmetReasonsStr ? `<div class="pf2e-lp-picker-unmet-note">Missing: ${esc(unmetReasonsStr)}</div>` : ""}
+            ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
+          </div>
+          <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>
+        </div>
+      `;
+    },
+    onSelect: async (chosen, helpers) => {
+      await onSelectFeat?.(chosen, helpers);
+    }
+  });
+}
+
+/**
+ * Lightweight Quick Picker for missing Level 1 Core Build items (Ancestry, Heritage, Background, Class, Deity).
+ * Embeds the chosen item directly onto the actor so PF2e runs all its native Rule Elements & ChoiceSets cleanly!
+ */
+export function openCoreBuildQuickPickerDialog(actor, itemKey, { onDone } = {}) {
+  const esc = foundry.utils.escapeHTML;
+  const labels = {
+    ancestry: { title: "Ancestry", icon: "fa-solid fa-dna" },
+    heritage: { title: "Heritage", icon: "fa-solid fa-feather" },
+    background: { title: "Background", icon: "fa-solid fa-scroll" },
+    class: { title: "Class", icon: "fa-solid fa-shield-halved" },
+    deity: { title: "Deity", icon: "fa-solid fa-sun" }
+  };
+  const meta = labels[itemKey];
+  if (!actor || !meta) return;
+
+  const actorAncSlug = actor.ancestry
+    ? normalizeSlug(actor.ancestry.slug || actor.ancestry.system?.slug || actor.ancestry.name)
+    : "";
+  const isHeritage = itemKey === "heritage";
+
+  const heritageScopeHtml = isHeritage
+    ? `
+      <select class="pf2e-lp-picker-scope" title="Filter heritages">
+        ${actorAncSlug ? `<option value="matching" selected>${esc(actor.ancestry.name)} &amp; Versatile</option>` : ""}
+        <option value="versatile" ${!actorAncSlug ? "selected" : ""}>Versatile Heritages</option>
+        <option value="all">All Heritages</option>
+      </select>
+    `
+    : "";
+
+  openQuickPickerDialog({
+    title: `Choose ${meta.title} — ${actor.name}`,
+    icon: meta.icon,
+    width: 600,
+    closeAction: "close",
+    closeLabel: "Close",
+    closeIcon: "fa-solid fa-xmark",
+    browseLabel: "PF2e Pack",
+    browseTitle: `Open PF2e's native ${meta.title} Compendium Pack`,
+    controlsHtml: `
+      <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(meta.title)}..." autofocus />
+      ${heritageScopeHtml}
+    `,
+    loadingText: `Loading PF2e ${meta.title.toLowerCase()} index...`,
+    changeSelectors: isHeritage ? [".pf2e-lp-picker-scope"] : [],
+    onBrowse: () => openNativePackForCoreBuild(itemKey),
+    loadItems: () => getLightweightCoreBuildIndex(itemKey),
+    filterItems: (allItems, { root, query }) => {
+      const scope = isHeritage ? (root.querySelector(".pf2e-lp-picker-scope")?.value || (actorAncSlug ? "matching" : "versatile")) : "all";
+      const matched = [];
+      for (const item of allItems) {
+        if (isHeritage) {
+          if (scope === "matching" && !item.isVersatile && item.ancestrySlug !== actorAncSlug) continue;
+          if (scope === "versatile" && !item.isVersatile) continue;
+        }
+        if (query && !item.name.toLowerCase().includes(query) && !item.traits.some(t => t.includes(query)) && !(item.ancestryName && item.ancestryName.toLowerCase().includes(query))) {
+          continue;
+        }
+        matched.push(item);
+      }
+      if (isHeritage && scope === "matching") {
+        // Put ancestry-specific heritages first, then versatile heritages
+        return matched.sort((a, b) => (Number(a.isVersatile) - Number(b.isVersatile)) || a.name.localeCompare(b.name));
+      }
+      return matched;
+    },
+    formatStatus: (total) => total > 120
+      ? `Showing top 120 of ${total} matching options — type to narrow search`
+      : `${total} option(s) available — click Select to add directly to ${actor.name}`,
+    emptyText: `No matching ${meta.title.toLowerCase()} options found. Try clearing search or opening the PF2e Pack.`,
+    renderRow: (item, idx) => {
+      const subParts = [];
+      if (isHeritage) subParts.push(item.isVersatile ? "Versatile Heritage" : (item.ancestryName || capitalize(item.ancestrySlug)));
+      if (item.traits.length > 0) subParts.push(item.traits.slice(0, 4).join(" · "));
+      const sub = subParts.filter(Boolean).join(" — ");
+      return `
+        <div class="pf2e-lp-picker-row">
+          <img src="${esc(item.img)}" alt="" class="pf2e-lp-picker-img" />
+          <div class="pf2e-lp-picker-info">
+            <div class="pf2e-lp-picker-name-line">
+              <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Inspect full rules">${esc(item.name)}</a>
+              ${item.rarity && item.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(item.rarity)}">${esc(capitalize(item.rarity))}</span>` : ""}
+            </div>
+            ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
+          </div>
+          <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>
+        </div>
+      `;
+    },
+    onSelect: async (chosen, { dialog }) => {
+      dialog.close();
+      const created = await embedLiveCoreItem(actor, chosen.uuid, itemKey);
+      if (created) {
+        ui.notifications?.info(`Added ${meta.title} "${created.name}" to ${actor.name}!`);
+        onDone?.(created);
+      }
+    }
+  });
 }
 
 /* ------------------------------------------------------------------------- */
@@ -300,6 +774,12 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           ...rawFocused,
           canEditThisLevel: Boolean(canEdit && rawFocused.isFuture),
           canRevertToThisLevel: Boolean(canEdit && rawFocused.isPast && !this._isApplyingLevelUp),
+          showLevel1IncompleteBanner: Boolean(
+            rawFocused.level === 1
+            && rawFocused.isCurrent
+            && Number(roadmap.checkerReport?.actionableMissingCount || 0) > 0
+          ),
+          level1MissingCount: Number(roadmap.checkerReport?.actionableMissingCount || 0),
           revertRangeLabel: formatLevelRange(rawFocused.level + 1, roadmap.currentLevel, { prefix: "" }),
           canStepPrev: rawFocused.level > 1,
           canStepNext: rawFocused.level < 20,
@@ -944,362 +1424,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* LIGHTWEIGHT INLINE QUICK PICK MODALS                                    */
   /* ----------------------------------------------------------------------- */
 
-  _openQuickPickerDialog({
-    title,
-    icon,
-    width = 650,
-    closeAction = "done",
-    closeLabel = "Done",
-    closeIcon = "fa-solid fa-check",
-    showGoal = false,
-    controlsHtml,
-    loadingText,
-    onBrowse,
-    onReady,
-    loadItems,
-    filterItems,
-    formatStatus,
-    emptyText,
-    renderRow,
-    onSelect,
-    changeSelectors = []
-  }) {
-    const DialogV2 = foundry.applications.api.DialogV2;
-    const content = `
-      <div class="pf2e-lp-picker">
-        ${showGoal ? '<div class="pf2e-lp-picker-goal" style="display:none;"></div>' : ""}
-        <div class="pf2e-lp-picker-controls">
-          ${controlsHtml}
-          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
-            <i class="fa-solid fa-compass"></i> PF2e Browser
-          </button>
-        </div>
-        <div class="pf2e-lp-picker-status">${loadingText}</div>
-        <div class="pf2e-lp-picker-list"></div>
-      </div>
-    `;
-
-    const dialog = new DialogV2({
-      window: { title, icon, resizable: true },
-      position: { width, height: 540 },
-      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
-      content,
-      buttons: [{ action: closeAction, label: closeLabel, icon: closeIcon }]
-    });
-
-    dialog.addEventListener("render", async () => {
-      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
-      if (!root) return;
-
-      const searchInput = root.querySelector(".pf2e-lp-picker-search");
-      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
-      const statusEl = root.querySelector(".pf2e-lp-picker-status");
-      const listEl = root.querySelector(".pf2e-lp-picker-list");
-
-      browserBtn?.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        await onBrowse?.(root);
-      });
-
-      const ctx = (await onReady?.(root, dialog)) || {};
-      const allItems = await loadItems(root, ctx);
-
-      const renderList = () => {
-        const query = (searchInput?.value || "").trim().toLowerCase();
-        const matched = filterItems(allItems, { root, query, ctx });
-        const capped = matched.slice(0, 120);
-        statusEl.textContent = formatStatus(matched.length, ctx);
-
-        if (capped.length === 0) {
-          const emptyMsg = typeof emptyText === "function" ? emptyText(ctx) : emptyText;
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">${emptyMsg}</div>`;
-          return;
-        }
-
-        listEl.innerHTML = capped.map((item, idx) => renderRow(item, idx, ctx)).join("");
-
-        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
-          link.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const item = capped[Number(link.dataset.idx)];
-            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
-          });
-        });
-
-        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
-          btn.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const chosen = capped[Number(btn.dataset.idx)];
-            if (!chosen) return;
-            await onSelect(chosen, { btn, root, dialog, ctx });
-          });
-        });
-      };
-
-      let debounce = null;
-      searchInput?.addEventListener("input", () => {
-        clearTimeout(debounce);
-        debounce = setTimeout(renderList, 60);
-      });
-      for (const sel of changeSelectors) {
-        root.querySelector(sel)?.addEventListener("change", renderList);
-      }
-
-      renderList();
-      searchInput?.focus();
-    }, { once: true });
-
-    dialog.render({ force: true });
+  _openQuickPickerDialog(config) {
+    return openQuickPickerDialog(config);
   }
 
   async _openFeatQuickPicker(actor, levelNum, slot, rawPrereqState = null) {
-    const esc = foundry.utils.escapeHTML;
-    const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
-    const hasDedications = slotDedications.length > 0;
-    const dedShortNames = slotDedications.map(d => d.shortLabel).filter(Boolean).join(", ");
-    const myArchLabel = slotDedications.length > 1
-      ? `My Archetypes (${dedShortNames})`
-      : `My Archetype (${dedShortNames})`;
-
-    const defaultScope = slot.groupId === "archetype"
-      ? (hasDedications ? "my-archetypes" : "archetype-dedications")
-      : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot");
-
-    const defaultPrereqsOnly = slot.category === "skill" || slot.category === "general";
-
-    // Build a clean prereq snapshot for this slot (excluding the feat currently sitting in THIS slot if replacing it)
-    let prereqState = rawPrereqState;
-    if (prereqState && slot.feat?.name) {
-      const replacingName = String(slot.feat.name).trim().toLowerCase();
-      const liveOwned = (actor.itemTypes?.feat || []).some(f => String(f.name || "").trim().toLowerCase() === replacingName);
-      if (!liveOwned && prereqState.knownFeatNamesLower?.has?.(replacingName)) {
-        const nextKnown = new Set(prereqState.knownFeatNamesLower);
-        nextKnown.delete(replacingName);
-        const nextBase = new Set(prereqState.knownFeatBaseNamesLower || []);
-        const baseName = replacingName.replace(/\s*\([^)]*\)\s*/g, "").trim();
-        if (baseName) nextBase.delete(baseName);
-        prereqState = { ...prereqState, knownFeatNamesLower: nextKnown, knownFeatBaseNamesLower: nextBase };
-      }
-    }
-
-    const traitDisplayList = (slot.traits || [])
-      .filter(Boolean)
-      .map(t => capitalize(String(t).replace(/-/g, " ")));
-    const traitSummary = traitDisplayList.length > 0 ? ` (${traitDisplayList.join(", ")})` : "";
-
-    let scopeOptionsHtml = "";
-    if (slot.groupId === "class" || slot.groupId === "dualclass") {
-      scopeOptionsHtml = `
-        <option value="class-only" selected>Class Feats Only${esc(traitSummary)}</option>
-        ${hasDedications ? `<option value="my-archetypes">${esc(myArchLabel)}</option>` : ""}
-        <option value="class-and-archetype">Class + Archetypes</option>
-        <option value="archetype-dedications">Archetype Dedications</option>
-        <option value="archetype">All Archetype Feats</option>
-        <option value="all">All Feats (Unfiltered)</option>
-      `;
-    } else if (slot.groupId === "archetype") {
-      const perDedOptions = slotDedications.length > 1
-        ? slotDedications.map((d, idx) => `<option value="ded:${idx}">Only: ${esc(d.shortLabel)}</option>`).join("")
-        : "";
-      scopeOptionsHtml = `
-        ${hasDedications ? `<option value="my-archetypes" selected>${esc(myArchLabel)}</option>` : ""}
-        ${perDedOptions}
-        <option value="archetype-dedications" ${!hasDedications ? "selected" : ""}>Archetype Dedications</option>
-        <option value="archetype">All Archetype Feats &amp; Dedications</option>
-        <option value="all">All Feats (Unfiltered)</option>
-      `;
-    } else if (slot.category === "ancestry") {
-      scopeOptionsHtml = `
-        <option value="slot" selected>My Ancestry${esc(traitSummary)}</option>
-        <option value="all-ancestry">All Ancestry Feats</option>
-        <option value="all">All Feats (Unfiltered)</option>
-      `;
-    } else if (slot.category === "general") {
-      scopeOptionsHtml = `
-        <option value="slot" selected>General &amp; Skill Feats</option>
-        <option value="general-only">General Feats Only</option>
-        <option value="all">All Feats (Unfiltered)</option>
-      `;
-    } else {
-      scopeOptionsHtml = `
-        <option value="slot" selected>Matching Slot (${esc(capitalize(slot.category || "All"))})</option>
-        <option value="all">All Feats (Unfiltered)</option>
-      `;
-    }
-
-    const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
-
-    this._openQuickPickerDialog({
-      title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
-      icon: "fa-solid fa-star",
-      width: 680,
-      closeAction: "close",
-      closeLabel: "Close",
-      closeIcon: "fa-solid fa-xmark",
-      controlsHtml: `
-        <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
-        <select class="pf2e-lp-picker-scope" title="Filter scope">${scopeOptionsHtml}</select>
-        <label class="pf2e-lp-picker-check" title="Show only feats whose skill, attribute, and feat prerequisites are met by your character sheet (and planned increases up to Level ${levelNum}). Uncheck to show all with unmet prereqs sorted to the bottom.">
-          <input type="checkbox" class="pf2e-lp-picker-prereqs" ${defaultPrereqsOnly ? "checked" : ""} />
-          <span>Prereqs Met</span>
-        </label>
-        <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
-          <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
-          <span>Any Lv</span>
-        </label>
-      `,
-      loadingText: "Loading lightweight feat index...",
-      changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-prereqs", ".pf2e-lp-picker-any-lvl"],
-      onBrowse: () => openNativeBrowserForFeatSlot(slot),
-      loadItems: async (root, ctx) => {
-        const allFeats = await getLightweightFeatIndex();
-        ctx.myArchetypeUuids = hasDedications ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications) : new Set();
-        ctx.perDedicationUuids = slotDedications.length > 1
-          ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
-          : [];
-        ctx.allFeatNamesLower = new Set();
-        for (const f of allFeats) {
-          if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
-          const lower = String(f.name || "").trim().toLowerCase();
-          if (lower) {
-            ctx.allFeatNamesLower.add(lower);
-            const stripped = lower.replace(/\s*\([^)]*\)\s*/g, "").trim();
-            if (stripped) ctx.allFeatNamesLower.add(stripped);
-          }
-        }
-
-        // For Free Archetype slots: if no dedication feats exist yet OR the character's current
-        // dedication(s) have 0 follow-up feats available at this level (e.g. Level 2), automatically
-        // switch the dropdown to Archetype Dedications so the list is never empty by default!
-        const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
-        if (slot.groupId === "archetype" && scopeSelect) {
-          const hasEligibleOwnedAtLevel = hasDedications && allFeats.some(f =>
-            ctx.myArchetypeUuids.has(f.uuid) && f.level <= slot.level
-          );
-          if (!hasEligibleOwnedAtLevel) {
-            scopeSelect.value = "archetype-dedications";
-          }
-        }
-
-        return allFeats;
-      },
-      filterItems: (allFeats, { root, query, ctx }) => {
-        const scope = root.querySelector(".pf2e-lp-picker-scope")?.value || defaultScope;
-        const anyLvl = Boolean(root.querySelector(".pf2e-lp-picker-any-lvl")?.checked);
-        const prereqsOnly = Boolean(root.querySelector(".pf2e-lp-picker-prereqs")?.checked);
-        const matched = [];
-        let eligibleCount = 0;
-        let unmetCount = 0;
-
-        for (const f of allFeats) {
-          if (!anyLvl && f.level > slot.level) continue;
-          if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
-
-          if (scope === "class-only") {
-            if (f.category !== "class") continue;
-            if (slotTraits.length > 0 && !slotTraits.some(t => f.traits.includes(t))) continue;
-          } else if (scope === "class-and-archetype") {
-            const isMyClass = f.category === "class" && (slotTraits.length === 0 || slotTraits.some(t => f.traits.includes(t)));
-            const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
-            if (!isMyClass && !isArchetype) continue;
-          } else if (scope === "my-archetypes") {
-            if (!ctx.myArchetypeUuids.has(f.uuid)) continue;
-          } else if (scope.startsWith("ded:")) {
-            const set = ctx.perDedicationUuids[Number(scope.slice(4))];
-            if (!set || !set.has(f.uuid)) continue;
-          } else if (scope === "archetype-dedications") {
-            if (!f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
-          } else if (scope === "archetype") {
-            if (!f.traits.includes("archetype") && !f.traits.includes("dedication") && !/\bdedication\b/i.test(f.name || "")) continue;
-          } else if (scope === "all-ancestry") {
-            if (f.category !== "ancestry") continue;
-          } else if (scope === "general-only") {
-            if (f.category !== "general") continue;
-          } else if (scope === "slot") {
-            if (slot.category === "general") {
-              if (f.category !== "general" && f.category !== "skill") continue;
-            } else if (slot.category === "ancestry") {
-              if (f.category !== "ancestry") continue;
-              if (slotTraits.length > 0 && !slotTraits.some(t => f.traits.includes(t))) continue;
-            } else if (slot.category && f.category !== slot.category) {
-              continue;
-            }
-          }
-
-          if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query)) && !f.prerequisites.some(p => p.toLowerCase().includes(query))) {
-            continue;
-          }
-
-          const evalRes = prereqState
-            ? evaluateFeatPrerequisites(f, prereqState, ctx.allFeatNamesLower)
-            : { met: true, unmetReasons: [] };
-
-          if (evalRes.met) {
-            eligibleCount++;
-          } else {
-            unmetCount++;
-            if (prereqsOnly) continue;
-          }
-
-          matched.push({
-            ...f,
-            _prereqMet: evalRes.met,
-            _prereqUnmetReasons: evalRes.unmetReasons
-          });
-        }
-
-        ctx.prereqsOnly = prereqsOnly;
-        ctx.eligibleCount = eligibleCount;
-        ctx.unmetCount = unmetCount;
-
-        // Sort eligible feats first, unmet-prereq feats to the bottom, then highest level first & alphabetical
-        return matched.sort((a, b) =>
-          (a._prereqMet === b._prereqMet ? 0 : (a._prereqMet ? -1 : 1))
-          || (b.level - a.level)
-          || a.name.localeCompare(b.name)
-        );
-      },
-      formatStatus: (total, ctx) => {
-        const prefix = total > 120 ? `Showing top 120 of ${total}` : `${total}`;
-        if (ctx.prereqsOnly && ctx.unmetCount > 0) {
-          return `${prefix} eligible feat(s) (${ctx.unmetCount} hidden: prereqs not met)`;
-        }
-        if (!ctx.prereqsOnly && ctx.unmetCount > 0) {
-          return `${prefix} matching feat(s) — ${ctx.eligibleCount} eligible first, ${ctx.unmetCount} prereqs not met at bottom`;
-        }
-        return total > 120
-          ? `${prefix} matching feats — type to narrow search`
-          : `${total} matching feat(s)`;
-      },
-      emptyText: (ctx) => ctx.prereqsOnly && ctx.unmetCount > 0
-        ? `No feats match your current character sheet prerequisites (${ctx.unmetCount} hidden). Uncheck "Prereqs Met" above to browse all feats.`
-        : `No feats match the current filter. Try switching filter scope or clearing search.`,
-      renderRow: (f, idx) => {
-        const prereqStr = f.prerequisites.length > 0 ? `Prereq: ${f.prerequisites.join(", ")}` : "";
-        const traitStr = f.traits.slice(0, 4).join(" · ");
-        const sub = [traitStr, prereqStr].filter(Boolean).join(" — ");
-        const unmet = f._prereqMet === false;
-        const unmetReasonsStr = unmet && f._prereqUnmetReasons?.length > 0
-          ? f._prereqUnmetReasons.join(" · ")
-          : "";
-        return `
-          <div class="pf2e-lp-picker-row ${unmet ? "is-prereq-unmet" : ""}">
-            <img src="${esc(f.img)}" alt="" class="pf2e-lp-picker-img" />
-            <div class="pf2e-lp-picker-info">
-              <div class="pf2e-lp-picker-name-line">
-                <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full feat sheet">${esc(f.name)}</a>
-                <span class="pf2e-lp-picker-lvl">Lv ${f.level}</span>
-                ${f.rarity && f.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(f.rarity)}">${esc(capitalize(f.rarity))}</span>` : ""}
-                ${unmet ? `<span class="pf2e-lp-picker-unmet-badge" title="${esc(unmetReasonsStr ? `Missing: ${unmetReasonsStr}` : "Prerequisites not met")}">Prereq Not Met</span>` : ""}
-              </div>
-              ${unmetReasonsStr ? `<div class="pf2e-lp-picker-unmet-note">Missing: ${esc(unmetReasonsStr)}</div>` : ""}
-              ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
-            </div>
-            <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>
-          </div>
-        `;
-      },
-      onSelect: async (chosen, { dialog }) => {
+    return openFeatQuickPickerDialog(actor, levelNum, slot, {
+      prereqState: rawPrereqState,
+      onSelectFeat: async (chosen, { dialog }) => {
         await updatePlannedLevelData(actor, levelNum, (entry) => {
           entry.feats[slot.slotKey] = {
             uuid: chosen.uuid,

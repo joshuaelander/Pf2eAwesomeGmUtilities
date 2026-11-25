@@ -49,6 +49,7 @@ const GRADUAL_BOOST_SETS = [
 let _featIndexCache = null;
 let _spellIndexCache = null;
 let _formulaIndexCache = null;
+const _coreBuildIndexCache = new Map();
 
 /** Tracks actor IDs currently being updated by Level Planner itself so sheet auto-prompt never misfires */
 const _plannerUpdatingActors = new Set();
@@ -2729,6 +2730,260 @@ export async function getLightweightFormulaIndex() {
     );
   }
   return results;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 4B. LIGHTWEIGHT CORE BUILD (ABC / DEITY), LIVE FEAT & SHEET HELPERS       */
+/* ------------------------------------------------------------------------- */
+
+const CORE_BUILD_PACK_CONFIG = {
+  ancestry: {
+    itemType: "ancestry",
+    label: "Ancestry",
+    primaryPack: "pf2e.ancestries",
+    packMatch: /ancestr/i,
+    defaultImg: "systems/pf2e/icons/default-icons/ancestry.svg"
+  },
+  heritage: {
+    itemType: "heritage",
+    label: "Heritage",
+    primaryPack: "pf2e.heritages",
+    packMatch: /heritage/i,
+    defaultImg: "systems/pf2e/icons/default-icons/heritage.svg"
+  },
+  background: {
+    itemType: "background",
+    label: "Background",
+    primaryPack: "pf2e.backgrounds",
+    packMatch: /background/i,
+    defaultImg: "systems/pf2e/icons/default-icons/background.svg"
+  },
+  class: {
+    itemType: "class",
+    label: "Class",
+    primaryPack: "pf2e.classes",
+    packMatch: /class(?:es)?(?!feature)/i,
+    defaultImg: "systems/pf2e/icons/default-icons/class.svg"
+  },
+  deity: {
+    itemType: "deity",
+    label: "Deity",
+    primaryPack: "pf2e.deities",
+    packMatch: /deit/i,
+    defaultImg: "systems/pf2e/icons/default-icons/deity.svg"
+  }
+};
+
+/**
+ * Lazily indexes lightweight PF2e core build items (Ancestry, Heritage, Background, Class, Deity)
+ * from World items and PF2e/module compendiums (zero startup cost).
+ */
+export async function getLightweightCoreBuildIndex(itemKey) {
+  const cfg = CORE_BUILD_PACK_CONFIG[itemKey];
+  if (!cfg) return [];
+  if (_coreBuildIndexCache.has(itemKey) && _coreBuildIndexCache.get(itemKey).length > 0) {
+    return _coreBuildIndexCache.get(itemKey);
+  }
+
+  const results = [];
+  const seen = new Set();
+
+  const buildRec = (e, fallbackPack = "") => {
+    const uuid = e?.uuid || (fallbackPack && e?._id ? `Compendium.${fallbackPack}.Item.${e._id}` : "");
+    if (!uuid || !e?.name) return null;
+    const ancRef = e?.system?.ancestry;
+    const ancSlug = typeof ancRef === "string"
+      ? normalizeSlug(ancRef)
+      : normalizeSlug(ancRef?.slug || ancRef?.name || "");
+    const ancName = typeof ancRef === "object" && ancRef?.name ? String(ancRef.name) : "";
+    const rarity = normalizeSlug(e?.system?.traits?.rarity || e?.rarity || "common") || "common";
+    return {
+      uuid,
+      name: String(e.name),
+      img: e.img || cfg.defaultImg,
+      rarity,
+      traits: extractAnyItemTraits(e),
+      ancestrySlug: ancSlug,
+      ancestryName: ancName,
+      isVersatile: cfg.itemType === "heritage" && !ancSlug
+    };
+  };
+
+  for (const item of game.items || []) {
+    if (item.type !== cfg.itemType) continue;
+    const rec = buildRec(item);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    results.push(rec);
+  }
+
+  const packs = Array.from(game.packs || []).filter(p => {
+    if (p.documentName !== "Item") return false;
+    const col = String(p.collection || "");
+    if (col === cfg.primaryPack) return true;
+    if (/effect|condition|action|spell|feat|equipment|hazard|bestiary|classfeature/i.test(col)) return false;
+    return cfg.packMatch.test(col) || cfg.packMatch.test(String(p.title || p.metadata?.label || ""));
+  }).sort((a, b) => (b.collection === cfg.primaryPack ? 1 : 0) - (a.collection === cfg.primaryPack ? 1 : 0));
+
+  const fields = cfg.itemType === "heritage"
+    ? ["img", "system.traits", "system.ancestry"]
+    : ["img", "system.traits"];
+
+  for (const pack of packs) {
+    try {
+      const idx = await pack.getIndex({ fields });
+      for (const e of idx) {
+        if (e.type !== cfg.itemType) continue;
+        const rec = buildRec(e, pack.collection);
+        if (!rec || seen.has(rec.uuid)) continue;
+        seen.add(rec.uuid);
+        results.push(rec);
+      }
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed indexing ${cfg.label} pack "${pack.collection}":`, err);
+    }
+  }
+
+  results.sort((a, b) => a.name.localeCompare(b.name));
+  if (results.length > 0) _coreBuildIndexCache.set(itemKey, results);
+  return results;
+}
+
+/**
+ * Opens PF2e's native Compendium Pack window for a Core Build item type (Ancestry, Heritage, Background, Class, Deity).
+ */
+export function openNativePackForCoreBuild(itemKey) {
+  const cfg = CORE_BUILD_PACK_CONFIG[itemKey];
+  if (!cfg) return false;
+  const pack = game.packs?.get?.(cfg.primaryPack)
+    || Array.from(game.packs || []).find(p => p.documentName === "Item" && cfg.packMatch.test(String(p.collection || "")));
+  if (pack) {
+    pack.render(true);
+    return true;
+  }
+  ui.notifications?.warn(`Could not find PF2e ${cfg.label} compendium pack.`);
+  return false;
+}
+
+/**
+ * Embeds a chosen Core Build item (Ancestry, Heritage, Background, Class, Deity) directly onto the actor
+ * so PF2e runs all its native Rule Elements & ChoiceSets cleanly.
+ */
+export async function embedLiveCoreItem(actor, uuid, expectedItemKey) {
+  const cfg = CORE_BUILD_PACK_CONFIG[expectedItemKey];
+  if (!actor || !uuid || !cfg) return null;
+  if (!game.user?.isGM && !actor.isOwner) return null;
+
+  const doc = await fromUuid(uuid);
+  if (!doc || doc.type !== cfg.itemType) return null;
+
+  const obj = doc.toObject();
+  delete obj._id;
+  obj._stats = obj._stats || {};
+  obj._stats.compendiumSource = doc.uuid || uuid;
+
+  const created = await actor.createEmbeddedDocuments("Item", [obj]);
+  return created?.[0] || null;
+}
+
+/**
+ * Embeds a chosen Feat directly into a live empty PF2e feat slot on the actor
+ * (triggering PF2e's native ChoiceSets automatically).
+ */
+export async function embedLiveFeatIntoSlot(actor, groupId, slotLevel, uuid) {
+  if (!actor || !groupId || !uuid) return null;
+  if (!game.user?.isGM && !actor.isOwner) return null;
+
+  const obj = await materializePlannedItem({ uuid }, "feat");
+  if (!obj) return null;
+
+  const numLevel = Number(slotLevel || actor.level || 1);
+  const group = actor.feats?.get?.(groupId);
+  const groupSlots = group?.slots ? extractGroupSlots(group) : [];
+  const exactEmpty = Number.isFinite(numLevel)
+    ? groupSlots.find(s => Number(s?.level) === numLevel && !s?.feat)
+    : null;
+  const anyEmpty = exactEmpty || groupSlots.find(s => !s?.feat) || null;
+  const liveSlotId = anyEmpty?.id || resolveLiveFeatSlot(actor, groupId, numLevel).id;
+
+  if (obj.system) {
+    obj.system.location = liveSlotId;
+  }
+
+  const created = await actor.createEmbeddedDocuments("Item", [obj]);
+  return created?.[0] || null;
+}
+
+/**
+ * Opens the actor's Character Sheet directly to a specific PF2e tab (`character`, `proficiencies`, `feats`, `spellcasting`, `crafting`).
+ */
+export async function openCharacterSheetToTab(actor, tabName = "character") {
+  if (!actor?.sheet) return null;
+  const sheet = actor.sheet;
+  try {
+    await sheet.render({ force: true });
+  } catch {
+    try { await sheet.render(true); } catch { /* ignore */ }
+  }
+  setTimeout(() => {
+    try {
+      if (typeof sheet.activateTab === "function") {
+        sheet.activateTab(tabName);
+      } else if (typeof sheet.changeTab === "function") {
+        sheet.changeTab(tabName, "primary");
+      } else {
+        const root = sheet.element instanceof HTMLElement ? sheet.element : sheet.element?.[0];
+        const tabBtn = root?.querySelector?.(`[data-tab="${tabName}"], nav.sheet-navigation a[data-tab="${tabName}"]`);
+        tabBtn?.click?.();
+      }
+    } catch { /* ignore */ }
+  }, 60);
+  return sheet;
+}
+
+/**
+ * Opens PF2e's own native Attribute Builder modal directly for the actor (falling back cleanly
+ * to opening the Character Sheet's Character tab if the modal trigger isn't found).
+ */
+export async function openNativeAttributeBuilder(actor) {
+  if (!actor?.sheet) return;
+  const sheet = await openCharacterSheetToTab(actor, "character");
+  if (!sheet) return;
+
+  // Try direct PF2e sheet API if exposed, else trigger the sheet's native Attribute Modifiers Edit button
+  setTimeout(() => {
+    try {
+      if (sheet.attributeBuilder?.render) {
+        sheet.attributeBuilder.render({ force: true });
+        return;
+      }
+      const root = sheet.element instanceof HTMLElement ? sheet.element : sheet.element?.[0];
+      const attrBtn = root?.querySelector?.(
+        'button[data-action="edit-attribute-boosts"], a[data-action="edit-attribute-boosts"], [data-action="open-attribute-builder"], section.attributes button.edit, .attributes-container [data-action="edit-attribute-boosts"], .attribute-modifiers [data-action*="edit"]'
+      );
+      if (attrBtn) {
+        attrBtn.click();
+      }
+    } catch { /* fallback: sheet is already open on Character tab */ }
+  }, 120);
+}
+
+/**
+ * Opens PF2e's native Languages editor dialog from the actor's sheet (or opens the Character tab).
+ */
+export async function openNativeLanguagesEditor(actor) {
+  if (!actor?.sheet) return;
+  const sheet = await openCharacterSheetToTab(actor, "character");
+  if (!sheet) return;
+  setTimeout(() => {
+    try {
+      const root = sheet.element instanceof HTMLElement ? sheet.element : sheet.element?.[0];
+      const langBtn = root?.querySelector?.(
+        '[data-action="edit-languages"], .languages [data-action="edit-languages"], .pc_languages [data-action*="edit"], a[data-property="system.details.languages"]'
+      );
+      if (langBtn) langBtn.click();
+    } catch { /* fallback: sheet is already open on Character tab */ }
+  }, 120);
 }
 
 /* ------------------------------------------------------------------------- */

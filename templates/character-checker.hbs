@@ -241,14 +241,23 @@
                         </button>
                       </div>
                     {{/if}}
+                  {{/if}}
 
-                    {{#if this.canSyncEntry}}
-                      <div class="pf2e-cc-spell-actions">
-                        <button type="button" class="pf2e-cc-btn {{#if this.hasMissingAutoSpells}}pf2e-cc-btn-gold{{else}}{{#if this.needsFontPrepare}}pf2e-cc-btn-gold{{/if}}{{/if}} pf2e-cc-btn-sm" data-cc-action="sync-spell-entry" data-source-key="{{this.key}}" data-entry-id="{{this.entryId}}">
-                          <i class="fa-solid fa-wand-magic-sparkles"></i> {{this.syncBtnLabel}}
+                  {{#if this.hasExistingActions}}
+                    <div class="pf2e-cc-spell-actions">
+                      {{#if ../report.canModifySpells}}
+                        {{#if this.canSyncEntry}}
+                          <button type="button" class="pf2e-cc-btn {{#if this.hasMissingAutoSpells}}pf2e-cc-btn-gold{{else}}{{#if this.needsFontPrepare}}pf2e-cc-btn-gold{{/if}}{{/if}} pf2e-cc-btn-sm" data-cc-action="sync-spell-entry" data-source-key="{{this.key}}" data-entry-id="{{this.entryId}}">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> {{this.syncBtnLabel}}
+                          </button>
+                        {{/if}}
+                      {{/if}}
+                      {{#if this.canOpenSpellsTab}}
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-sm" data-cc-action="open-spells-tab" title="Open the Character Sheet directly to the Spellcasting tab to add or prepare spells">
+                          <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Spells Tab
                         </button>
-                      </div>
-                    {{/if}}
+                      {{/if}}
+                    </div>
                   {{/if}}
                 </div>
               {{/each}}
@@ -267,7 +276,16 @@
         <section class="pf2e-cc-panel">
           <div class="pf2e-cc-panel-head">
             <h4><i class="fa-solid fa-graduation-cap"></i> Skills &amp; Skill Increases</h4>
-            <span class="pf2e-cc-hint">Based on Class{{#if report.isDualClass}} + Dual Class{{/if}}, Background &amp; INT ({{report.skills.intModSigned}})</span>
+            <div class="pf2e-cc-panel-actions">
+              <span class="pf2e-cc-hint">Based on Class{{#if report.isDualClass}} + Dual Class{{/if}}, Background &amp; INT ({{report.skills.intModSigned}})</span>
+              {{#if report.canEditActor}}
+                {{#if report.hasIncompleteSkills}}
+                  <button type="button" class="pf2e-cc-btn pf2e-cc-btn-sm" data-cc-action="open-skills-tab" title="Open the Character Sheet directly to the Skills tab">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Skills Tab
+                  </button>
+                {{/if}}
+              {{/if}}
+            </div>
           </div>
 
           <div class="pf2e-cc-two-col">
@@ -323,12 +341,24 @@
               {{#each report.feats.groups}}
                 <div class="pf2e-cc-kv-row {{#if this.complete}}is-ok{{else}}is-warn{{/if}}">
                   <span class="pf2e-cc-kv-label">{{this.label}}</span>
-                  <span class="pf2e-cc-kv-val">
-                    <strong>{{this.filled}} / {{this.total}}</strong>
-                    {{#unless this.complete}}
-                      <em class="pf2e-cc-kv-miss">(Empty: Lv {{this.emptyLevelsText}})</em>
-                    {{/unless}}
-                  </span>
+                  <div class="pf2e-cc-kv-right">
+                    <span class="pf2e-cc-kv-val">
+                      <strong>{{this.filled}} / {{this.total}}</strong>
+                      {{#unless this.complete}}
+                        <em class="pf2e-cc-kv-miss">(Empty: Lv {{this.emptyLevelsText}})</em>
+                      {{/unless}}
+                    </span>
+                    {{#if this.canQuickFill}}
+                      <span class="pf2e-cc-kv-actions">
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-xs" data-cc-action="pick-live-feat" data-group-id="{{this.id}}" data-level="{{this.firstEmptyLevel}}" title="Quick Pick a feat for {{this.label}} (Lv {{this.firstEmptyLevel}})">
+                          <i class="fa-solid fa-magnifying-glass"></i> Pick
+                        </button>
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-xs" data-cc-action="browse-live-feat" data-group-id="{{this.id}}" data-level="{{this.firstEmptyLevel}}" title="Open PF2e Compendium Browser filtered for {{this.label}} (Lv ≤ {{this.firstEmptyLevel}})">
+                          <i class="fa-solid fa-compass"></i> Browse
+                        </button>
+                      </span>
+                    {{/if}}
+                  </div>
                 </div>
               {{else}}
                 <div class="pf2e-cc-muted-note">No slotted feat groups found.</div>
@@ -340,31 +370,72 @@
           <section class="pf2e-cc-panel">
             <div class="pf2e-cc-panel-head">
               <h4><i class="fa-solid fa-user-shield"></i> Core Build &amp; Attribute Boosts</h4>
+              {{#if report.canEditActor}}
+                {{#if report.hasIncompleteBoosts}}
+                  <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-sm" data-cc-action="open-attribute-builder" title="Open PF2e's native Attribute Builder modal on the Character Sheet">
+                    <i class="fa-solid fa-sliders"></i> Attribute Builder
+                  </button>
+                {{/if}}
+              {{/if}}
             </div>
             <div class="pf2e-cc-kv-list">
               {{#each report.coreItems}}
                 <div class="pf2e-cc-kv-row {{#if this.present}}is-ok{{else}}is-crit{{/if}}">
                   <span class="pf2e-cc-kv-label">{{this.label}}</span>
-                  <span class="pf2e-cc-kv-val">
-                    {{#if this.present}}{{this.value}}{{else}}<strong>Missing</strong>{{/if}}
-                  </span>
+                  <div class="pf2e-cc-kv-right">
+                    <span class="pf2e-cc-kv-val">
+                      {{#if this.present}}{{this.value}}{{else}}<strong>Missing</strong>{{/if}}
+                    </span>
+                    {{#if this.canQuickPick}}
+                      <span class="pf2e-cc-kv-actions">
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-xs" data-cc-action="pick-core-item" data-item-key="{{this.key}}" title="Quick Pick {{this.label}} directly from PF2e compendiums">
+                          <i class="fa-solid fa-magnifying-glass"></i> Pick
+                        </button>
+                      </span>
+                    {{/if}}
+                    {{#if this.isMissingDualClass}}
+                      <span class="pf2e-cc-kv-actions">
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-xs" data-cc-action="open-character-tab" title="Open Character tab to select your Dual Class">
+                          <i class="fa-solid fa-id-card"></i> Sheet
+                        </button>
+                      </span>
+                    {{/if}}
+                  </div>
                 </div>
               {{/each}}
 
               <div class="pf2e-cc-kv-row {{#if report.languages.complete}}is-ok{{else}}is-warn{{/if}}">
                 <span class="pf2e-cc-kv-label">Languages</span>
-                <span class="pf2e-cc-kv-val">{{report.languages.current}} / {{report.languages.expected}}</span>
+                <div class="pf2e-cc-kv-right">
+                  <span class="pf2e-cc-kv-val">{{report.languages.current}} / {{report.languages.expected}}</span>
+                  {{#if report.canEditLanguages}}
+                    <span class="pf2e-cc-kv-actions">
+                      <button type="button" class="pf2e-cc-btn pf2e-cc-btn-xs" data-cc-action="edit-languages" title="Open PF2e's native Languages editor">
+                        <i class="fa-solid fa-pen"></i> Edit
+                      </button>
+                    </span>
+                  {{/if}}
+                </div>
               </div>
 
               {{#if report.formulas.expected}}
                 <div class="pf2e-cc-kv-row {{#if report.formulas.complete}}is-ok{{else}}is-warn{{/if}}" title="{{report.formulas.formulaText}}">
                   <span class="pf2e-cc-kv-label">{{#if report.formulas.isAlchemist}}Alchemist Formulas{{else}}Crafting Formulas{{/if}}</span>
-                  <span class="pf2e-cc-kv-val">
-                    <strong>{{report.formulas.current}} / {{report.formulas.expected}}</strong>
-                    {{#if report.formulas.missing}}
-                      <em class="pf2e-cc-kv-miss">({{report.formulas.missing}} left)</em>
+                  <div class="pf2e-cc-kv-right">
+                    <span class="pf2e-cc-kv-val">
+                      <strong>{{report.formulas.current}} / {{report.formulas.expected}}</strong>
+                      {{#if report.formulas.missing}}
+                        <em class="pf2e-cc-kv-miss">({{report.formulas.missing}} left)</em>
+                      {{/if}}
+                    </span>
+                    {{#if report.canBrowseFormulas}}
+                      <span class="pf2e-cc-kv-actions">
+                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-xs" data-cc-action="browse-formulas" title="Open PF2e Compendium Browser filtered to Alchemical Formulas (Lv ≤ {{report.level}})">
+                          <i class="fa-solid fa-compass"></i> Browse
+                        </button>
+                      </span>
                     {{/if}}
-                  </span>
+                  </div>
                 </div>
               {{/if}}
 

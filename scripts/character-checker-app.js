@@ -17,12 +17,30 @@ import {
   TRADITION_LABELS,
   addSingleSpellToEntry,
   analyzeCharacter,
+  capitalize,
+  collectCandidateActors,
   createOrSyncAllSpellcastingEntries,
   createSpellcastingEntry,
+  normalizeSlug,
   postChecklistToChat,
   syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
-import { isLevelPlannerEnabled } from "./level-planner-engine.js";
+import {
+  buildLevelRoadmap,
+  embedLiveFeatIntoSlot,
+  isLevelPlannerEnabled,
+  openCharacterSheetToTab,
+  openNativeAttributeBuilder,
+  openNativeBrowserForFeatSlot,
+  openNativeBrowserForFormulas,
+  openNativeLanguagesEditor
+} from "./level-planner-engine.js";
+import {
+  openCoreBuildQuickPickerDialog,
+  openFeatQuickPickerDialog
+} from "./level-planner-app.js";
+
+export { collectCandidateActors };
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -55,36 +73,6 @@ function getTraditionOptions(selected = "") {
     label,
     selected: selected === value
   }));
-}
-
-export function collectCandidateActors(showAllWorldPCs = false) {
-  const isGM = Boolean(game.user?.isGM);
-  const byId = new Map();
-
-  if (!isGM) {
-    for (const actor of game.actors?.contents || []) {
-      if (actor.type === "character" && actor.isOwner) {
-        byId.set(actor.id, actor);
-      }
-    }
-    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  // GM view: Party members first, then player-owned characters, optionally all world characters
-  const partyMembers = game.actors?.party?.members || [];
-  for (const m of partyMembers) {
-    if (m?.type === "character") byId.set(m.id, m);
-  }
-
-  for (const actor of game.actors?.contents || []) {
-    if (actor.type !== "character") continue;
-    const hasPlayerOwner = (game.users?.contents || []).some(u => !u.isGM && actor.testUserPermission(u, "OWNER"));
-    if (showAllWorldPCs || hasPlayerOwner || byId.size === 0) {
-      byId.set(actor.id, actor);
-    }
-  }
-
-  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /* ------------------------------------------------------------------------- */
@@ -121,7 +109,8 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
   static PARTS = {
     main: {
-      template: `modules/${MODULE_ID}/templates/character-checker.hbs`
+      template: `modules/${MODULE_ID}/templates/character-checker.hbs`,
+      scrollable: [".pf2e-cc-scroll", ".pf2e-cc-roster-list"]
     }
   };
 
@@ -186,6 +175,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
     const selectedActor = this._selectedActorId ? game.actors?.get(this._selectedActorId) : null;
     const canModifySpells = canAutoModifySpellcasting(selectedActor);
+    const canEditActor = Boolean(selectedActor && (isGM || selectedActor.isOwner));
 
     // Enrich spellcasting rows with template-friendly flags & dropdown options
     if (selectedReport) {
@@ -194,6 +184,13 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         const autoCount = Number(src.missingAutoSpellsCount || 0);
         const needsFontPrep = Boolean(src.needsFontPrepare);
         const canSyncEntry = Boolean(src.entryExists && (src.slotsOutdated || autoCount > 0 || needsFontPrep));
+        const canOpenSpellsTab = Boolean(
+          canEditActor
+          && src.entryExists
+          && !src.isDivineFont
+          && !src.slotsOutdated
+          && src.status === "incomplete"
+        );
         let syncBtnLabel = `Sync Slots to Level ${selectedReport.level}`;
         if (src.slotsOutdated && needsFontPrep) {
           syncBtnLabel = `Sync & Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
@@ -228,6 +225,8 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
           isMissing: !src.entryExists,
           isOutdated: Boolean(src.entryExists && src.slotsOutdated),
           canSyncEntry,
+          canOpenSpellsTab,
+          hasExistingActions: Boolean((canModifySpells && canSyncEntry) || canOpenSpellsTab),
           syncBtnLabel,
           createBtnLabel,
           missingAutoSpellsDisplay,
@@ -245,13 +244,61 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         ? `+${selectedReport.skills.intMod}`
         : String(selectedReport.skills.intMod);
 
+      // Enrich Core Build items, Feat slots, Boosts, Languages & Formulas with lightweight action flags
+      selectedReport.canEditActor = canEditActor;
+      selectedReport.hasIncompleteSkills = Boolean(
+        selectedReport.skills.isTrainedMissing
+        || selectedReport.skills.isLoreMissing
+        || selectedReport.skills.isIncreasesMissing
+      );
+      selectedReport.hasIncompleteBoosts = Boolean(
+        !selectedReport.attributes.manual
+        && selectedReport.attributes.tiers.some(t => !t.complete)
+      );
+      selectedReport.canEditLanguages = Boolean(
+        canEditActor
+        && selectedReport.languages.expected > 0
+        && !selectedReport.languages.complete
+      );
+      selectedReport.canBrowseFormulas = Boolean(
+        canEditActor
+        && selectedReport.formulas.expected > 0
+        && !selectedReport.formulas.complete
+      );
+
+      const quickPickCoreKeys = new Set(["ancestry", "heritage", "background", "class", "deity"]);
+      selectedReport.coreItems = selectedReport.coreItems.map(ci => ({
+        ...ci,
+        canQuickPick: Boolean(canEditActor && !ci.present && quickPickCoreKeys.has(ci.key)),
+        isMissingDualClass: Boolean(canEditActor && !ci.present && ci.key === "dualClass")
+      }));
+
+      selectedReport.feats.groups = selectedReport.feats.groups.map(g => {
+        const parsedFirst = Number(g.emptyLevels?.[0]);
+        const firstEmptyLevel = Number.isFinite(parsedFirst) && parsedFirst > 0
+          ? parsedFirst
+          : selectedReport.level;
+        const canQuickFill = Boolean(
+          canEditActor
+          && !g.complete
+          && (g.emptyLevels?.length || 0) > 0
+          && g.id !== "classfeature"
+          && g.id !== "ancestryfeature"
+        );
+        return {
+          ...g,
+          firstEmptyLevel,
+          canQuickFill
+        };
+      });
+
       selectedReport.hasIssues = selectedReport.allIssues.length > 0;
       selectedReport.hasVariantBadges = selectedReport.activeVariantBadges.length > 0;
       selectedReport.hasReadinessNotes = selectedReport.readinessNotes.length > 0;
       selectedReport.canSyncDualClass = Boolean(
         selectedReport.feats.hasMissingDualFeatures
         && typeof game.pf2eAwesomeVariantRules?.syncSecondaryClassFeatures === "function"
-        && (isGM || selectedActor?.isOwner)
+        && canEditActor
       );
       selectedReport.canModifySpells = canModifySpells;
       selectedReport.hasActionableSpells = Boolean(canModifySpells && selectedReport.spellcasting.needsActionCount > 0);
@@ -319,6 +366,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
     if (!this._onKeyDownBound) {
       this._onKeyDownBound = (e) => {
         if (e.key === "Escape" && this.rendered) {
+          if (document.querySelector(".pf2e-lp-picker-dialog")) return;
           e.preventDefault();
           this.close();
         }
@@ -343,8 +391,71 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
     }
   }
 
+  _resolveLiveFeatSlotContext(actor, groupId, slotLevel) {
+    const levelNum = Math.max(1, Number(slotLevel || actor?.level || 1));
+    const roadmap = buildLevelRoadmap(actor);
+    const lvlRow = roadmap?.levels?.find(l => l.level === levelNum) || null;
+    const curRow = roadmap?.levels?.find(l => l.level === Number(actor?.level || 1)) || null;
+    const prereqState = lvlRow?.prereqState || curRow?.prereqState || null;
+
+    let slot = lvlRow?.featSlots?.find(s => s.groupId === groupId) || null;
+    if (!slot) {
+      const group = actor?.feats?.get?.(groupId);
+      const rawFilter = Array.isArray(group?.featFilter) ? group.featFilter : [];
+      let category = "";
+      if (groupId === "ancestry") category = "ancestry";
+      else if (groupId === "skill") category = "skill";
+      else if (groupId === "general") category = "general";
+      else if (groupId === "class" || groupId === "dualclass" || groupId === "archetype") category = "class";
+      else {
+        const catToken = rawFilter.find(f => typeof f === "string" && f.startsWith("category-"));
+        if (catToken) category = catToken.slice("category-".length);
+      }
+
+      const traits = [];
+      for (const token of rawFilter) {
+        if (typeof token === "string" && token.startsWith("traits-")) {
+          const t = normalizeSlug(token.slice("traits-".length));
+          if (t && !traits.includes(t)) traits.push(t);
+        }
+      }
+      if (traits.length === 0) {
+        if (groupId === "ancestry") {
+          const ancSlug = normalizeSlug(actor?.ancestry?.slug || actor?.ancestry?.system?.slug || actor?.ancestry?.name || "");
+          if (ancSlug) traits.push(ancSlug);
+          const herSlug = normalizeSlug(actor?.heritage?.slug || actor?.heritage?.system?.slug || "");
+          if (herSlug && !actor?.heritage?.system?.ancestry) traits.push(herSlug);
+        } else if (groupId === "class") {
+          const clsSlug = normalizeSlug(actor?.class?.slug || actor?.class?.system?.slug || actor?.class?.name || "");
+          if (clsSlug) traits.push(clsSlug);
+        }
+      }
+
+      const dedications = lvlRow?.featSlots?.find(s => Array.isArray(s.dedications) && s.dedications.length > 0)?.dedications
+        || curRow?.featSlots?.find(s => Array.isArray(s.dedications) && s.dedications.length > 0)?.dedications
+        || [];
+
+      const groupLabel = (group?.label ? (game.i18n?.localize?.(group.label) || group.label) : "") || capitalize(groupId);
+      slot = {
+        slotKey: `${groupId}-${levelNum}`,
+        groupId,
+        groupLabel,
+        category,
+        traits,
+        dedications,
+        level: levelNum,
+        isFuture: false,
+        filled: false,
+        feat: null
+      };
+    }
+
+    return { slot, levelNum, prereqState };
+  }
+
   async _handleAction(action, btn) {
     const actor = this._selectedActorId ? game.actors?.get(this._selectedActorId) : null;
+    const canEdit = Boolean(actor && (game.user?.isGM || actor.isOwner));
 
     switch (action) {
       case "select-actor": {
@@ -363,6 +474,72 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
       case "open-sheet":
         if (actor?.sheet) actor.sheet.render({ force: true });
         break;
+
+      case "open-character-tab":
+        if (actor) await openCharacterSheetToTab(actor, "character");
+        break;
+
+      case "open-skills-tab":
+        if (actor) await openCharacterSheetToTab(actor, "proficiencies");
+        break;
+
+      case "open-attribute-builder":
+        if (actor && canEdit) await openNativeAttributeBuilder(actor);
+        break;
+
+      case "edit-languages":
+        if (actor && canEdit) await openNativeLanguagesEditor(actor);
+        break;
+
+      case "browse-formulas":
+        if (actor && canEdit) {
+          await openNativeBrowserForFormulas({ maxLevel: Math.max(1, Number(actor.level ?? 1)) });
+        }
+        break;
+
+      case "open-spells-tab":
+        if (actor) await openCharacterSheetToTab(actor, "spellcasting");
+        break;
+
+      case "pick-core-item": {
+        if (!actor || !canEdit) return;
+        const itemKey = btn.dataset.itemKey;
+        if (!itemKey) return;
+        openCoreBuildQuickPickerDialog(actor, itemKey, {
+          onDone: () => this.render({ force: false })
+        });
+        break;
+      }
+
+      case "pick-live-feat": {
+        if (!actor || !canEdit) return;
+        const groupId = btn.dataset.groupId;
+        const slotLevel = Number(btn.dataset.level || actor.level || 1);
+        if (!groupId) return;
+        const { slot, levelNum, prereqState } = this._resolveLiveFeatSlotContext(actor, groupId, slotLevel);
+        openFeatQuickPickerDialog(actor, levelNum, slot, {
+          prereqState,
+          onSelectFeat: async (chosen, { dialog }) => {
+            dialog.close();
+            const created = await embedLiveFeatIntoSlot(actor, groupId, levelNum, chosen.uuid);
+            if (created) {
+              ui.notifications?.info(`Added "${created.name}" to ${actor.name} (${slot.groupLabel}, Lv ${levelNum})!`);
+              this.render({ force: false });
+            }
+          }
+        });
+        break;
+      }
+
+      case "browse-live-feat": {
+        if (!actor || !canEdit) return;
+        const groupId = btn.dataset.groupId;
+        const slotLevel = Number(btn.dataset.level || actor.level || 1);
+        if (!groupId) return;
+        const { slot } = this._resolveLiveFeatSlotContext(actor, groupId, slotLevel);
+        await openNativeBrowserForFeatSlot(slot);
+        break;
+      }
 
       case "open-level-planner":
         if (actor && this._onOpenLevelPlanner) {

@@ -5745,3 +5745,36 @@ export async function postChecklistToChat(actor, { whisperToOwners = false } = {
 
   return await ChatMessage.create(msgData);
 }
+
+/**
+ * Returns candidate PC actors visible to the current user (Party + player-owned for GMs,
+ * or all world PCs when `showAllWorldPCs` is true; owned PCs only for players).
+ */
+export function collectCandidateActors(showAllWorldPCs = false) {
+  const isGM = Boolean(game.user?.isGM);
+  const byId = new Map();
+
+  if (!isGM) {
+    for (const actor of game.actors?.contents || []) {
+      if (actor.type === "character" && actor.isOwner) {
+        byId.set(actor.id, actor);
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const partyMembers = game.actors?.party?.members || [];
+  for (const m of partyMembers) {
+    if (m?.type === "character") byId.set(m.id, m);
+  }
+
+  for (const actor of game.actors?.contents || []) {
+    if (actor.type !== "character") continue;
+    const hasPlayerOwner = (game.users?.contents || []).some(u => !u.isGM && actor.testUserPermission(u, "OWNER"));
+    if (showAllWorldPCs || hasPlayerOwner || byId.size === 0) {
+      byId.set(actor.id, actor);
+    }
+  }
+
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
