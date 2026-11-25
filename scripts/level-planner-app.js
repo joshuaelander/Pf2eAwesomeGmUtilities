@@ -11,11 +11,12 @@
 
 import { MODULE_ID } from "./constants.js";
 import {
-  ABILITY_LABELS,
   TRADITION_LABELS,
   analyzeCharacter,
+  capitalize,
   normalizeSlug
 } from "./character-checker-engine.js";
+import { collectCandidateActors } from "./character-checker-app.js";
 import {
   FORMULA_CRAFTABLE_TYPES,
   applyPlannedLevelChoices,
@@ -24,6 +25,7 @@ import {
   clearActorLevelPlan,
   clearPlannedFeat,
   computeMatchingArchetypeFeatUuids,
+  getActorLevelPlan,
   getLightweightFeatIndex,
   getLightweightFormulaIndex,
   getLightweightSpellIndex,
@@ -45,33 +47,21 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 /* HELPERS                                                                   */
 /* ------------------------------------------------------------------------- */
 
-function collectCandidateActors(showAllWorldPCs = false) {
-  const isGM = Boolean(game.user?.isGM);
-  const byId = new Map();
+function formatLevelRange(fromLevel, toLevel, { prefix = "Lv", pluralPrefix = prefix } = {}) {
+  if (fromLevel === toLevel) return prefix ? `${prefix} ${toLevel}` : `${toLevel}`;
+  return pluralPrefix ? `${pluralPrefix} ${fromLevel}–${toLevel}` : `${fromLevel}–${toLevel}`;
+}
 
-  if (!isGM) {
-    for (const actor of game.actors?.contents || []) {
-      if (actor.type === "character" && actor.isOwner) {
-        byId.set(actor.id, actor);
-      }
-    }
-    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+function notifyAppliedLevelChoices(actor, res, { headline, reminderPrefix }) {
+  const postReport = analyzeCharacter(actor);
+  const remainingNote = postReport?.actionableMissingCount > 0
+    ? ` | ${postReport.actionableMissingCount} checklist item(s) remaining`
+    : " | Build 100% Complete!";
+  const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
+  ui.notifications?.info(`${headline}${summaryStr}${remainingNote}`);
+  if (Array.isArray(res.reminders) && res.reminders.length > 0) {
+    ui.notifications?.warn(`${reminderPrefix} Reminders: ${res.reminders.join(" · ")}`);
   }
-
-  const partyMembers = game.actors?.party?.members || [];
-  for (const m of partyMembers) {
-    if (m?.type === "character") byId.set(m.id, m);
-  }
-
-  for (const actor of game.actors?.contents || []) {
-    if (actor.type !== "character") continue;
-    const hasPlayerOwner = (game.users?.contents || []).some(u => !u.isGM && actor.testUserPermission(u, "OWNER"));
-    if (showAllWorldPCs || hasPlayerOwner || byId.size === 0) {
-      byId.set(actor.id, actor);
-    }
-  }
-
-  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function extractDropData(event) {
@@ -112,18 +102,13 @@ async function inspectDocumentByUuid(uuid) {
   try {
     const doc = await fromUuid(uuid);
     if (doc?.sheet) {
-      doc.sheet.render(true);
+      doc.sheet.render({ force: true });
     } else {
       ui.notifications?.warn("Could not open item sheet for this entry.");
     }
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Failed to inspect UUID:", uuid, err);
   }
-}
-
-function capitalize(str) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -290,13 +275,11 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             isPast: l.isPast,
             isCurrent: l.isCurrent,
             isNextLevel: l.isNextLevel,
-            isFuture: l.isFuture,
             hasBoosts: l.hasBoosts,
             hasIntBonus: l.hasIntBonus,
             hasSkillIncrease: l.hasSkillIncrease,
             hasSpellMilestones: l.hasSpellMilestones,
             isAlchemistFutureGain: l.isAlchemistFutureGain,
-            featCount: l.featSlots.length,
             pillText,
             pillClass
           };
@@ -313,9 +296,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           ...rawFocused,
           canEditThisLevel: Boolean(canEdit && rawFocused.isFuture),
           canRevertToThisLevel: Boolean(canEdit && rawFocused.isPast && !this._isApplyingLevelUp),
-          revertRangeLabel: rawFocused.level + 1 === roadmap.currentLevel
-            ? `${roadmap.currentLevel}`
-            : `${rawFocused.level + 1}–${roadmap.currentLevel}`,
+          revertRangeLabel: formatLevelRange(rawFocused.level + 1, roadmap.currentLevel, { prefix: "" }),
           canStepPrev: rawFocused.level > 1,
           canStepNext: rawFocused.level < 20,
           prevLevel: Math.max(1, rawFocused.level - 1),
@@ -328,8 +309,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           defaultSpellUnlockRank: defaultUnlockRank,
           plannedSpellsDisplay: (rawFocused.plannedSpells || []).map(sp => ({
             ...sp,
-            rankLabel: sp.isCantrip ? "Cantrip" : `Rank ${sp.rank || 1}`,
-            traditionLabel: TRADITION_LABELS[sp.tradition] || (sp.tradition ? capitalize(sp.tradition) : "")
+            rankLabel: sp.isCantrip ? "Cantrip" : `Rank ${sp.rank || 1}`
           }))
         };
       }
@@ -341,7 +321,6 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           isPast: l.isPast,
           isCurrent: l.isCurrent,
           isNextLevel: l.isNextLevel,
-          isFuture: l.isFuture,
           isSelected: l.level === this._selectedLevel,
           classFeaturesText: l.classFeatures.map(f => f.name).join(", ") || "—",
           boostsText: l.hasBoosts
@@ -363,9 +342,6 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             filled: s.filled,
             hasWarnings: s.hasWarnings
           })),
-          spellsText: l.hasSpellMilestones
-            ? l.spellMilestones.map(m => `${m.title}: ${m.deltaText}`).join(" · ")
-            : (l.hasPlannedSpells ? `${l.plannedSpells.length} planned spell(s)` : "—"),
           plannedSpellsCount: l.plannedSpells.length,
           formulasText: l.isAlchemistFutureGain
             ? `Formulas: ${l.plannedFormulasCount}/${l.formulaMilestone?.gain || 2} (+${l.formulaMilestone?.gain || 2} free)`
@@ -622,7 +598,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       }
 
       case "open-sheet":
-        if (actor?.sheet) actor.sheet.render(true);
+        if (actor?.sheet) actor.sheet.render({ force: true });
         break;
 
       case "open-checker":
@@ -902,14 +878,115 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* LIGHTWEIGHT INLINE QUICK PICK MODALS                                    */
   /* ----------------------------------------------------------------------- */
 
+  _openQuickPickerDialog({
+    title,
+    icon,
+    width = 650,
+    closeAction = "done",
+    closeLabel = "Done",
+    closeIcon = "fa-solid fa-check",
+    showGoal = false,
+    controlsHtml,
+    loadingText,
+    onBrowse,
+    onReady,
+    loadItems,
+    filterItems,
+    formatStatus,
+    emptyText,
+    renderRow,
+    onSelect,
+    changeSelectors = []
+  }) {
+    const DialogV2 = foundry.applications.api.DialogV2;
+    const content = `
+      <div class="pf2e-lp-picker">
+        ${showGoal ? '<div class="pf2e-lp-picker-goal" style="display:none;"></div>' : ""}
+        <div class="pf2e-lp-picker-controls">
+          ${controlsHtml}
+          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
+            <i class="fa-solid fa-compass"></i> PF2e Browser
+          </button>
+        </div>
+        <div class="pf2e-lp-picker-status">${loadingText}</div>
+        <div class="pf2e-lp-picker-list"></div>
+      </div>
+    `;
+
+    const dialog = new DialogV2({
+      window: { title, icon, resizable: true },
+      position: { width, height: 540 },
+      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
+      content,
+      buttons: [{ action: closeAction, label: closeLabel, icon: closeIcon }]
+    });
+
+    dialog.addEventListener("render", async () => {
+      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
+      if (!root) return;
+
+      const searchInput = root.querySelector(".pf2e-lp-picker-search");
+      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
+      const statusEl = root.querySelector(".pf2e-lp-picker-status");
+      const listEl = root.querySelector(".pf2e-lp-picker-list");
+
+      browserBtn?.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        await onBrowse?.(root);
+      });
+
+      const ctx = (await onReady?.(root, dialog)) || {};
+      const allItems = await loadItems(root, ctx);
+
+      const renderList = () => {
+        const query = (searchInput?.value || "").trim().toLowerCase();
+        const matched = filterItems(allItems, { root, query, ctx });
+        const capped = matched.slice(0, 120);
+        statusEl.textContent = formatStatus(matched.length);
+
+        if (capped.length === 0) {
+          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">${emptyText}</div>`;
+          return;
+        }
+
+        listEl.innerHTML = capped.map((item, idx) => renderRow(item, idx, ctx)).join("");
+
+        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
+          link.addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            const item = capped[Number(link.dataset.idx)];
+            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
+          });
+        });
+
+        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
+          btn.addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            const chosen = capped[Number(btn.dataset.idx)];
+            if (!chosen) return;
+            await onSelect(chosen, { btn, root, dialog, ctx });
+          });
+        });
+      };
+
+      let debounce = null;
+      searchInput?.addEventListener("input", () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(renderList, 60);
+      });
+      for (const sel of changeSelectors) {
+        root.querySelector(sel)?.addEventListener("change", renderList);
+      }
+
+      renderList();
+      searchInput?.focus();
+    }, { once: true });
+
+    dialog.render({ force: true });
+  }
+
   async _openFeatQuickPicker(actor, levelNum, slot) {
     const esc = foundry.utils.escapeHTML;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (!DialogV2) {
-      await openNativeBrowserForFeatSlot(slot);
-      return;
-    }
-
     const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
     const hasDedications = slotDedications.length > 0;
     const dedShortNames = slotDedications.map(d => d.shortLabel).filter(Boolean).join(", ");
@@ -966,74 +1043,37 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       `;
     }
 
-    const content = `
-      <div class="pf2e-lp-picker">
-        <div class="pf2e-lp-picker-controls">
-          <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
-          <select class="pf2e-lp-picker-scope" title="Filter scope">
-            ${scopeOptionsHtml}
-          </select>
-          <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
-            <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
-            <span>Any Lv</span>
-          </label>
-          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
-            <i class="fa-solid fa-compass"></i> PF2e Browser
-          </button>
-        </div>
-        <div class="pf2e-lp-picker-status">Loading lightweight feat index...</div>
-        <div class="pf2e-lp-picker-list"></div>
-      </div>
-    `;
+    const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
 
-    const dialog = new DialogV2({
-      window: {
-        title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
-        icon: "fa-solid fa-star",
-        resizable: true
+    this._openQuickPickerDialog({
+      title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
+      icon: "fa-solid fa-star",
+      width: 640,
+      closeAction: "close",
+      closeLabel: "Close",
+      closeIcon: "fa-solid fa-xmark",
+      controlsHtml: `
+        <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
+        <select class="pf2e-lp-picker-scope" title="Filter scope">${scopeOptionsHtml}</select>
+        <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
+          <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
+          <span>Any Lv</span>
+        </label>
+      `,
+      loadingText: "Loading lightweight feat index...",
+      changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-any-lvl"],
+      onBrowse: () => openNativeBrowserForFeatSlot(slot),
+      loadItems: async (_root, ctx) => {
+        const allFeats = await getLightweightFeatIndex();
+        ctx.myArchetypeUuids = hasDedications ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications) : new Set();
+        ctx.perDedicationUuids = slotDedications.length > 1
+          ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
+          : [];
+        return allFeats;
       },
-      position: { width: 640, height: 540 },
-      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
-      content,
-      buttons: [
-        {
-          action: "close",
-          label: "Close",
-          icon: "fa-solid fa-xmark"
-        }
-      ]
-    });
-
-    dialog.addEventListener("render", async () => {
-      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
-      if (!root) return;
-
-      const searchInput = root.querySelector(".pf2e-lp-picker-search");
-      const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
-      const anyLvlCb = root.querySelector(".pf2e-lp-picker-any-lvl");
-      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
-      const statusEl = root.querySelector(".pf2e-lp-picker-status");
-      const listEl = root.querySelector(".pf2e-lp-picker-list");
-
-      browserBtn?.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        await openNativeBrowserForFeatSlot(slot);
-      });
-
-      const allFeats = await getLightweightFeatIndex();
-      const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
-      const myArchetypeUuids = hasDedications
-        ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications)
-        : new Set();
-      const perDedicationUuids = slotDedications.length > 1
-        ? slotDedications.map(d => computeMatchingArchetypeFeatUuids(allFeats, [d]))
-        : [];
-
-      const renderList = () => {
-        const query = (searchInput?.value || "").trim().toLowerCase();
-        const scope = scopeSelect?.value || defaultScope;
-        const anyLvl = Boolean(anyLvlCb?.checked);
-
+      filterItems: (allFeats, { root, query, ctx }) => {
+        const scope = root.querySelector(".pf2e-lp-picker-scope")?.value || defaultScope;
+        const anyLvl = Boolean(root.querySelector(".pf2e-lp-picker-any-lvl")?.checked);
         const matched = [];
         for (const f of allFeats) {
           if (!anyLvl && f.level > slot.level) continue;
@@ -1047,16 +1087,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
             if (!isMyClass && !isArchetype) continue;
           } else if (scope === "my-archetypes") {
-            if (!myArchetypeUuids.has(f.uuid)) continue;
+            if (!ctx.myArchetypeUuids.has(f.uuid)) continue;
           } else if (scope.startsWith("ded:")) {
-            const dIdx = Number(scope.slice(4));
-            const set = perDedicationUuids[dIdx];
+            const set = ctx.perDedicationUuids[Number(scope.slice(4))];
             if (!set || !set.has(f.uuid)) continue;
           } else if (scope === "archetype-dedications") {
             if (!f.traits.includes("dedication")) continue;
           } else if (scope === "archetype") {
-            const isArchetype = f.traits.includes("archetype") || f.traits.includes("dedication");
-            if (!isArchetype) continue;
+            if (!f.traits.includes("archetype") && !f.traits.includes("dedication")) continue;
           } else if (scope === "all-ancestry") {
             if (f.category !== "ancestry") continue;
           } else if (scope === "general-only") {
@@ -1072,102 +1110,56 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             }
           }
 
-          if (query) {
-            const nameMatch = f.name.toLowerCase().includes(query);
-            const traitMatch = f.traits.some(t => t.includes(query));
-            if (!nameMatch && !traitMatch) continue;
-          }
-
+          if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query))) continue;
           matched.push(f);
         }
-
-        // Sort highest level first (near slot level) then alphabetical — feels awesome when picking Lv 8/10 feats!
-        matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
-
-        const capped = matched.slice(0, 120);
-        statusEl.textContent = matched.length > 120
-          ? `Showing top 120 of ${matched.length} matching feats — type to narrow search`
-          : `${matched.length} matching feat(s)`;
-
-        if (capped.length === 0) {
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No feats match the current filter. Try switching filter to "All Feats" or clearing search.</div>`;
-          return;
-        }
-
-        listEl.innerHTML = capped.map((f, idx) => {
-          const prereqStr = f.prerequisites.length > 0 ? `Prereq: ${f.prerequisites.join(", ")}` : "";
-          const traitStr = f.traits.slice(0, 4).join(" · ");
-          const sub = [traitStr, prereqStr].filter(Boolean).join(" — ");
-          return `
-            <div class="pf2e-lp-picker-row">
-              <img src="${esc(f.img)}" alt="" class="pf2e-lp-picker-img" />
-              <div class="pf2e-lp-picker-info">
-                <div class="pf2e-lp-picker-name-line">
-                  <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full feat sheet">${esc(f.name)}</a>
-                  <span class="pf2e-lp-picker-lvl">Lv ${f.level}</span>
-                  ${f.rarity && f.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(f.rarity)}">${esc(capitalize(f.rarity))}</span>` : ""}
-                </div>
-                ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
+        // Sort highest level first (near slot level) then alphabetical
+        return matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
+      },
+      formatStatus: (total) => total > 120
+        ? `Showing top 120 of ${total} matching feats — type to narrow search`
+        : `${total} matching feat(s)`,
+      emptyText: `No feats match the current filter. Try switching filter to "All Feats" or clearing search.`,
+      renderRow: (f, idx) => {
+        const prereqStr = f.prerequisites.length > 0 ? `Prereq: ${f.prerequisites.join(", ")}` : "";
+        const traitStr = f.traits.slice(0, 4).join(" · ");
+        const sub = [traitStr, prereqStr].filter(Boolean).join(" — ");
+        return `
+          <div class="pf2e-lp-picker-row">
+            <img src="${esc(f.img)}" alt="" class="pf2e-lp-picker-img" />
+            <div class="pf2e-lp-picker-info">
+              <div class="pf2e-lp-picker-name-line">
+                <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full feat sheet">${esc(f.name)}</a>
+                <span class="pf2e-lp-picker-lvl">Lv ${f.level}</span>
+                ${f.rarity && f.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(f.rarity)}">${esc(capitalize(f.rarity))}</span>` : ""}
               </div>
-              <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>
+              ${sub ? `<div class="pf2e-lp-picker-sub">${esc(sub)}</div>` : ""}
             </div>
-          `;
-        }).join("");
-
-        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
-          link.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const item = capped[Number(link.dataset.idx)];
-            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
-          });
+            <button type="button" class="pf2e-lp-picker-select" data-idx="${idx}">Select</button>
+          </div>
+        `;
+      },
+      onSelect: async (chosen, { dialog }) => {
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          entry.feats[slot.slotKey] = {
+            uuid: chosen.uuid,
+            name: chosen.name,
+            img: chosen.img,
+            level: chosen.level,
+            category: chosen.category,
+            isDedication: Boolean(chosen.traits?.includes("dedication") || /\bdedication\b/i.test(chosen.name || "")),
+            prerequisites: chosen.prerequisites || []
+          };
         });
-
-        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
-          btn.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const chosen = capped[Number(btn.dataset.idx)];
-            if (!chosen) return;
-            await updatePlannedLevelData(actor, levelNum, (entry) => {
-              entry.feats[slot.slotKey] = {
-                uuid: chosen.uuid,
-                name: chosen.name,
-                img: chosen.img,
-                level: chosen.level,
-                category: chosen.category,
-                isDedication: Boolean(chosen.traits?.includes("dedication") || /\bdedication\b/i.test(chosen.name || "")),
-                prerequisites: chosen.prerequisites || []
-              };
-            });
-            ui.notifications?.info(`Planned "${chosen.name}" for Level ${levelNum} (${slot.groupLabel}).`);
-            dialog.close();
-            this.render({ force: false });
-          });
-        });
-      };
-
-      let debounce = null;
-      searchInput?.addEventListener("input", () => {
-        clearTimeout(debounce);
-        debounce = setTimeout(renderList, 60);
-      });
-      scopeSelect?.addEventListener("change", renderList);
-      anyLvlCb?.addEventListener("change", renderList);
-
-      renderList();
-      searchInput?.focus();
-    }, { once: true });
-
-    dialog.render({ force: true });
+        ui.notifications?.info(`Planned "${chosen.name}" for Level ${levelNum} (${slot.groupLabel}).`);
+        dialog.close();
+        this.render({ force: false });
+      }
+    });
   }
 
   async _openSpellQuickPicker(actor, levelNum, { tradition = "", entryKey = "", maxRank = 1, unlockedNewRank = 0 } = {}) {
     const esc = foundry.utils.escapeHTML;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (!DialogV2) {
-      await openNativeBrowserForSpells({ tradition, maxRank, unlockedNewRank });
-      return;
-    }
-
     const defaultRankVal = unlockedNewRank > 0 ? String(unlockedNewRank) : "upto";
     const rankOpts = [
       `<option value="upto" ${defaultRankVal === "upto" ? "selected" : ""}>All Ranks ≤ ${maxRank}</option>`,
@@ -1176,304 +1168,173 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     for (let r = 1; r <= 10; r++) {
       rankOpts.push(`<option value="${r}" ${defaultRankVal === String(r) ? "selected" : ""}>Rank ${r}</option>`);
     }
+    const tradOpts = [
+      `<option value="" ${!tradition ? "selected" : ""}>All Traditions</option>`,
+      ...Object.entries(TRADITION_LABELS).map(([k, lbl]) =>
+        `<option value="${k}" ${tradition === k ? "selected" : ""}>${lbl}</option>`
+      )
+    ];
 
-    const content = `
-      <div class="pf2e-lp-picker">
-        <div class="pf2e-lp-picker-goal" style="display:none;"></div>
-        <div class="pf2e-lp-picker-controls">
-          <input type="text" class="pf2e-lp-picker-search" placeholder="Search spells to plan for Level ${levelNum}..." autofocus />
-          <select class="pf2e-lp-picker-trad" title="Spell Tradition">
-            <option value="" ${!tradition ? "selected" : ""}>All Traditions</option>
-            <option value="arcane" ${tradition === "arcane" ? "selected" : ""}>Arcane</option>
-            <option value="divine" ${tradition === "divine" ? "selected" : ""}>Divine</option>
-            <option value="occult" ${tradition === "occult" ? "selected" : ""}>Occult</option>
-            <option value="primal" ${tradition === "primal" ? "selected" : ""}>Primal</option>
-          </select>
-          <select class="pf2e-lp-picker-rank" title="Spell Rank">
-            ${rankOpts.join("")}
-          </select>
-          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
-            <i class="fa-solid fa-compass"></i> PF2e Browser
-          </button>
-        </div>
-        <div class="pf2e-lp-picker-status">Loading lightweight spell index...</div>
-        <div class="pf2e-lp-picker-list"></div>
-      </div>
-    `;
+    this._openQuickPickerDialog({
+      title: `Plan Spells — Level ${levelNum}`,
+      icon: "fa-solid fa-hat-wizard",
+      showGoal: true,
+      controlsHtml: `
+        <input type="text" class="pf2e-lp-picker-search" placeholder="Search spells to plan for Level ${levelNum}..." autofocus />
+        <select class="pf2e-lp-picker-trad" title="Spell Tradition">${tradOpts.join("")}</select>
+        <select class="pf2e-lp-picker-rank" title="Spell Rank">${rankOpts.join("")}</select>
+      `,
+      loadingText: "Loading lightweight spell index...",
+      changeSelectors: [".pf2e-lp-picker-trad", ".pf2e-lp-picker-rank"],
+      onBrowse: (root) => openNativeBrowserForSpells({
+        tradition: root.querySelector(".pf2e-lp-picker-trad")?.value || tradition,
+        maxRank,
+        unlockedNewRank
+      }),
+      onReady: (root) => {
+        const goalEl = root.querySelector(".pf2e-lp-picker-goal");
+        const updateGoalBanner = () => {
+          if (!goalEl) return;
+          const rm = buildLevelRoadmap(actor);
+          const lvlRow = rm?.levels?.find(l => l.level === levelNum);
+          const targetMilestone = entryKey
+            ? lvlRow?.spellMilestones?.find(m => m.entryKey === entryKey)
+            : (lvlRow?.spellMilestones?.find(m => m.isMandatory) || lvlRow?.spellMilestones?.[0]);
 
-    const dialog = new DialogV2({
-      window: {
-        title: `Plan Spells — Level ${levelNum}`,
-        icon: "fa-solid fa-hat-wizard",
-        resizable: true
+          if (targetMilestone?.promptText) {
+            goalEl.style.display = "";
+            goalEl.classList.toggle("is-complete", Boolean(targetMilestone.isMandatory && targetMilestone.complete));
+            goalEl.classList.toggle("is-needed", Boolean(targetMilestone.isMandatory && !targetMilestone.complete));
+            goalEl.innerHTML = `<strong>Level ${levelNum} (${esc(targetMilestone.title)}):</strong> ${esc(targetMilestone.promptText)}${targetMilestone.signatureNote ? ` · <em>${esc(targetMilestone.signatureNote)}</em>` : ""}`;
+          } else {
+            goalEl.style.display = "none";
+          }
+        };
+        updateGoalBanner();
+
+        const knownSpellUuids = new Set();
+        const knownSpellNames = new Set();
+        for (const sp of actor.itemTypes?.spell || []) {
+          const src = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
+          if (src) knownSpellUuids.add(src);
+          if (sp.name) knownSpellNames.add(String(sp.name).toLowerCase());
+        }
+        const levelPlan = getActorLevelPlan(actor).levels[String(levelNum)];
+        const addedUuids = new Set((levelPlan?.spells || []).map(s => s?.uuid).filter(Boolean));
+        return { updateGoalBanner, knownSpellUuids, knownSpellNames, addedUuids };
       },
-      position: { width: 650, height: 540 },
-      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
-      content,
-      buttons: [
-        {
-          action: "done",
-          label: "Done",
-          icon: "fa-solid fa-check"
-        }
-      ]
-    });
-
-    dialog.addEventListener("render", async () => {
-      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
-      if (!root) return;
-
-      const goalEl = root.querySelector(".pf2e-lp-picker-goal");
-      const searchInput = root.querySelector(".pf2e-lp-picker-search");
-      const tradSelect = root.querySelector(".pf2e-lp-picker-trad");
-      const rankSelect = root.querySelector(".pf2e-lp-picker-rank");
-      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
-      const statusEl = root.querySelector(".pf2e-lp-picker-status");
-      const listEl = root.querySelector(".pf2e-lp-picker-list");
-
-      const updateGoalBanner = () => {
-        if (!goalEl) return;
-        const rm = buildLevelRoadmap(actor);
-        const lvlRow = rm?.levels?.find(l => l.level === levelNum);
-        const targetMilestone = entryKey
-          ? lvlRow?.spellMilestones?.find(m => m.entryKey === entryKey)
-          : (lvlRow?.spellMilestones?.find(m => m.isMandatory) || lvlRow?.spellMilestones?.[0]);
-
-        if (targetMilestone?.promptText) {
-          goalEl.style.display = "";
-          goalEl.classList.toggle("is-complete", Boolean(targetMilestone.isMandatory && targetMilestone.complete));
-          goalEl.classList.toggle("is-needed", Boolean(targetMilestone.isMandatory && !targetMilestone.complete));
-          goalEl.innerHTML = `<strong>Level ${levelNum} (${esc(targetMilestone.title)}):</strong> ${esc(targetMilestone.promptText)}${targetMilestone.signatureNote ? ` · <em>${esc(targetMilestone.signatureNote)}</em>` : ""}`;
-        } else {
-          goalEl.style.display = "none";
-        }
-      };
-      updateGoalBanner();
-
-      browserBtn?.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        await openNativeBrowserForSpells({
-          tradition: tradSelect?.value || tradition,
-          maxRank,
-          unlockedNewRank
-        });
-      });
-
-      const allSpells = await getLightweightSpellIndex();
-      const knownSpellUuids = new Set();
-      const knownSpellNames = new Set();
-      for (const sp of actor.itemTypes?.spell || []) {
-        const src = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
-        if (src) knownSpellUuids.add(src);
-        if (sp.name) knownSpellNames.add(String(sp.name).toLowerCase());
-      }
-      const roadmapNow = buildLevelRoadmap(actor);
-      const addedUuids = new Set(
-        (roadmapNow?.levels?.find(l => l.level === levelNum)?.plannedSpells || [])
-          .map(s => s?.uuid)
-          .filter(Boolean)
-      );
-
-      const renderList = () => {
-        const query = (searchInput?.value || "").trim().toLowerCase();
-        const trad = tradSelect?.value || "";
-        const rankFilter = rankSelect?.value || "upto";
-
+      loadItems: () => getLightweightSpellIndex(),
+      filterItems: (allSpells, { root, query }) => {
+        const trad = root.querySelector(".pf2e-lp-picker-trad")?.value || "";
+        const rankFilter = root.querySelector(".pf2e-lp-picker-rank")?.value || "upto";
         const matched = [];
         for (const sp of allSpells) {
           if (sp.isRitual && (trad || !query)) continue;
-          // Skip focus spells without traditions when filtering by tradition
           if (trad && !sp.traditions.includes(trad)) continue;
-
           if (rankFilter === "cantrip") {
             if (!sp.isCantrip) continue;
           } else if (rankFilter === "upto") {
-            if (sp.isCantrip) continue;
-            if (sp.rank > maxRank) continue;
+            if (sp.isCantrip || sp.rank > maxRank) continue;
           } else {
-            const targetR = Number(rankFilter);
-            if (sp.isCantrip || sp.rank !== targetR) continue;
+            if (sp.isCantrip || sp.rank !== Number(rankFilter)) continue;
           }
-
           if (query && !sp.name.toLowerCase().includes(query)) continue;
           matched.push(sp);
         }
-
-        matched.sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name));
-        const capped = matched.slice(0, 120);
-        statusEl.textContent = matched.length > 120
-          ? `Showing top 120 of ${matched.length} matching spells — type to narrow search`
-          : `${matched.length} matching spell(s) — click Add to bookmark multiple`;
-
-        if (capped.length === 0) {
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No spells match the current filter. Try switching Tradition or Rank filter above.</div>`;
-          return;
-        }
-
-        listEl.innerHTML = capped.map((sp, idx) => {
-          const isAdded = addedUuids.has(sp.uuid);
-          const isKnown = knownSpellUuids.has(sp.uuid) || knownSpellNames.has(String(sp.name || "").toLowerCase());
-          const tradText = sp.traditions.map(capitalize).join(", ") || (sp.isFocus ? "Focus" : "Special");
-          return `
-            <div class="pf2e-lp-picker-row">
-              <img src="${esc(sp.img)}" alt="" class="pf2e-lp-picker-img" />
-              <div class="pf2e-lp-picker-info">
-                <div class="pf2e-lp-picker-name-line">
-                  <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full spell sheet">${esc(sp.name)}</a>
-                  <span class="pf2e-lp-picker-lvl">${sp.isCantrip ? "Cantrip" : `Rank ${sp.rank}`}</span>
-                  ${sp.rarity && sp.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(sp.rarity)}">${esc(capitalize(sp.rarity))}</span>` : ""}
-                  ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
-                </div>
-                <div class="pf2e-lp-picker-sub">${esc(tradText)}</div>
+        return matched.sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name));
+      },
+      formatStatus: (total) => total > 120
+        ? `Showing top 120 of ${total} matching spells — type to narrow search`
+        : `${total} matching spell(s) — click Add to bookmark multiple`,
+      emptyText: "No spells match the current filter. Try switching Tradition or Rank filter above.",
+      renderRow: (sp, idx, ctx) => {
+        const isAdded = ctx.addedUuids.has(sp.uuid);
+        const isKnown = ctx.knownSpellUuids.has(sp.uuid) || ctx.knownSpellNames.has(String(sp.name || "").toLowerCase());
+        const tradText = sp.traditions.map(capitalize).join(", ") || (sp.isFocus ? "Focus" : "Special");
+        return `
+          <div class="pf2e-lp-picker-row">
+            <img src="${esc(sp.img)}" alt="" class="pf2e-lp-picker-img" />
+            <div class="pf2e-lp-picker-info">
+              <div class="pf2e-lp-picker-name-line">
+                <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open full spell sheet">${esc(sp.name)}</a>
+                <span class="pf2e-lp-picker-lvl">${sp.isCantrip ? "Cantrip" : `Rank ${sp.rank}`}</span>
+                ${sp.rarity && sp.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(sp.rarity)}">${esc(capitalize(sp.rarity))}</span>` : ""}
+                ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
               </div>
-              <button type="button" class="pf2e-lp-picker-select ${isAdded ? "is-added" : ""}" data-idx="${idx}">
-                ${isAdded ? "Added ✓" : "+ Add"}
-              </button>
+              <div class="pf2e-lp-picker-sub">${esc(tradText)}</div>
             </div>
-          `;
-        }).join("");
-
-        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
-          link.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const item = capped[Number(link.dataset.idx)];
-            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
-          });
-        });
-
-        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
-          btn.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const chosen = capped[Number(btn.dataset.idx)];
-            if (!chosen) return;
-            const chosenTrad = tradSelect?.value || tradition || chosen.traditions[0] || "";
-            await updatePlannedLevelData(actor, levelNum, (entry) => {
-              const exists = entry.spells.some(s => s.uuid === chosen.uuid && Number(s.rank) === chosen.rank);
-              if (!exists) {
-                entry.spells.push({
-                  id: foundry.utils.randomID(8),
-                  uuid: chosen.uuid,
-                  name: chosen.name,
-                  img: chosen.img,
-                  rank: chosen.rank,
-                  isCantrip: chosen.isCantrip,
-                  tradition: chosenTrad,
-                  entryKey
-                });
-              }
+            <button type="button" class="pf2e-lp-picker-select ${isAdded ? "is-added" : ""}" data-idx="${idx}">
+              ${isAdded ? "Added ✓" : "+ Add"}
+            </button>
+          </div>
+        `;
+      },
+      onSelect: async (chosen, { btn, root, ctx }) => {
+        const chosenTrad = root.querySelector(".pf2e-lp-picker-trad")?.value || tradition || chosen.traditions[0] || "";
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          const exists = entry.spells.some(s => s.uuid === chosen.uuid && Number(s.rank) === chosen.rank);
+          if (!exists) {
+            entry.spells.push({
+              id: foundry.utils.randomID(8),
+              uuid: chosen.uuid,
+              name: chosen.name,
+              img: chosen.img,
+              rank: chosen.rank,
+              isCantrip: chosen.isCantrip,
+              tradition: chosenTrad,
+              entryKey
             });
-            addedUuids.add(chosen.uuid);
-            btn.classList.add("is-added");
-            btn.textContent = "Added ✓";
-            updateGoalBanner();
-            this.render({ force: false });
-          });
+          }
         });
-      };
-
-      let debounce = null;
-      searchInput?.addEventListener("input", () => {
-        clearTimeout(debounce);
-        debounce = setTimeout(renderList, 60);
-      });
-      tradSelect?.addEventListener("change", renderList);
-      rankSelect?.addEventListener("change", renderList);
-
-      renderList();
-      searchInput?.focus();
-    }, { once: true });
-
-    dialog.render({ force: true });
+        ctx.addedUuids.add(chosen.uuid);
+        btn.classList.add("is-added");
+        btn.textContent = "Added ✓";
+        ctx.updateGoalBanner();
+        this.render({ force: false });
+      }
+    });
   }
 
   async _openFormulaQuickPicker(actor, levelNum) {
     const esc = foundry.utils.escapeHTML;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (!DialogV2) {
-      await openNativeBrowserForFormulas({ maxLevel: levelNum });
-      return;
-    }
 
-    const content = `
-      <div class="pf2e-lp-picker">
-        <div class="pf2e-lp-picker-controls">
-          <input type="text" class="pf2e-lp-picker-search" placeholder="Search bombs, elixirs, mutagens, poisons (Lv ≤ ${levelNum})..." autofocus />
-          <select class="pf2e-lp-picker-scope" title="Filter scope">
-            <option value="common-alchemical-consumables" selected>Common Alchemical Consumables</option>
-            <option value="common-alchemical">All Common Alchemical (incl. Gear)</option>
-            <option value="all-alchemical-consumables">All Alchemical Consumables</option>
-            <option value="all-alchemical">All Alchemical (Any Rarity)</option>
-            <option value="all-items">All Craftable Equipment</option>
-          </select>
-          <label class="pf2e-lp-picker-check" title="Include items higher than Level ${levelNum}">
-            <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
-            <span>Any Lv</span>
-          </label>
-          <button type="button" class="pf2e-lp-picker-browser-btn" title="Open PF2e's full native Compendium Browser">
-            <i class="fa-solid fa-compass"></i> PF2e Browser
-          </button>
-        </div>
-        <div class="pf2e-lp-picker-status">Loading lightweight equipment index...</div>
-        <div class="pf2e-lp-picker-list"></div>
-      </div>
-    `;
-
-    const dialog = new DialogV2({
-      window: {
-        title: `Plan Alchemical Formulas — Level ${levelNum}`,
-        icon: "fa-solid fa-flask",
-        resizable: true
+    this._openQuickPickerDialog({
+      title: `Plan Alchemical Formulas — Level ${levelNum}`,
+      icon: "fa-solid fa-flask",
+      controlsHtml: `
+        <input type="text" class="pf2e-lp-picker-search" placeholder="Search bombs, elixirs, mutagens, poisons (Lv ≤ ${levelNum})..." autofocus />
+        <select class="pf2e-lp-picker-scope" title="Filter scope">
+          <option value="common-alchemical-consumables" selected>Common Alchemical Consumables</option>
+          <option value="common-alchemical">All Common Alchemical (incl. Gear)</option>
+          <option value="all-alchemical-consumables">All Alchemical Consumables</option>
+          <option value="all-alchemical">All Alchemical (Any Rarity)</option>
+          <option value="all-items">All Craftable Equipment</option>
+        </select>
+        <label class="pf2e-lp-picker-check" title="Include items higher than Level ${levelNum}">
+          <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
+          <span>Any Lv</span>
+        </label>
+      `,
+      loadingText: "Loading lightweight equipment index...",
+      changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-any-lvl"],
+      onBrowse: () => openNativeBrowserForFormulas({ maxLevel: levelNum }),
+      onReady: () => {
+        const knownSheetUuids = new Set(
+          (Array.isArray(actor.system?.crafting?.formulas) ? actor.system.crafting.formulas : [])
+            .map(f => f?.uuid)
+            .filter(Boolean)
+        );
+        const levelPlan = getActorLevelPlan(actor).levels[String(levelNum)];
+        const plannedOnThisLevel = new Set((levelPlan?.formulas || []).map(f => f?.uuid).filter(Boolean));
+        return { knownSheetUuids, plannedOnThisLevel };
       },
-      position: { width: 650, height: 540 },
-      classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
-      content,
-      buttons: [
-        {
-          action: "done",
-          label: "Done",
-          icon: "fa-solid fa-check"
-        }
-      ]
-    });
-
-    dialog.addEventListener("render", async () => {
-      const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
-      if (!root) return;
-
-      const searchInput = root.querySelector(".pf2e-lp-picker-search");
-      const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
-      const anyLvlCb = root.querySelector(".pf2e-lp-picker-any-lvl");
-      const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
-      const statusEl = root.querySelector(".pf2e-lp-picker-status");
-      const listEl = root.querySelector(".pf2e-lp-picker-list");
-
-      browserBtn?.addEventListener("click", async (ev) => {
-        ev.preventDefault();
-        await openNativeBrowserForFormulas({ maxLevel: levelNum });
-      });
-
-      const allItems = await getLightweightFormulaIndex();
-      const knownSheetUuids = new Set(
-        (Array.isArray(actor.system?.crafting?.formulas) ? actor.system.crafting.formulas : [])
-          .map(f => f?.uuid)
-          .filter(Boolean)
-      );
-      const roadmapNow = buildLevelRoadmap(actor);
-      const plannedOnThisLevel = new Set(
-        (roadmapNow?.levels?.find(l => l.level === levelNum)?.plannedFormulas || [])
-          .map(f => f?.uuid)
-          .filter(Boolean)
-      );
-
-      const renderList = () => {
-        const query = (searchInput?.value || "").trim().toLowerCase();
-        const scope = scopeSelect?.value || "common-alchemical-consumables";
-        const anyLvl = Boolean(anyLvlCb?.checked);
-
+      loadItems: () => getLightweightFormulaIndex(),
+      filterItems: (allItems, { root, query }) => {
+        const scope = root.querySelector(".pf2e-lp-picker-scope")?.value || "common-alchemical-consumables";
+        const anyLvl = Boolean(root.querySelector(".pf2e-lp-picker-any-lvl")?.checked);
         const matched = [];
         for (const item of allItems) {
           if (!anyLvl && item.level > levelNum) continue;
-
           if (scope === "common-alchemical-consumables") {
             if (!item.isAlchemical || !item.isConsumable || item.rarity !== "common") continue;
           } else if (scope === "common-alchemical") {
@@ -1483,7 +1344,6 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           } else if (scope === "all-alchemical") {
             if (!item.isAlchemical) continue;
           }
-
           if (query) {
             const nameMatch = item.name.toLowerCase().includes(query);
             const traitMatch = item.traits.some(t => t.includes(query));
@@ -1492,87 +1352,53 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           }
           matched.push(item);
         }
-
-        matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
-        const capped = matched.slice(0, 120);
-        statusEl.textContent = matched.length > 120
-          ? `Showing top 120 of ${matched.length} matching formulas — type to narrow search`
-          : `${matched.length} matching formula(s) — click Add to bookmark for Level ${levelNum}`;
-
-        if (capped.length === 0) {
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No matching items found. Try clearing search or changing filter scope.</div>`;
-          return;
-        }
-
-        listEl.innerHTML = capped.map((item, idx) => {
-          const isAdded = plannedOnThisLevel.has(item.uuid);
-          const isKnown = knownSheetUuids.has(item.uuid);
-          const traitStr = item.traits.slice(0, 5).join(" · ");
-          return `
-            <div class="pf2e-lp-picker-row">
-              <img src="${esc(item.img)}" alt="" class="pf2e-lp-picker-img" />
-              <div class="pf2e-lp-picker-info">
-                <div class="pf2e-lp-picker-name-line">
-                  <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open item sheet">${esc(item.name)}</a>
-                  <span class="pf2e-lp-picker-lvl">Lv ${item.level}</span>
-                  ${item.rarity && item.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(item.rarity)}">${esc(capitalize(item.rarity))}</span>` : ""}
-                  ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
-                </div>
-                ${traitStr ? `<div class="pf2e-lp-picker-sub">${esc(traitStr)}</div>` : ""}
+        return matched.sort((a, b) => (b.level - a.level) || a.name.localeCompare(b.name));
+      },
+      formatStatus: (total) => total > 120
+        ? `Showing top 120 of ${total} matching formulas — type to narrow search`
+        : `${total} matching formula(s) — click Add to bookmark for Level ${levelNum}`,
+      emptyText: "No matching items found. Try clearing search or changing filter scope.",
+      renderRow: (item, idx, ctx) => {
+        const isAdded = ctx.plannedOnThisLevel.has(item.uuid);
+        const isKnown = ctx.knownSheetUuids.has(item.uuid);
+        const traitStr = item.traits.slice(0, 5).join(" · ");
+        return `
+          <div class="pf2e-lp-picker-row">
+            <img src="${esc(item.img)}" alt="" class="pf2e-lp-picker-img" />
+            <div class="pf2e-lp-picker-info">
+              <div class="pf2e-lp-picker-name-line">
+                <a class="pf2e-lp-picker-inspect" data-idx="${idx}" title="Open item sheet">${esc(item.name)}</a>
+                <span class="pf2e-lp-picker-lvl">Lv ${item.level}</span>
+                ${item.rarity && item.rarity !== "common" ? `<span class="pf2e-lp-picker-rarity rarity-${esc(item.rarity)}">${esc(capitalize(item.rarity))}</span>` : ""}
+                ${isKnown ? `<span class="pf2e-lp-picker-known">Known</span>` : ""}
               </div>
-              <button type="button" class="pf2e-lp-picker-select ${isAdded ? "is-added" : ""}" data-idx="${idx}">
-                ${isAdded ? "Added ✓" : "+ Add"}
-              </button>
+              ${traitStr ? `<div class="pf2e-lp-picker-sub">${esc(traitStr)}</div>` : ""}
             </div>
-          `;
-        }).join("");
-
-        listEl.querySelectorAll(".pf2e-lp-picker-inspect").forEach(link => {
-          link.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const item = capped[Number(link.dataset.idx)];
-            if (item?.uuid) await inspectDocumentByUuid(item.uuid);
-          });
-        });
-
-        listEl.querySelectorAll(".pf2e-lp-picker-select").forEach(btn => {
-          btn.addEventListener("click", async (ev) => {
-            ev.preventDefault();
-            const chosen = capped[Number(btn.dataset.idx)];
-            if (!chosen) return;
-            await updatePlannedLevelData(actor, levelNum, (entry) => {
-              const exists = (entry.formulas || []).some(f => f.uuid === chosen.uuid);
-              if (!exists) {
-                entry.formulas.push({
-                  id: foundry.utils.randomID(8),
-                  uuid: chosen.uuid,
-                  name: chosen.name,
-                  img: chosen.img,
-                  level: chosen.level
-                });
-              }
+            <button type="button" class="pf2e-lp-picker-select ${isAdded ? "is-added" : ""}" data-idx="${idx}">
+              ${isAdded ? "Added ✓" : "+ Add"}
+            </button>
+          </div>
+        `;
+      },
+      onSelect: async (chosen, { btn, ctx }) => {
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          const exists = (entry.formulas || []).some(f => f.uuid === chosen.uuid);
+          if (!exists) {
+            entry.formulas.push({
+              id: foundry.utils.randomID(8),
+              uuid: chosen.uuid,
+              name: chosen.name,
+              img: chosen.img,
+              level: chosen.level
             });
-            plannedOnThisLevel.add(chosen.uuid);
-            btn.classList.add("is-added");
-            btn.textContent = "Added ✓";
-            this.render({ force: false });
-          });
+          }
         });
-      };
-
-      let debounce = null;
-      searchInput?.addEventListener("input", () => {
-        clearTimeout(debounce);
-        debounce = setTimeout(renderList, 60);
-      });
-      scopeSelect?.addEventListener("change", renderList);
-      anyLvlCb?.addEventListener("change", renderList);
-
-      renderList();
-      searchInput?.focus();
-    }, { once: true });
-
-    dialog.render({ force: true });
+        ctx.plannedOnThisLevel.add(chosen.uuid);
+        btn.classList.add("is-added");
+        btn.textContent = "Added ✓";
+        this.render({ force: false });
+      }
+    });
   }
 
   /* ----------------------------------------------------------------------- */
@@ -1580,17 +1406,13 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
   /* ----------------------------------------------------------------------- */
 
   async _confirmDialog({ title, content, yesLabel = "Confirm" }) {
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-    if (DialogV2?.confirm) {
-      return Boolean(await DialogV2.confirm({
-        window: { title },
-        content,
-        yes: { label: yesLabel },
-        no: { label: "Cancel" },
-        rejectClose: false
-      }));
-    }
-    return Boolean(await Dialog.confirm({ title, content }));
+    return Boolean(await foundry.applications.api.DialogV2.confirm({
+      window: { title },
+      content,
+      yes: { label: yesLabel },
+      no: { label: "Cancel" },
+      rejectClose: false
+    }));
   }
 
   async _confirmAndApplyLevelUp(actor) {
@@ -1622,9 +1444,9 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       <div class="pf2e-lp-confirm-body">
         <p>Apply guided level-up for <strong>${esc(actor.name)}</strong> from <strong>Level ${roadmap.currentLevel} → Level ${targetLevel}</strong>?</p>
         ${plannedRows.length > 0
-          ? `<ul style="margin:6px 0 8px 0;padding-left:18px;line-height:1.45;">${plannedRows.join("")}</ul>`
-          : `<p style="opacity:0.85;margin:6px 0;">No planned items are filled out for Level ${targetLevel} yet — only your character level will increase.</p>`
-        }
+        ? `<ul style="margin:6px 0 8px 0;padding-left:18px;line-height:1.45;">${plannedRows.join("")}</ul>`
+        : `<p style="opacity:0.85;margin:6px 0;">No planned items are filled out for Level ${targetLevel} yet — only your character level will increase.</p>`
+      }
         ${warnBoxHtml}
         <p style="font-size:0.86em;opacity:0.82;margin:0;">PF2e will run any native ChoiceSet dialogs automatically for newly granted class features or feats.</p>
       </div>
@@ -1643,15 +1465,10 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     try {
       const res = await applyPlannedLevelUp(actor);
       if (res.ok) {
-        const postReport = analyzeCharacter(actor);
-        const remainingNote = postReport?.actionableMissingCount > 0
-          ? ` | ${postReport.actionableMissingCount} checklist item(s) remaining`
-          : " | Build 100% Complete!";
-        const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
-        ui.notifications?.info(`${actor.name} reached Level ${res.newLevel}!${summaryStr}${remainingNote}`);
-        if (Array.isArray(res.reminders) && res.reminders.length > 0) {
-          ui.notifications?.warn(`Level ${res.newLevel} Reminders: ${res.reminders.join(" · ")}`);
-        }
+        notifyAppliedLevelChoices(actor, res, {
+          headline: `${actor.name} reached Level ${res.newLevel}!`,
+          reminderPrefix: `Level ${res.newLevel}`
+        });
         this._selectedLevel = res.newLevel < 20 ? res.newLevel + 1 : 20;
       }
     } finally {
@@ -1673,29 +1490,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const cleanInitial = Math.max(1, Math.min(currentLevel - 1, Math.floor(Number(initialTargetLevel) || (currentLevel - 1))));
     const esc = foundry.utils.escapeHTML;
-    const DialogV2 = foundry?.applications?.api?.DialogV2;
-
-    if (!DialogV2) {
-      const ok = await this._confirmDialog({
-        title: `De-Level ${actor.name} (Lv ${currentLevel} → Lv ${cleanInitial})`,
-        content: `<p>Save Level ${cleanInitial + 1 === currentLevel ? currentLevel : `${cleanInitial + 1}–${currentLevel}`} choices into the Build Plan and revert <strong>${esc(actor.name)}</strong> back to <strong>Level ${cleanInitial}</strong>?</p>`,
-        yesLabel: `Revert to Lv ${cleanInitial}`
-      });
-      if (ok) {
-        await this._executeRevertLevel(actor, {
-          targetLevel: cleanInitial,
-          saveToPlan: true,
-          revertBoosts: true,
-          revertFeats: true,
-          revertSkills: true,
-          revertSpells: true,
-          revertFormulas: true,
-          postChatReminder: true,
-          manualSkillPicks: {}
-        });
-      }
-      return;
-    }
+    const DialogV2 = foundry.applications.api.DialogV2;
 
     const state = {
       targetLevel: cleanInitial,
@@ -1711,7 +1506,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const targetOpts = [];
     for (let t = currentLevel - 1; t >= 1; t--) {
-      const rangeStr = (t + 1 === currentLevel) ? `Lv ${currentLevel}` : `Lv ${t + 1}–${currentLevel}`;
+      const rangeStr = formatLevelRange(t + 1, currentLevel);
       targetOpts.push(
         `<option value="${t}" ${t === cleanInitial ? "selected" : ""}>Level ${t} (saves &amp; reverts ${rangeStr})</option>`
       );
@@ -1808,9 +1603,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
 
         const t = preview.totals;
-        const rangeLabel = (state.targetLevel + 1 === currentLevel)
-          ? `Lv ${currentLevel}`
-          : `Lv ${state.targetLevel + 1}–${currentLevel}`;
+        const rangeLabel = formatLevelRange(state.targetLevel + 1, currentLevel);
 
         const optionRows = [];
         optionRows.push(`
@@ -1864,7 +1657,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           optionRows.push(`
             <label class="pf2e-lp-revert-opt">
               <input type="checkbox" data-revert-opt="revertFormulas" ${state.revertFormulas ? "checked" : ""} />
-              <span>Remove ${t.formulasCount} tracked / Lv ${esc(rangeLabel)} Formula${t.formulasCount === 1 ? "" : "s"}</span>
+              <span>Remove ${t.formulasCount} tracked / ${esc(rangeLabel)} Formula${t.formulasCount === 1 ? "" : "s"}</span>
             </label>
           `);
         }
@@ -2174,67 +1967,53 @@ export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
           return `${heading}${plannedList}${warnHtml}`;
         });
 
-        const rangeLabel = targetLevels.length === 1
-          ? `Level ${newLevel}`
-          : `Levels ${prevLevel + 1}–${newLevel}`;
+        const rangeLabel = formatLevelRange(prevLevel + 1, newLevel, { prefix: "Level", pluralPrefix: "Levels" });
         const hasAnythingToApply = inspection.hasPlannedChoicesInRange
           || inspection.levels.some(ls => ls.lvlData?.hasSpellMilestones);
 
         const content = `
           <div class="pf2e-lp-confirm-body">
-            <p><strong>${esc(actor.name)}</strong> leveled up directly on the sheet (<strong>Lv ${prevLevel} → Lv ${newLevel}</strong>).${
-              hasAnythingToApply
-                ? ` Would you like to apply your saved Level Planner choices for <strong>${esc(rangeLabel)}</strong>?`
-                : ` Your Level Planner has saved levels for this character, but <strong>${esc(rangeLabel)}</strong> isn't filled out yet.`
-            }</p>
+            <p><strong>${esc(actor.name)}</strong> leveled up directly on the sheet (<strong>Lv ${prevLevel} → Lv ${newLevel}</strong>).${hasAnythingToApply
+            ? ` Would you like to apply your saved Level Planner choices for <strong>${esc(rangeLabel)}</strong>?`
+            : ` Your Level Planner has saved levels for this character, but <strong>${esc(rangeLabel)}</strong> isn't filled out yet.`
+          }</p>
             ${levelBlocks.join("")}
             ${hasAnythingToApply ? `<p style="font-size:0.85em;opacity:0.82;margin:6px 0 0 0;">Already-filled slots or boosts on your live sheet will not be overwritten.</p>` : ""}
           </div>
         `;
 
-        const DialogV2 = foundry?.applications?.api?.DialogV2;
-        let choice = "skip";
-
-        if (DialogV2?.wait) {
-          const buttons = [];
-          if (hasAnythingToApply) {
-            buttons.push({
-              action: "apply",
-              label: `Apply ${rangeLabel} Plan`,
-              icon: "fa-solid fa-angles-up",
-              default: true
-            });
-          }
+        const buttons = [];
+        if (hasAnythingToApply) {
           buttons.push({
-            action: "open",
-            label: "Open Level Planner",
-            icon: "fa-solid fa-stairs",
-            default: !hasAnythingToApply
+            action: "apply",
+            label: `Apply ${rangeLabel} Plan`,
+            icon: "fa-solid fa-angles-up",
+            default: true
           });
-          buttons.push({
-            action: "skip",
-            label: "Skip",
-            icon: "fa-solid fa-xmark"
-          });
-
-          choice = await DialogV2.wait({
-            window: {
-              title: `Level Planner — ${actor.name} (${rangeLabel})`,
-              icon: "fa-solid fa-stairs"
-            },
-            classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
-            position: { width: 520 },
-            content,
-            buttons,
-            rejectClose: false
-          });
-        } else if (hasAnythingToApply) {
-          const ok = await Dialog.confirm({
-            title: `Level Planner — ${actor.name} (${rangeLabel})`,
-            content
-          });
-          choice = ok ? "apply" : "skip";
         }
+        buttons.push({
+          action: "open",
+          label: "Open Level Planner",
+          icon: "fa-solid fa-stairs",
+          default: !hasAnythingToApply
+        });
+        buttons.push({
+          action: "skip",
+          label: "Skip",
+          icon: "fa-solid fa-xmark"
+        });
+
+        const choice = await foundry.applications.api.DialogV2.wait({
+          window: {
+            title: `Level Planner — ${actor.name} (${rangeLabel})`,
+            icon: "fa-solid fa-stairs"
+          },
+          classes: ["pf2e-gm-utility", "pf2e-lp-picker-dialog"],
+          position: { width: 520 },
+          content,
+          buttons,
+          rejectClose: false
+        });
 
         if (choice === "apply") {
           const res = await applyPlannedLevelChoices(actor, targetLevels, {
@@ -2242,15 +2021,10 @@ export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
             effectiveCurrentLevel: prevLevel
           });
           if (res.ok) {
-            const postReport = analyzeCharacter(actor);
-            const remainingNote = postReport?.actionableMissingCount > 0
-              ? ` | ${postReport.actionableMissingCount} checklist item(s) remaining`
-              : " | Build 100% Complete!";
-            const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
-            ui.notifications?.info(`Applied Level Planner choices for ${actor.name} (${rangeLabel})!${summaryStr}${remainingNote}`);
-            if (Array.isArray(res.reminders) && res.reminders.length > 0) {
-              ui.notifications?.warn(`${rangeLabel} Reminders: ${res.reminders.join(" · ")}`);
-            }
+            notifyAppliedLevelChoices(actor, res, {
+              headline: `Applied Level Planner choices for ${actor.name} (${rangeLabel})!`,
+              reminderPrefix: rangeLabel
+            });
           }
         } else if (choice === "open") {
           onOpenLevelPlannerForActor?.(actor, newLevel);

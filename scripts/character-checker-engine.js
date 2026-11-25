@@ -15,7 +15,7 @@
 
 import { MODULE_ID } from "./constants.js";
 
-const VARIANT_RULES_MODULE_ID = "pf2e-awesome-variant-rules";
+export const VARIANT_RULES_MODULE_ID = "pf2e-awesome-variant-rules";
 
 export const CORE_SKILL_SLUGS = [
   "acrobatics",
@@ -78,8 +78,6 @@ export const CASTING_TYPE_LABELS = {
   focus: "Focus"
 };
 
-const RANK_LABELS = ["Untrained", "Trained", "Expert", "Master", "Legendary"];
-
 /* ------------------------------------------------------------------------- */
 /* 1. PF2E SPELLCASTING PROGRESSION TABLES (REMASTER & CORE)                 */
 /* ------------------------------------------------------------------------- */
@@ -121,36 +119,6 @@ function buildAnimistApparitionSlots(level) {
 }
 
 /**
- * Bounded / Wave spellcaster slots (Magus & Summoner, levels 1-20).
- * Keeps up to 4 total slots across the top two unlocked spell ranks.
- */
-function buildBoundedClassSlots(level, { studiousSpells = false } = {}) {
-  const slots = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
-  if (level <= 1) {
-    slots[1] = 1;
-  } else if (level === 2) {
-    slots[1] = 2;
-  } else if (level === 3) {
-    slots[1] = 2;
-    slots[2] = 1;
-  } else if (level === 4) {
-    slots[1] = 2;
-    slots[2] = 2;
-  } else {
-    const topRank = Math.min(9, Math.ceil(level / 2));
-    slots[topRank] = 2;
-    if (topRank - 1 >= 1) slots[topRank - 1] = 2;
-  }
-
-  // Magus Level 7+ Studious Spells: 2 extra slots at rank 2 (L7-10), rank 3 (L11-12), or rank 4 (L13-20)
-  if (studiousSpells && level >= 7) {
-    const studiousRank = level >= 13 ? 4 : (level >= 11 ? 3 : 2);
-    slots[studiousRank] = (slots[studiousRank] || 0) + 2;
-  }
-  return slots;
-}
-
-/**
  * Standard Multiclass / Free Archetype spellcasting slots (Basic / Expert / Master + optional Breadth).
  */
 function buildArchetypeSlots(level, { hasBasic = false, hasExpert = false, hasMaster = false, hasBreadth = false } = {}) {
@@ -184,26 +152,6 @@ function buildArchetypeSlots(level, { hasBasic = false, hasExpert = false, hasMa
     }
   }
 
-  return slots;
-}
-
-/**
- * Bounded Multiclass Archetype spellcasting slots (Magus Dedication, Summoner Dedication).
- */
-function buildBoundedArchetypeSlots(level, { hasBasic = false, hasExpert = false, hasMaster = false } = {}) {
-  const slots = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
-  let topRank = 0;
-  if (hasMaster && level >= 20) topRank = 8;
-  else if (hasMaster && level >= 18) topRank = 7;
-  else if (hasExpert && level >= 16) topRank = 6;
-  else if (hasExpert && level >= 14) topRank = 5;
-  else if (hasExpert && level >= 12) topRank = 4;
-  else if (hasBasic && level >= 8) topRank = 3;
-  else if (hasBasic && level >= 6) topRank = 2;
-  else if (hasBasic && level >= 4) topRank = 1;
-
-  if (topRank >= 1) slots[topRank] = 1;
-  if (topRank >= 2) slots[topRank - 1] = 1;
   return slots;
 }
 
@@ -593,9 +541,17 @@ function getItemSlug(item) {
   return normalizeSlug(item?.slug || item?.system?.slug || item?.name || "");
 }
 
-function capitalize(str) {
+export function capitalize(str) {
   if (!str) return "";
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function hasWizardArcaneSchool(feats, featSlugs) {
+  const isUnified = featSlugs.has("school-of-unified-magical-theory")
+    || featSlugs.has("universalist")
+    || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
+  const hasSchool = feats.some(f => /arcane school|school of /i.test(f.name || "") || getItemSlug(f).startsWith("school-of-"));
+  return hasSchool && !isUnified;
 }
 
 /**
@@ -642,10 +598,10 @@ export function getActiveVariantRules() {
 /**
  * Retrieve Dual Class data from `pf2e-awesome-variant-rules` (if installed & set on actor).
  */
-export function getActorDualClassInfo(actor) {
+export function getActorDualClassInfo(actor, variants = null) {
   if (!actor || actor.type !== "character") return null;
-  const variants = getActiveVariantRules();
-  if (!variants.dualClassEnabled) return null;
+  const activeVariants = variants || getActiveVariantRules();
+  if (!activeVariants.dualClassEnabled) return null;
 
   const flagData = game.pf2eAwesomeVariantRules?.getSecondaryClass?.(actor)
     ?? actor.getFlag?.(VARIANT_RULES_MODULE_ID, "dualClass")
@@ -1091,7 +1047,7 @@ function analyzeSkills(actor, level, dualInfo) {
  *  - Level 1: 8 common 1st-level alchemical formulas (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)
  *  - Each level after 1: +2 free common alchemical formulas (up to actor's level) -> 8 + 2 * (level - 1)
  */
-export function analyzeFormulas(actor, level, dualInfo = null) {
+function analyzeFormulas(actor, level, dualInfo = null) {
   const primarySlug = actor.class ? getItemSlug(actor.class) : "";
   const isAlchemist = primarySlug === "alchemist" || dualInfo?.slug === "alchemist";
   const feats = actor.itemTypes?.feat || [];
@@ -1160,7 +1116,7 @@ export function analyzeFormulas(actor, level, dualInfo = null) {
 /* 5. FEATS & FEAT SLOTS ANALYSIS                                            */
 /* ------------------------------------------------------------------------- */
 
-function extractGroupSlots(group) {
+export function extractGroupSlots(group) {
   const raw = group?.slots;
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
@@ -1169,7 +1125,7 @@ function extractGroupSlots(group) {
   return [];
 }
 
-function analyzeFeats(actor, level, variants, dualInfo) {
+function analyzeFeats(actor, level, dualInfo) {
   const groups = [];
   const issues = [];
   let totalSlots = 0;
@@ -1476,45 +1432,32 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       return;
     }
 
-    // Standard Full Caster or Bounded Class Caster
-    let slots;
+    // Standard Full Caster
     let cantrips = def.cantrips;
     let extraNote = "";
     let flexible = false;
 
-    if (def.mode === "bounded") {
-      const hasStudious = classSlug === "magus" && (level >= 7 || featSlugs.has("studious-spells"));
-      slots = buildBoundedClassSlots(level, { studiousSpells: hasStudious });
-      if (hasStudious) extraNote = "Includes +2 Magus Studious Spells slots";
-    } else {
-      // Check Wizard Arcane School bonus curriculum slot (all schools except Unified Magical Theory / Universalist)
-      let bonusPerRank = 0;
-      if (classSlug === "wizard") {
-        const isUnified = featSlugs.has("school-of-unified-magical-theory")
-          || featSlugs.has("universalist")
-          || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
-        const hasSchool = feats.some(f => /arcane school|school of /i.test(f.name || "") || getItemSlug(f).startsWith("school-of-"));
-        if (hasSchool && !isUnified) {
-          bonusPerRank = 1;
-          cantrips = 6; // 5 base + 1 curriculum cantrip
-          extraNote = "Includes +1 Arcane School curriculum slot per rank & +1 cantrip";
-        }
-      }
+    // Check Wizard Arcane School bonus curriculum slot (all schools except Unified Magical Theory / Universalist)
+    let bonusPerRank = 0;
+    if (classSlug === "wizard" && hasWizardArcaneSchool(feats, featSlugs)) {
+      bonusPerRank = 1;
+      cantrips = 6; // 5 base + 1 curriculum cantrip
+      extraNote = "Includes +1 Arcane School curriculum slot per rank & +1 cantrip";
+    }
 
-      slots = buildFullCasterSlots(level, def.baseSlotsPerRank, {
-        bonusPerRank,
-        hasTenthFeat,
-        includeTenth: def.includeTenth !== false
-      });
+    const slots = buildFullCasterSlots(level, def.baseSlotsPerRank, {
+      bonusPerRank,
+      hasTenthFeat,
+      includeTenth: def.includeTenth !== false
+    });
 
-      // Apply Flexible Spellcaster archetype adjustment for prepared full casters
-      if (def.castingType === "prepared" && hasFlexibleCaster) {
-        flexible = true;
-        for (let r = 1; r <= 9; r++) {
-          if (slots[r] > 1) slots[r] = Math.max(1, slots[r] - 1);
-        }
-        extraNote = extraNote ? `${extraNote}; Flexible Spellcaster (-1 slot/rank)` : "Flexible Spellcaster (-1 slot/rank, flexible collection)";
+    // Apply Flexible Spellcaster archetype adjustment for prepared full casters
+    if (def.castingType === "prepared" && hasFlexibleCaster) {
+      flexible = true;
+      for (let r = 1; r <= 9; r++) {
+        if (slots[r] > 1) slots[r] = Math.max(1, slots[r] - 1);
       }
+      extraNote = extraNote ? `${extraNote}; Flexible Spellcaster (-1 slot/rank)` : "Flexible Spellcaster (-1 slot/rank, flexible collection)";
     }
 
     // Set slot0 (cantrip preparation count for prepared casters; 0 for spontaneous)
@@ -1533,13 +1476,6 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
         signatureExpected = Math.min(9, Math.ceil(level / 2));
       }
       expectedSpellsNote = `Repertoire: ${cantrips} cantrips + ${repertoireExpected} leveled spells${signatureExpected > 0 ? ` (${signatureExpected} signature)` : ""}`;
-    } else if (def.boundedRepertoire) {
-      // Summoner repertoire: 2 at L1, 3 at L2, 4 at L3, 5 at L4+
-      repertoireExpected = Math.min(5, level + 1);
-      if (def.signatureFromLevel && level >= def.signatureFromLevel) {
-        signatureExpected = Math.min(9, Math.ceil(level / 2));
-      }
-      expectedSpellsNote = `Repertoire: ${cantrips} cantrips + ${repertoireExpected} leveled spells (top 2 ranks)`;
     } else if (def.spellbookBase) {
       const bookExpected = def.spellbookBase + Math.max(0, level - 1) * (def.spellbookPerLevel || 2);
       expectedSpellsNote = `Spellbook / Familiar: ~${def.spellbookCantrips} cantrips & ~${bookExpected} leveled spells learned (${cantrips} cantrips + ${totalLeveledSlots} slots prepared daily)`;
@@ -1674,6 +1610,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       slots[0] = castingType === "prepared" ? 5 : 0;
       const ability = tradition === "arcane" ? "int" : (tradition === "divine" || tradition === "primal" ? "wis" : "cha");
 
+      const totalLeveledSlots = countTotalLeveledSlots(slots);
       sources.push({
         key: genericKey,
         classSlug: slug,
@@ -1688,10 +1625,10 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
         traditionMissing: !tradition,
         cantrips: 5,
         slots,
-        totalLeveledSlots: countTotalLeveledSlots(slots),
+        totalLeveledSlots,
         slotsSummary: formatSlotsSummary(slots),
         expectedSpellsNote: `Detected from "${feat.name}" on Feats tab · Standard full-caster slot progression`,
-        repertoireExpected: castingType === "spontaneous" ? countTotalLeveledSlots(slots) : null,
+        repertoireExpected: castingType === "spontaneous" ? totalLeveledSlots : null,
         signatureExpected: castingType === "spontaneous" && level >= 3 ? Math.min(9, Math.ceil(level / 2)) : 0
       });
     }
@@ -1723,9 +1660,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       ability = detectPsychicAbility(actor);
     }
 
-    const slots = def.bounded
-      ? buildBoundedArchetypeSlots(level, { hasBasic, hasExpert, hasMaster })
-      : buildArchetypeSlots(level, { hasBasic, hasExpert, hasMaster, hasBreadth });
+    const slots = buildArchetypeSlots(level, { hasBasic, hasExpert, hasMaster, hasBreadth });
 
     slots[0] = def.castingType === "prepared" ? def.cantrips : 0;
 
@@ -1811,6 +1746,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     const slots = buildArchetypeSlots(level, rec);
     slots[0] = castingType === "prepared" ? 2 : 0;
     const totalLeveledSlots = countTotalLeveledSlots(slots);
+    const slotsSummary = formatSlotsSummary(slots);
     const prettyName = archSlug.split("-").map(capitalize).join(" ");
 
     sources.push({
@@ -1828,8 +1764,8 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       cantrips: 2,
       slots,
       totalLeveledSlots,
-      slotsSummary: formatSlotsSummary(slots),
-      expectedSpellsNote: `Detected from archetype spellcasting feat(s) · ${formatSlotsSummary(slots)}`,
+      slotsSummary,
+      expectedSpellsNote: `Detected from archetype spellcasting feat(s) · ${slotsSummary}`,
       repertoireExpected: castingType === "spontaneous" ? totalLeveledSlots : null,
       signatureExpected: 0
     });
@@ -2006,7 +1942,7 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
   }
 
   // 5. Druid: Order Spells
-  const druidFocusFeats = matchFeats(["order-spells", "druidic-order", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape", "tempest-surge", "goodberry", "heal-animal"]);
+  matchFeats(["order-spells", "druidic-order", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape", "tempest-surge", "goodberry", "heal-animal"]);
   if (hasClassOrDual("druid") || featSlugs.has("order-spells")) {
     const extraOrder = matchFeats(["order-magic", "advanced-elemental-spell"]).length;
     pushFocusSource({
@@ -2085,14 +2021,11 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
 
   // 9. Wizard: Arcane School Focus Spells (if Arcane School other than Unified Magical Theory, or Hand of the Apprentice)
   if (hasClassOrDual("wizard")) {
-    const isUnified = featSlugs.has("school-of-unified-magical-theory")
-      || featSlugs.has("universalist")
-      || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
-    const hasSchool = feats.some(f => /arcane school|school of /i.test(f.name || "") || getItemSlug(f).startsWith("school-of-"));
+    const hasSpecializedSchool = hasWizardArcaneSchool(feats, featSlugs);
     const wizFocusFeats = matchFeats(["hand-of-the-apprentice", "advanced-school-spell"]);
-    const hasInitialSchoolSpell = (hasSchool && !isUnified) || featSlugs.has("hand-of-the-apprentice");
+    const hasInitialSchoolSpell = hasSpecializedSchool || featSlugs.has("hand-of-the-apprentice");
     if (hasInitialSchoolSpell || wizFocusFeats.length > 0) {
-      const expectedCount = (hasSchool && !isUnified ? 1 : 0) + wizFocusFeats.length;
+      const expectedCount = (hasSpecializedSchool ? 1 : 0) + wizFocusFeats.length;
       pushFocusSource({
         key: `focus:wizard:${classSourceKind("wizard")}`,
         classSlug: "wizard",
@@ -2170,7 +2103,7 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
     "qi-spells", "ki-strike", "inner-upheaval", "ki-rush", "qi-rush", "wholeness-of-body",
     "harmonize-self", "abundant-step", "wind-jump", "quivering-palm", "ki-blast", "qi-blast",
     "ki-form", "qi-form", "wronged-monks-wrath", "medusas-wrath", "ki-cutting-sight",
-    "qi-form", "golden-body", "quivering-palm"
+    "golden-body"
   ];
   const monkQiFeats = matchFeats(monkQiSlugs);
   if (monkQiFeats.length > 0) {
@@ -2573,7 +2506,6 @@ function analyzeSpellcasting(actor, level, dualInfo) {
 
     let currentCantrips = 0;
     let currentLeveledSpells = 0;
-    const spellsByRank = {};
 
     for (const sp of entrySpells) {
       const isCantrip = Boolean(sp.isCantrip || sp.system?.traits?.value?.includes("cantrip"));
@@ -2581,8 +2513,6 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         currentCantrips++;
       } else {
         currentLeveledSpells++;
-        const r = Number(sp.system?.location?.heightenedLevel ?? sp.rank ?? sp.system?.level?.value ?? 1);
-        spellsByRank[r] = (spellsByRank[r] || 0) + 1;
       }
     }
 
@@ -2842,7 +2772,7 @@ export function analyzeCharacter(actor) {
   const level = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
   const intMod = Number(actor.system?.abilities?.int?.mod ?? 0);
   const variants = getActiveVariantRules();
-  const dualInfo = getActorDualClassInfo(actor);
+  const dualInfo = getActorDualClassInfo(actor, variants);
 
   const primarySlug = actor.class ? getItemSlug(actor.class) : "";
   const requiresDeity = primarySlug === "cleric"
@@ -2945,7 +2875,7 @@ export function analyzeCharacter(actor) {
   const attributes = analyzeAttributeBoosts(actor, level, variants, dualInfo);
   const skills = analyzeSkills(actor, level, dualInfo);
   const formulas = analyzeFormulas(actor, level, dualInfo);
-  const feats = analyzeFeats(actor, level, variants, dualInfo);
+  const feats = analyzeFeats(actor, level, dualInfo);
   const spellcasting = analyzeSpellcasting(actor, level, dualInfo);
 
   // 3. Lightweight Readiness (Informational only)

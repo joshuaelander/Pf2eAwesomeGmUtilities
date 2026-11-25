@@ -49,23 +49,14 @@ function canAutoModifySpellcasting(actor) {
 }
 
 function getTraditionOptions(selected = "") {
-  return [
-    { value: "arcane", label: "Arcane", selected: selected === "arcane" },
-    { value: "divine", label: "Divine", selected: selected === "divine" },
-    { value: "occult", label: "Occult", selected: selected === "occult" },
-    { value: "primal", label: "Primal", selected: selected === "primal" }
-  ];
+  return Object.entries(TRADITION_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: selected === value
+  }));
 }
 
-function getAbilityOptions(selected = "int") {
-  return [
-    { value: "int", label: "INT", selected: selected === "int" },
-    { value: "wis", label: "WIS", selected: selected === "wis" },
-    { value: "cha", label: "CHA", selected: selected === "cha" }
-  ];
-}
-
-function collectCandidateActors(showAllWorldPCs = false) {
+export function collectCandidateActors(showAllWorldPCs = false) {
   const isGM = Boolean(game.user?.isGM);
   const byId = new Map();
 
@@ -185,10 +176,8 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         img: report.actorImg,
         level: report.level,
         classDisplay: report.classDisplay,
-        completenessPct: report.completenessPct,
         status: report.status,
         statusLabel: report.statusLabel,
-        actionableMissingCount: report.actionableMissingCount,
         isSelected
       });
       if (isSelected) selectedReport = report;
@@ -207,17 +196,12 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         isFocus: src.castingType === "focus",
         isMissing: !src.entryExists,
         isOutdated: Boolean(src.entryExists && src.slotsOutdated),
-        isNeedsSpells: Boolean(src.entryExists && !src.slotsOutdated && src.status === "incomplete"),
-        isComplete: src.status === "complete",
         hasCantrips: src.cantrips > 0,
-        traditionOptions: getTraditionOptions(src.tradition || "arcane"),
-        abilityOptions: getAbilityOptions(src.ability || "int")
+        traditionOptions: getTraditionOptions(src.tradition || "arcane")
       }));
 
       selectedReport.skills.isTrainedMissing = selectedReport.skills.trainedStatus === "missing";
-      selectedReport.skills.isTrainedComplete = selectedReport.skills.trainedStatus === "complete";
       selectedReport.skills.isIncreasesMissing = selectedReport.skills.increasesStatus === "missing";
-      selectedReport.skills.isIncreasesComplete = selectedReport.skills.increasesStatus === "complete";
       selectedReport.skills.isLoreMissing = selectedReport.skills.missingLoreCount > 0;
       selectedReport.skills.knownLoresText = selectedReport.skills.knownLoreNames.join(", ");
       selectedReport.skills.missingBgLoresText = selectedReport.skills.missingBgLores.join(", ");
@@ -242,7 +226,6 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
       showAllWorldPCs: this._showAllWorldPCs,
       levelPlannerEnabled: Boolean(isLevelPlannerEnabled() && this._onOpenLevelPlanner),
       roster,
-      hasRoster: roster.length > 0,
       report: selectedReport,
       hasReport: Boolean(selectedReport)
     };
@@ -342,7 +325,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         break;
 
       case "open-sheet":
-        if (actor?.sheet) actor.sheet.render(true);
+        if (actor?.sheet) actor.sheet.render({ force: true });
         break;
 
       case "open-level-planner":
@@ -383,10 +366,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
         const card = btn.closest(".pf2e-cc-spell-card");
         const tradSelect = card?.querySelector(".pf2e-cc-trad-select");
-        const abilSelect = card?.querySelector(".pf2e-cc-abil-select");
-        const overrides = {};
-        if (tradSelect?.value) overrides.tradition = tradSelect.value;
-        if (abilSelect?.value) overrides.ability = abilSelect.value;
+        const overrides = tradSelect?.value ? { tradition: tradSelect.value } : {};
 
         const created = await createSpellcastingEntry(actor, spec, overrides);
         if (created) {
@@ -741,10 +721,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         if (!src.entryExists && isEditable) {
           const tradSelectHtml = src.traditionMissing ? `
             <select class="pf2e-cc-sheet-select pf2e-cc-sheet-trad" title="Choose Spellcasting Tradition">
-              <option value="arcane">Arcane</option>
-              <option value="divine">Divine</option>
-              <option value="occult">Occult</option>
-              <option value="primal">Primal</option>
+              ${Object.entries(TRADITION_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}
             </select>
           ` : "";
           actionHtml = `

@@ -50,7 +50,7 @@ function safeJsonByteLength(obj) {
 /* 1. PERFORMANCE MONITOR ENGINE (SINGLETON)                                 */
 /* ------------------------------------------------------------------------- */
 
-export class PerformanceMonitorEngine {
+class PerformanceMonitorEngine {
   constructor() {
     this.enabled = false;
     this.hookProfiling = false;
@@ -62,7 +62,6 @@ export class PerformanceMonitorEngine {
     this._origHooksOff = null;
     this._hookOwners = new Map();       // hookId -> { moduleId, hook }
     this._wrappedEntries = new Map();   // hookId -> { entry, origFn, wrapperFn }
-    this._activeHookContext = null;
 
     // Per-hook & per-module execution metrics
     this._hookStats = new Map();        // hookName -> { hook, calls, totalMs, maxMs, modules: Set }
@@ -477,8 +476,6 @@ export class PerformanceMonitorEngine {
     const self = this;
 
     const wrapperFn = function (...args) {
-      const prevCtx = self._activeHookContext;
-      self._activeHookContext = `${hookName} (${self.getPackageTitle(ownerId)})`;
       const memObj = performance?.memory;
       const memBefore = memObj ? memObj.usedJSHeapSize : 0;
       const t0 = performance.now();
@@ -487,7 +484,6 @@ export class PerformanceMonitorEngine {
       } finally {
         const t1 = performance.now();
         const dt = t1 - t0;
-        self._activeHookContext = prevCtx;
         self._recordHookTiming(hookName, ownerId, dt, t0, t1);
         if (dt >= 4 && memObj && memBefore > 0 && !self._auditInProgress) {
           const gainMB = (memObj.usedJSHeapSize - memBefore) / (1024 * 1024);
@@ -1287,7 +1283,6 @@ export class PerformanceMonitorEngine {
       }
       if (details && !latest.details.includes(details)) {
         latest.details = latest.details ? `${latest.details} · ${details}` : details;
-        latest.context = `${latest.culprit} — ${latest.details}`;
       }
       return;
     }
@@ -1304,8 +1299,7 @@ export class PerformanceMonitorEngine {
       severity,
       culprit,
       category,
-      details,
-      context: details ? `${culprit} — ${details}` : culprit
+      details
     });
     if (this._longTasks.length > 60) this._longTasks.pop();
   }
@@ -2549,7 +2543,6 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
       health,
       startupAttributed: performanceMonitor._startupAttributed,
       loafSupported: performanceMonitor._loafSupported,
-      hasHookData: hotHooks.length > 0,
 
       modules,
       moduleSummary,
@@ -2755,16 +2748,6 @@ export class PerformanceMonitorApp extends HandlebarsApplicationMixin(Applicatio
         }
         break;
       }
-
-      case "open-tab-errors":
-        this._activeTab = "errors";
-        this.render({ force: false });
-        break;
-
-      case "open-tab-modules":
-        this._activeTab = "modules";
-        this.render({ force: false });
-        break;
 
       case "open-tab-hooks":
         this._activeTab = "hooks";

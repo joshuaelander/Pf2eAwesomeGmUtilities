@@ -10,7 +10,6 @@
 /* 1. WINDOW CHROME & LAYOUT                                                 */
 /* ------------------------------------------------------------------------- */
 
-.app.pf2e-lp-window,
 .pf2e-lp-window {
   background: var(--pf2e-gm-bg-window) !important;
   color: var(--pf2e-gm-text-primary) !important;

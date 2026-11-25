@@ -160,7 +160,7 @@ function registerSettings() {
     default: { banks: DEFAULT_BANKS },
     onChange: () => {
       if (soundPadInstance?.rendered) {
-        soundPadInstance.render(false);
+        soundPadInstance.render({ force: false });
       }
     }
   });
@@ -217,8 +217,8 @@ function registerSettings() {
     range: { min: 40, max: 100, step: 5 },
     default: 100,
     onChange: (val) => {
-      const el = $(`#pf2e-sound-pad`);
-      if (el.length) el.css("opacity", val / 100);
+      const el = document.querySelector("#pf2e-sound-pad");
+      if (el) el.style.opacity = `${val / 100}`;
     }
   });
 
@@ -232,8 +232,8 @@ function registerSettings() {
     range: { min: 40, max: 100, step: 5 },
     default: 100,
     onChange: (val) => {
-      const el = $(`#pf2e-scene-switcher`);
-      if (el.length) el.css("opacity", val / 100);
+      const el = document.querySelector("#pf2e-scene-switcher");
+      if (el) el.style.opacity = `${val / 100}`;
     }
   });
 
@@ -299,15 +299,6 @@ function registerSettings() {
       const el = document.querySelector("#pf2e-resource-tracker");
       if (el) el.style.opacity = `${val / 100}`;
     }
-  });
-
-  // Master Volume (Client-side)
-  game.settings.register(MODULE_ID, "soundPadMasterVolume", {
-    name: "Sound Pad Master Volume",
-    scope: "client",
-    config: false,
-    type: Number,
-    default: 1.0
   });
 
   // Scene Link Default Action
@@ -561,7 +552,7 @@ function registerKeybindings() {
       if (pad.rendered) {
         pad.close();
       } else {
-        pad.render(true, { focus: true });
+        pad.render({ force: true });
       }
       return true;
     },
@@ -672,7 +663,6 @@ function registerSceneControls(controls) {
   };
 
   const scenesControl = findControl("scenes");
-  const notesControl = findControl("notes");
   const tokenControl = Array.isArray(controls)
     ? controls.find(c => c?.name === "token" || c?.name === "tokens")
     : (controls.get?.("token") || controls.get?.("tokens") || controls?.token || controls?.tokens);
@@ -928,10 +918,10 @@ function patchTokenHover() {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 4. PLAYLIST SIDEBAR DIRECTORY HEADER BUTTON                               */
+/* 4. SIDEBAR DIRECTORY HEADER BUTTONS                                       */
 /* ------------------------------------------------------------------------- */
 
-function registerSidebarHeaderButton(app, html) {
+function injectSidebarHeaderButton(html, { className, title, icon, label, onClick }) {
   if (!game.user.isGM) return;
 
   // In Foundry v14, html can be a native HTMLElement, DocumentFragment, or jQuery object
@@ -941,41 +931,15 @@ function registerSidebarHeaderButton(app, html) {
   if (!root) return;
 
   const headerActions = root.querySelector?.(".header-actions");
-  if (headerActions && !headerActions.querySelector(".pf2e-sound-pad-btn")) {
+  if (headerActions && !headerActions.querySelector(`.${className}`)) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "pf2e-sound-pad-btn";
-    btn.title = "Open Music & SFX Sound Pad";
-    btn.innerHTML = `<i class="fa-solid fa-compact-disc"></i> Sound Pad`;
+    btn.className = className;
+    btn.title = title;
+    btn.innerHTML = `<i class="${icon}"></i> ${label}`;
     btn.addEventListener("click", (e) => {
       e.preventDefault();
-      const pad = getSoundPad();
-      if (pad.rendered) pad.close();
-      else pad.render({ force: true });
-    });
-    headerActions.appendChild(btn);
-  }
-}
-
-function registerSceneSidebarHeaderButton(app, html) {
-  if (!game.user.isGM) return;
-
-  const root = html instanceof HTMLElement
-    ? html
-    : (html?.[0] instanceof HTMLElement ? html[0] : (typeof $ !== "undefined" ? $(html)[0] : null));
-  if (!root) return;
-
-  const headerActions = root.querySelector?.(".header-actions");
-  if (headerActions && !headerActions.querySelector(".pf2e-scene-switcher-btn")) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "pf2e-scene-switcher-btn";
-    btn.title = "Open Session Scene Switcher";
-    btn.innerHTML = `<i class="fa-solid fa-map-location-dot"></i> Scene Switcher`;
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      const switcher = getSceneSwitcher();
-      switcher.toggle();
+      onClick();
     });
     headerActions.appendChild(btn);
   }
@@ -1045,7 +1009,7 @@ async function getOrCreateFolder(name, type) {
       return null;
     }
   } else {
-    const currentDef = folder.ownership?.default ?? folder.ownership?.["default"];
+    const currentDef = folder.ownership?.default;
     if (currentDef !== CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE) {
       await folder.update({ ownership: gmOnlyOwnership });
     }
@@ -1071,7 +1035,7 @@ async function syncMacros() {
     );
 
     if (existing) {
-      const currentDefault = existing.ownership?.default ?? existing.ownership?.["default"];
+      const currentDefault = existing.ownership?.default;
       const needsUpdate =
         existing.command !== desired.command ||
         existing.img !== desired.icon ||
@@ -1105,10 +1069,6 @@ async function syncMacros() {
 
 Hooks.once("init", () => {
   console.log("PF2e Awesome GM Utilities | Initializing Module...");
-  if (typeof document !== "undefined" && document.body) {
-    document.body.classList.toggle("is-gm", Boolean(game.user?.isGM));
-    document.body.classList.toggle("is-player", !game.user?.isGM);
-  }
   registerSettings();
   performanceMonitor.onInit();
   registerKeybindings();
@@ -1132,11 +1092,27 @@ Hooks.on("getSceneControlButtons", (controls) => {
 });
 
 Hooks.on("renderPlaylistDirectory", (app, html) => {
-  registerSidebarHeaderButton(app, html);
+  injectSidebarHeaderButton(html, {
+    className: "pf2e-sound-pad-btn",
+    title: "Open Music & SFX Sound Pad",
+    icon: "fa-solid fa-compact-disc",
+    label: "Sound Pad",
+    onClick: () => {
+      const pad = getSoundPad();
+      if (pad.rendered) pad.close();
+      else pad.render({ force: true });
+    }
+  });
 });
 
 Hooks.on("renderSceneDirectory", (app, html) => {
-  registerSceneSidebarHeaderButton(app, html);
+  injectSidebarHeaderButton(html, {
+    className: "pf2e-scene-switcher-btn",
+    title: "Open Session Scene Switcher",
+    icon: "fa-solid fa-map-location-dot",
+    label: "Scene Switcher",
+    onClick: () => getSceneSwitcher().toggle()
+  });
 });
 
 Hooks.on("renderSettingsConfig", (app, html) => {
@@ -1297,8 +1273,7 @@ Hooks.once("ready", async () => {
   // Socket listener for live widget synchronization across clients
   if (game.socket) {
     try {
-      const socketChannel = typeof SOCKET_EVENT !== "undefined" ? SOCKET_EVENT : `module.${MODULE_ID}`;
-      game.socket.on(socketChannel, (payload) => {
+      game.socket.on(SOCKET_EVENT, (payload) => {
         if (payload?.action === "syncWidget") {
           syncWidgetApp();
         }

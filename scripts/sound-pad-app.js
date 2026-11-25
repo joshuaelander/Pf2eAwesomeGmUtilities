@@ -5,16 +5,12 @@
  */
 
 import { MODULE_ID, COLOR_THEMES, DEFAULT_BANKS } from "./constants.js";
-import { audioController, volumeToSlider, sliderToVolume } from "./audio-controller.js";
+import { audioController, volumeToSlider } from "./audio-controller.js";
 import { SoundConfigDialog } from "./sound-config-dialog.js";
 
-// Determine base Application class (ApplicationV2 for Foundry v14, fallback for v11/v12)
-const isAppV2 = !!(foundry.applications?.api?.ApplicationV2 && foundry.applications?.api?.HandlebarsApplicationMixin);
-const BaseClass = isAppV2
-  ? foundry.applications.api.HandlebarsApplicationMixin(foundry.applications.api.ApplicationV2)
-  : Application;
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
-export class SoundPadApp extends BaseClass {
+export class SoundPadApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
     super(options);
 
@@ -29,22 +25,8 @@ export class SoundPadApp extends BaseClass {
   }
 
   /* ------------------------------------------------------------------------- */
-  /* Static Options & Configuration (ApplicationV2 / Application)             */
+  /* Static Options & Configuration (ApplicationV2)                            */
   /* ------------------------------------------------------------------------- */
-
-  static get defaultOptions() {
-    if (isAppV2) return super.defaultOptions;
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: "pf2e-sound-pad",
-      title: "PF2e Music Sound Pad",
-      template: `modules/${MODULE_ID}/templates/sound-pad.hbs`,
-      classes: ["pf2e-sound-pad-window"],
-      width: 580,
-      height: "auto",
-      resizable: true,
-      minimizable: true
-    });
-  }
 
   static DEFAULT_OPTIONS = {
     id: "pf2e-sound-pad",
@@ -203,8 +185,6 @@ export class SoundPadApp extends BaseClass {
   }
 
   activateListeners(html) {
-    if (!isAppV2) super.activateListeners(html);
-
     // Apply saved opacity
     const opacity = game.settings.get(MODULE_ID, "soundPadOpacity") ?? 100;
     html.css("opacity", opacity / 100);
@@ -266,7 +246,8 @@ export class SoundPadApp extends BaseClass {
       const slotId = $(e.currentTarget).data("slot-id");
       const slot = this._getSlot(slotId);
       if (slot) {
-        if (slot.isEmpty && this.isEditMode) {
+        const isEmpty = !slot.soundId && !slot.src && !slot.playlistId;
+        if (isEmpty && this.isEditMode) {
           await this._onEditSlot(slotId);
         } else {
           await audioController.triggerSlot(slot);
@@ -414,8 +395,7 @@ export class SoundPadApp extends BaseClass {
 
     // Fallback to configured default volume if not determined from track
     if (slotVolume == null) {
-      const defPct = game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40;
-      slotVolume = sliderToVolume(defPct / 100);
+      slotVolume = audioController.getDefaultVolume();
     }
 
     // Update slot
@@ -584,7 +564,7 @@ export class SoundPadApp extends BaseClass {
     const slot = this._getSlot(slotId);
     if (!slot) return;
 
-    await SoundConfigDialog.open(slot, this.activeBankId, async (updatedSlot) => {
+    await SoundConfigDialog.open(slot, async (updatedSlot) => {
       const data = game.settings.get(MODULE_ID, "soundboardData") || { banks: DEFAULT_BANKS };
       const bank = data.banks.find(b => b.id === this.activeBankId);
       if (bank) {
@@ -604,7 +584,6 @@ export class SoundPadApp extends BaseClass {
     if (!bank) return;
 
     const newSlotId = `slot-${Date.now()}`;
-    const defPct = game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40;
     const newSlot = {
       id: newSlotId,
       name: `Slot ${bank.slots.length + 1}`,
@@ -615,7 +594,7 @@ export class SoundPadApp extends BaseClass {
       color: "crimson",
       icon: "fa-solid fa-music",
       mode: "loop",
-      volume: sliderToVolume(defPct / 100),
+      volume: audioController.getDefaultVolume(),
       fadeDuration: 1.5
     };
 

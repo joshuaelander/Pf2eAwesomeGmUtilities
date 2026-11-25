@@ -27,6 +27,10 @@
     --pf2e-gm-bg-elevated: #1b1b22; /* Elevated active tabs / hover states */
     --pf2e-gm-bg-btn-hover: #221618; /* Standard button & row hover (crimson tint) */
     --pf2e-gm-bg-overlay: rgba(15, 15, 18, 0.94); /* Translucent floating HUD backdrop */
+    --pf2e-gm-bg-input-rgb: 8, 8, 10;
+    --pf2e-gm-bg-sidebar-rgb: 10, 10, 13;
+    --pf2e-gm-bg-window-rgb: 15, 15, 18;
+    --pf2e-gm-bg-btn-rgb: 20, 20, 24;
     /* -------------------------------------------------------------------------
      2. FOUNDRY / PATHFINDER CRIMSON RED STRUCTURAL CHROME
      ------------------------------------------------------------------------- */
@@ -88,7 +92,6 @@
     --pf2e-gm-cyan-rgb: 92, 142, 242;
     /* Pathfinder Ruby-Crimson — Critical Alerts, Missing, Delete, Combat */
     --pf2e-gm-pink: #d60020;
-    --pf2e-gm-pink-deep: #d60020;
     --pf2e-gm-pink-bright: #d60020;
     --pf2e-gm-pink-soft: #d60020;
     --pf2e-gm-pink-pale: #d60020;

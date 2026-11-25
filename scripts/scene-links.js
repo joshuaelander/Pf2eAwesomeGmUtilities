@@ -424,7 +424,7 @@ export class SceneLinks {
   static async showTransitionMenu(scene, options = {}) {
     const isViewing = canvas.scene?.id === scene.id;
     const isActive = scene.isActive;
-    const darkness = scene.darkness ?? 0;
+    const darkness = scene.environment?.darknessLevel ?? scene.darkness ?? 0;
     const darknessPct = Math.round(darkness * 100);
 
     let lightIcon = "fa-sun";
@@ -451,7 +451,7 @@ export class SceneLinks {
       journalEntry: options.noteDoc?.entry || null
     };
 
-    const content = await renderTemplate(
+    const content = await foundry.applications.handlebars.renderTemplate(
       `modules/${MODULE_ID}/templates/scene-transition-dialog.hbs`,
       context
     );
@@ -475,9 +475,9 @@ export class SceneLinks {
             } else if (action === "activate-party") {
               await SceneLinks.activateAndPlaceParty(scene);
             } else if (action === "journal" && options.noteDoc?.entry) {
-              options.noteDoc.entry.sheet.render(true);
+              options.noteDoc.entry.sheet.render({ force: true });
             } else if (action === "config") {
-              scene.sheet.render(true);
+              scene.sheet.render({ force: true });
             }
           });
         });
@@ -520,7 +520,7 @@ export class SceneLinks {
     }
 
     const defaultIcon = game.settings.get(MODULE_ID, "sceneLinkDefaultIcon") || "icons/svg/castle.svg";
-    await SceneLinks.createSceneLinkNote(canvasObj, coords, scene, {
+    await SceneLinks.createSceneLinkNote(coords, scene, {
       icon: defaultIcon === "scene-thumb" ? getSceneThumbnail(scene) : defaultIcon
     });
 
@@ -653,18 +653,19 @@ export class SceneLinks {
     }
 
     const currentSceneId = canvas.scene.id;
+    const initialSceneDoc = game.scenes.contents.find(s => s.id !== currentSceneId) || game.scenes.contents[0];
+    const initialSceneId = initialSceneDoc?.id || "";
+
     const scenes = game.scenes.contents.map(s => ({
       id: s.id,
       name: s.name,
       thumb: getSceneThumbnail(s),
       folderName: s.folder?.name || "",
       isActive: s.isActive,
-      isSelected: s.id !== currentSceneId
+      isSelected: s.id === initialSceneId
     }));
 
-    // Auto-select first non-current scene if available
-    const initialScene = scenes.find(s => s.id !== currentSceneId) || scenes[0];
-    const initialSceneId = initialScene?.id || "";
+    const initialScene = scenes.find(s => s.id === initialSceneId) || scenes[0];
 
     const defaultIcon = game.settings.get(MODULE_ID, "sceneLinkDefaultIcon") || "icons/svg/castle.svg";
     const pinIcons = MAP_PIN_ICONS.map(p => ({
@@ -683,7 +684,7 @@ export class SceneLinks {
       isGlobal: false
     };
 
-    const content = await renderTemplate(
+    const content = await foundry.applications.handlebars.renderTemplate(
       `modules/${MODULE_ID}/templates/scene-link-picker.hbs`,
       context
     );
@@ -777,14 +778,15 @@ export class SceneLinks {
         // FilePicker browse button
         const browseBtn = root.querySelector(".btn-file-picker");
         browseBtn?.addEventListener("click", () => {
-          new FilePicker({
+          const FilePickerCls = foundry.applications.apps.FilePicker.implementation;
+          new FilePickerCls({
             type: "image",
             current: customIconInput?.value || "icons/svg/",
             callback: (path) => {
               if (customIconInput) customIconInput.value = path;
               iconButtons.forEach(b => b.classList.remove("selected"));
             }
-          }).render(true);
+          }).browse();
         });
       }
     }, {
@@ -810,12 +812,11 @@ export class SceneLinks {
 
   /**
    * Creates the Note document on canvas.scene.
-   * @param {Canvas} canvasObj
    * @param {{x: number, y: number}} coords
    * @param {Scene} scene
    * @param {object} options
    */
-  static async createSceneLinkNote(canvasObj, coords, scene, options = {}) {
+  static async createSceneLinkNote(coords, scene, options = {}) {
     if (!canvas?.scene) return;
 
     const iconPath = options.icon || "icons/svg/castle.svg";
@@ -828,7 +829,6 @@ export class SceneLinks {
       entryId: null,
       x: Math.round(coords.x),
       y: Math.round(coords.y),
-      icon: iconPath,
       texture: {
         src: iconPath
       },
@@ -972,6 +972,6 @@ class SceneLinkPlacementSession {
 
     this._cleanup();
 
-    await SceneLinks.createSceneLinkNote(canvas, coords, this.scene, this.config);
+    await SceneLinks.createSceneLinkNote(coords, this.scene, this.config);
   }
 }

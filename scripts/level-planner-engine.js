@@ -18,16 +18,17 @@ import {
   ABILITY_LABELS,
   CORE_SKILL_SLUGS,
   TRADITION_LABELS,
+  VARIANT_RULES_MODULE_ID,
   analyzeCharacter,
+  capitalize,
   createOrSyncAllSpellcastingEntries,
+  extractGroupSlots,
   formatSlotsSummary,
   getActiveVariantRules,
   getActorDualClassInfo,
   normalizeSlug,
   syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
-
-const VARIANT_RULES_MODULE_ID = "pf2e-awesome-variant-rules";
 
 const PLAN_FLAG_KEY = "levelPlan";
 const ABILITY_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
@@ -77,7 +78,7 @@ export function getActorLevelPlan(actor) {
   };
 }
 
-export async function saveActorLevelPlan(actor, plan) {
+async function saveActorLevelPlan(actor, plan) {
   if (!actor || actor.type !== "character") return false;
   if (!game.user?.isGM && !actor.isOwner) return false;
   const clean = {
@@ -88,19 +89,22 @@ export async function saveActorLevelPlan(actor, plan) {
   return true;
 }
 
-export async function updatePlannedLevelData(actor, levelNum, mutatorFn) {
-  const plan = getActorLevelPlan(actor);
+function createEmptyLevelPlanEntry() {
+  return {
+    boosts: [],
+    skillIncrease: null,
+    intBonusSkill: null,
+    intBonusLanguage: "",
+    feats: {},
+    spells: [],
+    formulas: []
+  };
+}
+
+function ensurePlanLevelEntry(plan, levelNum) {
   const key = String(levelNum);
   if (!plan.levels[key] || typeof plan.levels[key] !== "object") {
-    plan.levels[key] = {
-      boosts: [],
-      skillIncrease: null,
-      intBonusSkill: null,
-      intBonusLanguage: "",
-      feats: {},
-      spells: [],
-      formulas: []
-    };
+    plan.levels[key] = createEmptyLevelPlanEntry();
   }
   const entry = plan.levels[key];
   if (!Array.isArray(entry.boosts)) entry.boosts = [];
@@ -110,7 +114,12 @@ export async function updatePlannedLevelData(actor, levelNum, mutatorFn) {
   if (!entry.feats || typeof entry.feats !== "object") entry.feats = {};
   if (!Array.isArray(entry.spells)) entry.spells = [];
   if (!Array.isArray(entry.formulas)) entry.formulas = [];
+  return entry;
+}
 
+export async function updatePlannedLevelData(actor, levelNum, mutatorFn) {
+  const plan = getActorLevelPlan(actor);
+  const entry = ensurePlanLevelEntry(plan, levelNum);
   mutatorFn(entry, plan);
   return await saveActorLevelPlan(actor, plan);
 }
@@ -132,7 +141,7 @@ export function hasAnySavedLevelPlan(actor) {
   return false;
 }
 
-export function resolveLanguageSlug(input) {
+function resolveLanguageSlug(input) {
   const raw = String(input || "").trim();
   if (!raw) return null;
   const langs = CONFIG.PF2E?.languages;
@@ -170,21 +179,13 @@ export async function clearPlannedFeat(actor, levelNum, slotKey) {
   if (!game.user?.isGM && !actor.isOwner) return false;
   const key = String(levelNum);
 
-  // Use Foundry v14's native ForcedDeletion operator (`_del`) to avoid legacy `-=` deprecation warnings
-  const ForcedDeletion = foundry?.data?.operators?.ForcedDeletion;
-  const delOp = globalThis._del !== undefined
-    ? globalThis._del
-    : (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+  // Use Foundry v14's native ForcedDeletion operator (`_del`)
+  const ForcedDeletion = foundry.data.operators.ForcedDeletion;
+  const delOp = globalThis._del ?? (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
 
-  if (delOp !== undefined) {
-    await actor.update({
-      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}`]: delOp
-    });
-  } else {
-    await actor.update({
-      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.-=${slotKey}`]: null
-    });
-  }
+  await actor.update({
+    [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}`]: delOp
+  });
 
   // Defensive fallback in case an exotic slotKey wasn't deleted by the operator
   const stillPresent = actor.getFlag?.(MODULE_ID, PLAN_FLAG_KEY)?.levels?.[key]?.feats?.[slotKey];
@@ -226,9 +227,20 @@ function unionLevels(...arrays) {
   return Array.from(set).sort((a, b) => a - b);
 }
 
-function capitalize(str) {
-  if (!str) return "";
-  return str.charAt(0).toUpperCase() + str.slice(1);
+function parseLevelList(targetLevels) {
+  return Array.from(new Set(
+    (Array.isArray(targetLevels) ? targetLevels : [targetLevels])
+      .map(Number)
+      .filter(n => Number.isFinite(n) && n >= 1 && n <= 20)
+  )).sort((a, b) => a - b);
+}
+
+function getBaseAncestryLanguageSet(actor) {
+  return new Set(
+    (Array.isArray(actor.ancestry?.system?.languages?.value) ? actor.ancestry.system.languages.value : [])
+      .map(s => String(s || "").toLowerCase())
+      .filter(Boolean)
+  );
 }
 
 /**
@@ -458,7 +470,7 @@ function getBaseBoostCounts(actor, currentLevel, dualInfo) {
  * Returns the maximum PF2e skill rank legally allowed via Skill Increases at `level`.
  * (Lv 1-2: Trained=1, Lv 3-6: Expert=2, Lv 7-14: Master=3, Lv 15-20: Legendary=4)
  */
-export function maxSkillRankForLevel(level) {
+function maxSkillRankForLevel(level) {
   if (level >= 15) return 4;
   if (level >= 7) return 3;
   if (level >= 3) return 2;
@@ -636,22 +648,14 @@ function formatSpellPickPrompt(milestone, plannedForSource = []) {
  * Computes which spell ranks unlock, gain extra slots, and how many new spells to learn
  * at each level `1..20` based on the actor's active spellcasting sources.
  */
-function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport) {
+function computeSpellMilestonesByLevel(baseReport) {
   const byLevel = {};
   const sources = baseReport?.spellcasting?.sources || [];
   if (sources.length === 0) return byLevel;
 
-  // Determine highest rank & slot table for each non-focus casting source at level L
+  // Determine highest rank & slot table for each non-focus, non-font casting source at level L
   const getSlotsAtLevel = (src, lvl) => {
     const slots = {};
-    if (src.isFocus || src.castingType === "focus") {
-      return { isFocus: true, focusRank: Math.min(10, Math.ceil(lvl / 2)) };
-    }
-    if (src.isDivineFont) {
-      const r = Math.min(10, Math.ceil(lvl / 2));
-      slots[r] = lvl >= 19 ? 6 : (lvl >= 15 ? 5 : 4);
-      return { slots, maxRank: r };
-    }
     if (src.sourceKind === "archetype") {
       if (lvl >= 4) slots[1] = 1;
       if (lvl >= 6) slots[2] = 1;
@@ -797,7 +801,7 @@ export function buildLevelRoadmap(actor, options = {}) {
     ? Math.max(0, Math.min(20, Number(options.effectiveCurrentLevel)))
     : liveLevel;
   const variants = getActiveVariantRules();
-  const dualInfo = getActorDualClassInfo(actor);
+  const dualInfo = getActorDualClassInfo(actor, variants);
   const plan = getActorLevelPlan(actor);
   const checkerReport = analyzeCharacter(actor);
 
@@ -892,10 +896,7 @@ export function buildLevelRoadmap(actor, options = {}) {
   // Also scan `actor.feats` groups directly (most authoritative mapping for PF2e v14!)
   if (actor.feats && typeof actor.feats.values === "function") {
     for (const group of actor.feats.values()) {
-      const slots = Array.isArray(group?.slots)
-        ? group.slots
-        : (typeof group?.slots?.values === "function" ? Array.from(group.slots.values()) : Object.values(group?.slots || {}));
-      for (const slot of slots) {
+      for (const slot of extractGroupSlots(group)) {
         if (slot?.feat && slot?.level) {
           const k = `${group.id}-${slot.level}`;
           if (!liveFeatsBySlotKey.has(k)) liveFeatsBySlotKey.set(k, slot.feat);
@@ -905,7 +906,7 @@ export function buildLevelRoadmap(actor, options = {}) {
   }
 
   // 4. Spellcasting milestones across Levels 1-20
-  const spellMilestones = computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, checkerReport);
+  const spellMilestones = computeSpellMilestonesByLevel(checkerReport);
 
   // 5. Running Projections for Attributes & Skill Ranks across Levels 1-20
   const projectedBoostCounts = getBaseBoostCounts(actor, currentLevel, dualInfo);
@@ -992,15 +993,7 @@ export function buildLevelRoadmap(actor, options = {}) {
     const isCurrent = lvl === currentLevel;
     const isNextLevel = lvl === currentLevel + 1;
     const isFuture = lvl > currentLevel;
-    const lp = plan.levels[String(lvl)] || {
-      boosts: [],
-      skillIncrease: null,
-      intBonusSkill: null,
-      intBonusLanguage: "",
-      feats: {},
-      spells: [],
-      formulas: []
-    };
+    const lp = plan.levels[String(lvl)] || createEmptyLevelPlanEntry();
 
     // Snapshot INT modifier BEFORE applying this level's boosts (handles partial boosts accurately!)
     const prevIntMod = computeModFromBoostCount(projectedBoostCounts.int || 0).mod;
@@ -1720,6 +1713,71 @@ export async function openNativeBrowserForSpells({ tradition = "", maxRank = 1, 
   }
 }
 
+function buildFeatRecord(e, fallbackPackCollection = "") {
+  const uuid = e?.uuid || (fallbackPackCollection && e?._id ? `Compendium.${fallbackPackCollection}.Item.${e._id}` : "");
+  if (!uuid || !e?.name) return null;
+  const rawLvl = (typeof e.level === "object" ? e.level?.value : e.level)
+    ?? (typeof e.system?.level === "object" ? e.system.level?.value : e.system?.level)
+    ?? 0;
+  return {
+    uuid,
+    name: String(e.name),
+    img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
+    level: Number.isFinite(Number(rawLvl)) ? Number(rawLvl) : 0,
+    category: e.category || e.featType || e.system?.category || "",
+    traits: extractAnyItemTraits(e),
+    rarity: e.rarity || e.system?.traits?.rarity || "common",
+    prerequisites: toStringArray(e.prerequisites ?? e.system?.prerequisites?.value ?? e.system?.prerequisites)
+      .map(p => (typeof p === "string" ? p : (p?.value || "")))
+      .filter(Boolean)
+  };
+}
+
+function collectBrowserRecords(rawIndexData, buildFn) {
+  if (!rawIndexData) return [];
+  let iter = [];
+  if (Array.isArray(rawIndexData)) iter = rawIndexData;
+  else if (rawIndexData instanceof Map || typeof rawIndexData.values === "function") iter = Array.from(rawIndexData.values());
+  else if (typeof rawIndexData[Symbol.iterator] === "function") iter = Array.from(rawIndexData);
+  else if (typeof rawIndexData === "object") iter = Object.values(rawIndexData);
+
+  const out = [];
+  const seen = new Set();
+  for (const e of iter) {
+    const rec = buildFn(e);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    out.push(rec);
+  }
+  return out;
+}
+
+async function hydrateBrowserTab(tab, results, buildFn, shouldReplaceFn, logLabel) {
+  if (!tab) return;
+  try {
+    if (!tab.isInitialized && typeof tab.init === "function") {
+      await tab.init();
+    }
+    if (collectBrowserRecords(tab.indexData, buildFn).length === 0 && typeof tab.loadData === "function") {
+      await tab.loadData();
+    }
+    const hydrated = collectBrowserRecords(tab.indexData, buildFn);
+    if (hydrated.length > 0) {
+      const byUuid = new Map(results.map(r => [r.uuid, r]));
+      for (const rec of hydrated) {
+        const prev = byUuid.get(rec.uuid);
+        if (!prev || shouldReplaceFn(prev, rec)) {
+          byUuid.set(rec.uuid, rec);
+        }
+      }
+      results.length = 0;
+      results.push(...byUuid.values());
+    }
+  } catch (err) {
+    console.warn(`PF2e Awesome GM Utilities | Fallback ${logLabel} browser hydration failed:`, err);
+  }
+}
+
 /**
  * Lazily retrieves lightweight Feat index entries (reusing PF2e Compendium Browser's
  * own cache when already loaded with prerequisites, or calling `pack.getIndex` once).
@@ -1727,24 +1785,10 @@ export async function openNativeBrowserForSpells({ tradition = "", maxRank = 1, 
 export async function getLightweightFeatIndex() {
   if (_featIndexCache && _featIndexCache.length > 0) return _featIndexCache;
 
-  const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.feat?.indexData;
-  const browserHasPrereqs = Array.isArray(browserIndex)
-    && browserIndex.length > 0
-    && browserIndex.some(e => toStringArray(e.prerequisites ?? e.system?.prerequisites?.value).length > 0);
-
-  if (browserHasPrereqs) {
-    _featIndexCache = browserIndex.map(e => ({
-      uuid: e.uuid,
-      name: e.name,
-      img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
-      level: Number((typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 0),
-      category: e.category || e.featType || e.system?.category || "",
-      traits: extractAnyItemTraits(e),
-      rarity: e.rarity || e.system?.traits?.rarity || "common",
-      prerequisites: toStringArray(e.prerequisites ?? e.system?.prerequisites?.value)
-        .map(p => (typeof p === "string" ? p : (p?.value || "")))
-        .filter(Boolean)
-    }));
+  const featTab = game.pf2e?.compendiumBrowser?.tabs?.feat;
+  const browserRecords = collectBrowserRecords(featTab?.indexData, buildFeatRecord);
+  if (browserRecords.some(r => r.prerequisites.length > 0)) {
+    _featIndexCache = browserRecords;
     return _featIndexCache;
   }
 
@@ -1754,20 +1798,10 @@ export async function getLightweightFeatIndex() {
   // Include World feat items first (homebrew!)
   for (const item of game.items || []) {
     if (item.type !== "feat") continue;
-    if (seen.has(item.uuid)) continue;
-    seen.add(item.uuid);
-    results.push({
-      uuid: item.uuid,
-      name: item.name,
-      img: item.img || "systems/pf2e/icons/default-icons/feat.svg",
-      level: Number(item.system?.level?.value ?? 0),
-      category: item.system?.category || "",
-      traits: extractAnyItemTraits(item),
-      rarity: item.system?.traits?.rarity || "common",
-      prerequisites: toStringArray(item.system?.prerequisites?.value)
-        .map(p => (typeof p === "string" ? p : (p?.value || "")))
-        .filter(Boolean)
-    });
+    const rec = buildFeatRecord(item);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    results.push(rec);
   }
 
   // Lazy pack.getIndex on Item compendiums containing feats (excluding effect/feature packs!)
@@ -1789,22 +1823,10 @@ export async function getLightweightFeatIndex() {
       const idx = await pack.getIndex({ fields: featIndexFields });
       for (const e of idx) {
         if (e.type !== "feat") continue;
-        const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
-        if (seen.has(uuid)) continue;
-        seen.add(uuid);
-        const rawLvl = (typeof e.system?.level === "object" ? e.system.level?.value : e.system?.level) ?? 0;
-        results.push({
-          uuid,
-          name: e.name,
-          img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
-          level: Number.isFinite(Number(rawLvl)) ? Number(rawLvl) : 0,
-          category: e.system?.category || "",
-          traits: extractAnyItemTraits(e),
-          rarity: e.system?.traits?.rarity || "common",
-          prerequisites: toStringArray(e.system?.prerequisites?.value ?? e.system?.prerequisites)
-            .map(p => (typeof p === "string" ? p : (p?.value || "")))
-            .filter(Boolean)
-        });
+        const rec = buildFeatRecord(e, pack.collection);
+        if (!rec || seen.has(rec.uuid)) continue;
+        seen.add(rec.uuid);
+        results.push(rec);
       }
     } catch (err) {
       console.warn(`PF2e Awesome GM Utilities | Failed indexing feat pack "${pack.collection}":`, err);
@@ -1813,45 +1835,13 @@ export async function getLightweightFeatIndex() {
 
   // Tier 3 fallback for Feats: silently hydrate PF2e Compendium Browser feat index if pack index lacked traits
   if (!results.some(r => r.traits.length > 0)) {
-    const featTab = game.pf2e?.compendiumBrowser?.tabs?.feat;
-    if (featTab) {
-      try {
-        if (!featTab.isInitialized && typeof featTab.init === "function") {
-          await featTab.init();
-        }
-        const curRaw = featTab.indexData;
-        const curLen = Array.isArray(curRaw) ? curRaw.length : (curRaw?.size ?? Object.keys(curRaw || {}).length);
-        if (curLen === 0 && typeof featTab.loadData === "function") {
-          await featTab.loadData();
-        }
-        const raw = featTab.indexData;
-        const iter = Array.isArray(raw) ? raw : (typeof raw?.values === "function" ? Array.from(raw.values()) : Object.values(raw || {}));
-        if (iter.length > 0) {
-          const byUuid = new Map(results.map(r => [r.uuid, r]));
-          for (const e of iter) {
-            if (!e?.uuid || !e?.name) continue;
-            const rec = {
-              uuid: e.uuid,
-              name: e.name,
-              img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
-              level: Number((typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 0),
-              category: e.category || e.featType || e.system?.category || "",
-              traits: extractAnyItemTraits(e),
-              rarity: e.rarity || e.system?.traits?.rarity || "common",
-              prerequisites: toStringArray(e.prerequisites ?? e.system?.prerequisites?.value)
-                .map(p => (typeof p === "string" ? p : (p?.value || "")))
-                .filter(Boolean)
-            };
-            const prev = byUuid.get(rec.uuid);
-            if (!prev || (prev.traits.length === 0 && rec.traits.length > 0)) byUuid.set(rec.uuid, rec);
-          }
-          results.length = 0;
-          results.push(...byUuid.values());
-        }
-      } catch (err) {
-        console.warn("PF2e Awesome GM Utilities | Fallback feat browser hydration failed:", err);
-      }
-    }
+    await hydrateBrowserTab(
+      featTab,
+      results,
+      buildFeatRecord,
+      (prev, rec) => prev.traits.length === 0 && rec.traits.length > 0,
+      "feat"
+    );
   }
 
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
@@ -1938,25 +1928,6 @@ function buildSpellRecord(e, fallbackPackCollection = "") {
   };
 }
 
-function collectBrowserSpellRecords(rawIndexData) {
-  if (!rawIndexData) return [];
-  let iter = [];
-  if (Array.isArray(rawIndexData)) iter = rawIndexData;
-  else if (rawIndexData instanceof Map || typeof rawIndexData.values === "function") iter = Array.from(rawIndexData.values());
-  else if (typeof rawIndexData[Symbol.iterator] === "function") iter = Array.from(rawIndexData);
-  else if (typeof rawIndexData === "object") iter = Object.values(rawIndexData);
-
-  const out = [];
-  const seen = new Set();
-  for (const e of iter) {
-    const rec = buildSpellRecord(e);
-    if (!rec || seen.has(rec.uuid)) continue;
-    seen.add(rec.uuid);
-    out.push(rec);
-  }
-  return out;
-}
-
 /**
  * Lazily retrieves lightweight Spell index entries (zero startup overhead).
  * Uses a 3-tier pipeline (Browser Cache -> Direct Compendium Index -> Silent Browser Tab Hydration)
@@ -1969,7 +1940,7 @@ export async function getLightweightSpellIndex() {
 
   // Tier 1: Reuse PF2e Compendium Browser's Spell cache ONLY if already populated with traditions
   const spellTab = game.pf2e?.compendiumBrowser?.tabs?.spell;
-  const browserRecords = collectBrowserSpellRecords(spellTab?.indexData);
+  const browserRecords = collectBrowserRecords(spellTab?.indexData, buildSpellRecord);
   if (browserRecords.some(r => r.traditions.length > 0)) {
     browserRecords.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
     _spellIndexCache = browserRecords;
@@ -2022,30 +1993,13 @@ export async function getLightweightSpellIndex() {
 
   // Tier 3: Silently ask PF2e's native Compendium Browser Spell tab to hydrate its index
   // (never opens the browser window; guarantees traditions/ranks load on first Pick Spells click!)
-  if (spellTab) {
-    try {
-      if (!spellTab.isInitialized && typeof spellTab.init === "function") {
-        await spellTab.init();
-      }
-      if (collectBrowserSpellRecords(spellTab.indexData).length === 0 && typeof spellTab.loadData === "function") {
-        await spellTab.loadData();
-      }
-      const hydrated = collectBrowserSpellRecords(spellTab.indexData);
-      if (hydrated.length > 0) {
-        const byUuid = new Map(results.map(r => [r.uuid, r]));
-        for (const rec of hydrated) {
-          const prev = byUuid.get(rec.uuid);
-          if (!prev || (prev.traditions.length === 0 && rec.traditions.length > 0)) {
-            byUuid.set(rec.uuid, rec);
-          }
-        }
-        results.length = 0;
-        results.push(...byUuid.values());
-      }
-    } catch (err) {
-      console.warn("PF2e Awesome GM Utilities | Fallback spell browser loadData failed:", err);
-    }
-  }
+  await hydrateBrowserTab(
+    spellTab,
+    results,
+    buildSpellRecord,
+    (prev, rec) => prev.traditions.length === 0 && rec.traditions.length > 0,
+    "spell"
+  );
 
   results.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
   if (results.some(r => r.traditions.length > 0)) {
@@ -2188,25 +2142,6 @@ function buildFormulaRecord(e, fallbackPackCollection = "") {
   };
 }
 
-function collectBrowserIndexRecords(rawIndexData) {
-  if (!rawIndexData) return [];
-  let iter = [];
-  if (Array.isArray(rawIndexData)) iter = rawIndexData;
-  else if (rawIndexData instanceof Map || typeof rawIndexData.values === "function") iter = Array.from(rawIndexData.values());
-  else if (typeof rawIndexData[Symbol.iterator] === "function") iter = Array.from(rawIndexData);
-  else if (typeof rawIndexData === "object") iter = Object.values(rawIndexData);
-
-  const out = [];
-  const seen = new Set();
-  for (const e of iter) {
-    const rec = buildFormulaRecord(e);
-    if (!rec || seen.has(rec.uuid)) continue;
-    seen.add(rec.uuid);
-    out.push(rec);
-  }
-  return out;
-}
-
 /**
  * Lazily retrieves lightweight craftable/alchemical equipment index entries
  * (zero startup overhead; cached only on first Pick Formulas click).
@@ -2218,7 +2153,7 @@ export async function getLightweightFormulaIndex() {
 
   // Tier 1: Reuse PF2e Compendium Browser's Equipment cache ONLY if it already contains alchemical traits
   const equipTab = game.pf2e?.compendiumBrowser?.tabs?.equipment;
-  const browserRecords = collectBrowserIndexRecords(equipTab?.indexData);
+  const browserRecords = collectBrowserRecords(equipTab?.indexData, buildFormulaRecord);
   if (browserRecords.some(r => r.isAlchemical)) {
     browserRecords.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
     _formulaIndexCache = browserRecords;
@@ -2284,31 +2219,13 @@ export async function getLightweightFormulaIndex() {
   }
 
   // Tier 3: Ask PF2e's native Compendium Browser Equipment tab to load its own index
-  if (equipTab) {
-    try {
-      if (!equipTab.isInitialized) {
-        if (typeof equipTab.init === "function") await equipTab.init();
-        else if (typeof equipTab.loadData === "function") await equipTab.loadData();
-      } else if (typeof equipTab.loadData === "function" && browserRecords.length === 0) {
-        await equipTab.loadData();
-      }
-      const hydrated = collectBrowserIndexRecords(equipTab.indexData);
-      if (hydrated.length > 0) {
-        // Merge hydrated records, preferring entries that have trait data over any trait-less Tier 2 stubs
-        const byUuid = new Map(results.map(r => [r.uuid, r]));
-        for (const rec of hydrated) {
-          const prev = byUuid.get(rec.uuid);
-          if (!prev || (!prev.isAlchemical && rec.isAlchemical) || (prev.traits.length === 0 && rec.traits.length > 0)) {
-            byUuid.set(rec.uuid, rec);
-          }
-        }
-        results.length = 0;
-        results.push(...byUuid.values());
-      }
-    } catch (err) {
-      console.warn("PF2e Awesome GM Utilities | Fallback equipment browser loadData failed:", err);
-    }
-  }
+  await hydrateBrowserTab(
+    equipTab,
+    results,
+    buildFormulaRecord,
+    (prev, rec) => (!prev.isAlchemical && rec.isAlchemical) || (prev.traits.length === 0 && rec.traits.length > 0),
+    "equipment"
+  );
 
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
   if (results.some(r => r.isAlchemical)) {
@@ -2332,9 +2249,7 @@ export async function getLightweightFormulaIndex() {
 function resolveLiveFeatSlot(actor, groupId, targetLevel) {
   const group = actor.feats?.get?.(groupId);
   if (group?.slots) {
-    const slots = Array.isArray(group.slots)
-      ? group.slots
-      : (typeof group.slots.values === "function" ? Array.from(group.slots.values()) : Object.values(group.slots));
+    const slots = extractGroupSlots(group);
     const emptyMatch = slots.find(s => Number(s?.level) === targetLevel && !s?.feat);
     if (emptyMatch) return { id: emptyMatch.id || `${groupId}-${targetLevel}`, alreadyFilled: false };
     const filledMatch = slots.find(s => Number(s?.level) === targetLevel && s?.feat);
@@ -2345,17 +2260,32 @@ function resolveLiveFeatSlot(actor, groupId, targetLevel) {
   return { id: fallbackId, alreadyFilled: alreadyHasAtLoc };
 }
 
+async function materializePlannedItem(planned, expectedType) {
+  if (!planned) return null;
+  let obj = null;
+  if (planned.uuid) {
+    const sourceDoc = await fromUuid(planned.uuid);
+    if (sourceDoc && sourceDoc.type === expectedType) {
+      obj = sourceDoc.toObject();
+      obj._stats = obj._stats || {};
+      obj._stats.compendiumSource = planned.uuid;
+    }
+  }
+  if (!obj && planned.itemData && typeof planned.itemData === "object") {
+    obj = foundry.utils.deepClone(planned.itemData);
+  }
+  if (!obj) return null;
+  delete obj._id;
+  return obj;
+}
+
 /**
  * Inspects planned vs. unplanned items across one or more target levels (e.g., [4] or [4, 5]).
  * Works both BEFORE level-up (`effectiveCurrentLevel = actor.level`) and RIGHT AFTER a direct
  * character-sheet level-up (`effectiveCurrentLevel = previousLevel`).
  */
 export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurrentLevel = null } = {}) {
-  const cleanLevels = Array.from(new Set(
-    (Array.isArray(targetLevels) ? targetLevels : [targetLevels])
-      .map(Number)
-      .filter(n => Number.isFinite(n) && n >= 1 && n <= 20)
-  )).sort((a, b) => a - b);
+  const cleanLevels = parseLevelList(targetLevels);
 
   const hasAnyPlan = hasAnySavedLevelPlan(actor);
   if (!actor || actor.type !== "character" || cleanLevels.length === 0) {
@@ -2554,11 +2484,7 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     return { ok: false, newLevel: actor.level || 1, summary: [], reminders: [] };
   }
 
-  const cleanLevels = Array.from(new Set(
-    (Array.isArray(targetLevels) ? targetLevels : [targetLevels])
-      .map(Number)
-      .filter(n => Number.isFinite(n) && n >= 1 && n <= 20)
-  )).sort((a, b) => a - b);
+  const cleanLevels = parseLevelList(targetLevels);
 
   if (cleanLevels.length === 0) {
     return { ok: false, newLevel: actor.level || 1, summary: [], reminders: [] };
@@ -2603,15 +2529,7 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
 
   for (const targetLevel of cleanLevels) {
     const lvlData = roadmap?.levels?.find(l => l.level === targetLevel);
-    const lp = plan.levels[String(targetLevel)] || {
-      boosts: [],
-      skillIncrease: null,
-      intBonusSkill: null,
-      intBonusLanguage: "",
-      feats: {},
-      spells: [],
-      formulas: []
-    };
+    const lp = plan.levels[String(targetLevel)] || createEmptyLevelPlanEntry();
 
     // 1a. Attribute Boosts (skip if live sheet already has boosts selected for this tier)
     if (lvlData?.hasBoosts && !actor.system?.build?.attributes?.manual) {
@@ -2728,24 +2646,9 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
       if (liveSlot.alreadyFilled) continue;
 
       try {
-        let obj = null;
-        if (planned.uuid) {
-          const sourceDoc = await fromUuid(planned.uuid);
-          if (sourceDoc && sourceDoc.type === "feat") {
-            obj = sourceDoc.toObject();
-            obj.flags = obj.flags || {};
-            obj.flags.core = obj.flags.core || {};
-            obj.flags.core.sourceId = planned.uuid;
-            obj._stats = obj._stats || {};
-            obj._stats.compendiumSource = planned.uuid;
-          }
-        }
-        if (!obj && planned.itemData && typeof planned.itemData === "object") {
-          obj = foundry.utils.deepClone(planned.itemData);
-        }
+        const obj = await materializePlannedItem(planned, "feat");
         if (!obj) continue;
 
-        delete obj._id;
         if (obj.system) {
           obj.system.location = liveSlot.id;
         }
@@ -2788,21 +2691,7 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     for (const sp of allPlannedSpells) {
       if (!sp?.uuid && !sp?.itemData) continue;
       try {
-        let obj = null;
-        if (sp.uuid) {
-          const spellDoc = await fromUuid(sp.uuid);
-          if (spellDoc && spellDoc.type === "spell") {
-            obj = spellDoc.toObject();
-            obj.flags = obj.flags || {};
-            obj.flags.core = obj.flags.core || {};
-            obj.flags.core.sourceId = sp.uuid;
-            obj._stats = obj._stats || {};
-            obj._stats.compendiumSource = sp.uuid;
-          }
-        }
-        if (!obj && sp.itemData && typeof sp.itemData === "object") {
-          obj = foundry.utils.deepClone(sp.itemData);
-        }
+        const obj = await materializePlannedItem(sp, "spell");
         if (!obj) continue;
 
         let targetEntryId = null;
@@ -2833,7 +2722,6 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
         );
         if (duplicate) continue;
 
-        delete obj._id;
         obj.system = obj.system || {};
         obj.system.location = obj.system.location || {};
         obj.system.location.value = targetEntryId;
@@ -3064,7 +2952,7 @@ export async function inspectLevelRevert(actor, targetLevel) {
 
   const roadmap = buildLevelRoadmap(actor, { effectiveCurrentLevel: currentLevel });
   const existingPlan = getActorLevelPlan(actor);
-  const dualInfo = getActorDualClassInfo(actor);
+  const dualInfo = getActorDualClassInfo(actor, roadmap?.variants);
   const checkerReport = roadmap?.checkerReport || analyzeCharacter(actor);
   const manualAttributes = Boolean(actor.system?.build?.attributes?.manual);
   const liveAttrBoosts = actor.system?.build?.attributes?.boosts || {};
@@ -3169,9 +3057,7 @@ export async function inspectLevelRevert(actor, targetLevel) {
   if (actor.feats && typeof actor.feats.values === "function") {
     for (const group of actor.feats.values()) {
       if (!group || SKIP_REVERT_FEAT_GROUPS.has(group.id)) continue;
-      const slots = Array.isArray(group.slots)
-        ? group.slots
-        : (typeof group.slots?.values === "function" ? Array.from(group.slots.values()) : Object.values(group.slots || {}));
+      const slots = extractGroupSlots(group);
       const groupLabel = game.i18n?.localize?.(group.label) || group.label || capitalize(group.id);
       for (const slot of slots) {
         const slotLvl = Number(slot?.level);
@@ -3220,11 +3106,7 @@ export async function inspectLevelRevert(actor, targetLevel) {
     workingSourceRanks[slug] = getStoredSourceSkillRank(actor, slug);
   }
 
-  const baseAncestryLangs = new Set(
-    (Array.isArray(actor.ancestry?.system?.languages?.value) ? actor.ancestry.system.languages.value : [])
-      .map(s => String(s || "").toLowerCase())
-      .filter(Boolean)
-  );
+  const baseAncestryLangs = getBaseAncestryLanguageSet(actor);
   const liveLangSet = new Set(
     (Array.isArray(actor.system?.details?.languages?.value) ? actor.system.details.languages.value : [])
       .map(s => String(s || "").toLowerCase())
@@ -3343,15 +3225,13 @@ export async function inspectLevelRevert(actor, targetLevel) {
     if (src.isFocus || src.castingType === "focus") continue;
     const targetMaxRank = estimateMaxSpellRankAtLevel(src, cleanTarget, deletedFeatSlugs);
     const curMaxRank = estimateMaxSpellRankAtLevel(src, currentLevel, new Set());
-    if (targetMaxRank !== curMaxRank || src.isDivineFont || cleanTarget < currentLevel) {
-      spellEntriesToSync.push({
-        entryId: src.entryId,
-        key: src.key,
-        name: src.matchedEntryName || src.title,
-        curMaxRank,
-        targetMaxRank
-      });
-    }
+    spellEntriesToSync.push({
+      entryId: src.entryId,
+      key: src.key,
+      name: src.matchedEntryName || src.title,
+      curMaxRank,
+      targetMaxRank
+    });
   }
 
   // Index planned spells in revertedLevels for tracked matching
@@ -3584,6 +3464,7 @@ export async function inspectLevelRevert(actor, targetLevel) {
       dualClassFeaturesCount,
       spellEntriesToSync
     },
+    checkerReport,
     reminders
   };
 }
@@ -3633,7 +3514,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
 
   const cleanTarget = preview.targetLevel;
   const oldLevel = preview.currentLevel;
-  const preReport = analyzeCharacter(actor);
+  const preReport = preview.checkerReport || analyzeCharacter(actor);
   const summary = [];
   const reminders = [];
 
@@ -3654,26 +3535,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
     const plan = getActorLevelPlan(actor);
 
     for (const info of preview.levels) {
-      const key = String(info.level);
-      if (!plan.levels[key] || typeof plan.levels[key] !== "object") {
-        plan.levels[key] = {
-          boosts: [],
-          skillIncrease: null,
-          intBonusSkill: null,
-          intBonusLanguage: "",
-          feats: {},
-          spells: [],
-          formulas: []
-        };
-      }
-      const entry = plan.levels[key];
-      if (!Array.isArray(entry.boosts)) entry.boosts = [];
-      if (!("skillIncrease" in entry)) entry.skillIncrease = null;
-      if (!("intBonusSkill" in entry)) entry.intBonusSkill = null;
-      if (typeof entry.intBonusLanguage !== "string") entry.intBonusLanguage = "";
-      if (!entry.feats || typeof entry.feats !== "object") entry.feats = {};
-      if (!Array.isArray(entry.spells)) entry.spells = [];
-      if (!Array.isArray(entry.formulas)) entry.formulas = [];
+      const entry = ensurePlanLevelEntry(plan, info.level);
 
       let touched = false;
 
@@ -3842,11 +3704,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
       workingRanks[slug] = r;
     }
 
-    const baseAncestryLangs = new Set(
-      (Array.isArray(actor.ancestry?.system?.languages?.value) ? actor.ancestry.system.languages.value : [])
-        .map(s => String(s || "").toLowerCase())
-        .filter(Boolean)
-    );
+    const baseAncestryLangs = getBaseAncestryLanguageSet(actor);
     const liveLangValues = Array.isArray(actor.system?.details?.languages?.value)
       ? [...actor.system.details.languages.value]
       : [];
@@ -3993,9 +3851,10 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
   // -------------------------------------------------------------------------
   // STEP 5: Sync Spellcasting Entry Slots Down to targetLevel
   // -------------------------------------------------------------------------
+  let postReport = null;
   if (revertSpells) {
     try {
-      const postReport = analyzeCharacter(actor);
+      postReport = analyzeCharacter(actor);
       const syncedNames = [];
       const postMatchedEntryIds = new Set();
 
@@ -4032,16 +3891,18 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
 
       if (syncedNames.length > 0) {
         summary.push(`Synced spell slots: ${syncedNames.join(", ")}`);
+        postReport = null; // Refresh below after slot updates
       }
     } catch (err) {
       console.warn("PF2e Awesome GM Utilities | Spellcasting sync during de-level failed:", err);
+      postReport = null;
     }
   }
 
   // -------------------------------------------------------------------------
   // STEP 6: Post-Revert Audit -> Exact Manual Removal Counts + Whispered Chat Card
   // -------------------------------------------------------------------------
-  const postReport = analyzeCharacter(actor);
+  if (!postReport) postReport = analyzeCharacter(actor);
   const manualActions = [];
 
   // 6a. Unreverted Skill Increases
@@ -4125,7 +3986,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
     }
   }
 
-  const preMilestonesByLvl = computeSpellMilestonesByLevel(actor, oldLevel, getActorDualClassInfo(actor), preReport);
+  const preMilestonesByLvl = computeSpellMilestonesByLevel(preReport);
   const learnedInRevertedRangeByEntry = new Map();
   for (const lvl of preview.revertedLevels) {
     for (const m of preMilestonesByLvl[lvl] || []) {
@@ -4225,7 +4086,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
  * @param {object} revertResult
  * @param {{ whisper?: boolean }} [options]
  */
-export async function postDeLevelReminderToChat(actor, revertResult, { whisper = true } = {}) {
+async function postDeLevelReminderToChat(actor, revertResult, { whisper = true } = {}) {
   if (!actor || !revertResult?.ok) return null;
 
   const esc = foundry.utils.escapeHTML;

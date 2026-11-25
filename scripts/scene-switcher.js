@@ -68,7 +68,7 @@ export function getSceneThumbnail(scene) {
 /**
  * Standard Foundry weather presets for quick scene switching.
  */
-export const WEATHER_PRESETS = [
+const WEATHER_PRESETS = [
   { id: "", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherClear", defaultLabel: "Clear", icon: "fa-sun" },
   { id: "rain", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherRain", defaultLabel: "Rain", icon: "fa-cloud-showers-heavy" },
   { id: "snow", labelKey: "PF2E_AWESOME_GM.SceneSwitcher.WeatherSnow", defaultLabel: "Snow", icon: "fa-snowflake" },
@@ -82,7 +82,6 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     super(options);
 
     this._isCompact = false;
-    this._filterQuery = "";
 
     // Hook listeners setup
     this._boundOnHookUpdate = foundry.utils.debounce(this._onHookUpdate.bind(this), 150);
@@ -120,7 +119,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   static PARTS = {
     main: {
-      template: "modules/pf2e-awesome-gm-utilities/templates/scene-switcher.hbs"
+      template: `modules/${MODULE_ID}/templates/scene-switcher.hbs`
     }
   };
 
@@ -189,7 +188,6 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
       validSavedIds.push(id);
 
       const darkness = scene.environment?.darknessLevel ?? scene.darkness ?? 0;
-      const isDark = darkness >= 0.5;
       const darknessPct = Math.round(darkness * 100);
 
       // 3-Level lighting state (Day 0%, Dusk 50%, Night 85%)
@@ -228,7 +226,6 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
       sessionScenes.push({
         id: scene.id,
-        index: index,
         name: scene.name,
         thumb: thumb,
         isActive: scene.active,
@@ -236,9 +233,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         inNavigation: scene.navigation,
         tokenCount: scene.tokens?.size ?? 0,
         hasCombat: hasCombat,
-        darkness: darkness,
         darknessPct: darknessPct,
-        isDark: isDark,
         lightState: lightState,
         lightLabel: lightLabel,
         lightIcon: lightIcon,
@@ -282,9 +277,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
       availableScenes: availableScenes,
       hasAvailableScenes: availableScenes.length > 0,
       canAddCurrent: canAddCurrent,
-      viewedSceneName: canvas.scene?.name || "",
-      isCompact: this._isCompact,
-      isGM: game.user.isGM
+      isCompact: this._isCompact
     };
   }
 
@@ -337,7 +330,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
     });
 
-    container.querySelectorAll('[data-action="cycle-lighting"], [data-action="toggle-lighting"]').forEach(el => {
+    container.querySelectorAll('[data-action="cycle-lighting"]').forEach(el => {
       el.addEventListener("contextmenu", async (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -395,11 +388,6 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const action = actionEl.dataset.action;
     const sceneId = actionEl.dataset.sceneId;
 
-    if (action === "close") {
-      event.preventDefault();
-      return this.close();
-    }
-
     event.preventDefault();
     event.stopPropagation();
 
@@ -416,15 +404,10 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
         await this.pullPlayers(sceneId);
         break;
 
-      case "activate-and-pull":
-        await this.activateScene(sceneId);
-        break;
-
       case "configure":
         this.configureScene(sceneId);
         break;
 
-      case "toggle-lighting":
       case "cycle-lighting":
         await this.cycleLighting(sceneId);
         break;
@@ -479,10 +462,9 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
       let data = null;
       try {
-        if (typeof TextEditor?.getDragEventDataWithErrors === "function") {
-          data = TextEditor.getDragEventDataWithErrors(e);
-        } else if (typeof TextEditor?.getDragEventData === "function") {
-          data = TextEditor.getDragEventData(e);
+        const TextEditorImpl = foundry.applications?.ux?.TextEditor?.implementation;
+        if (typeof TextEditorImpl?.getDragEventData === "function") {
+          data = TextEditorImpl.getDragEventData(e);
         } else {
           data = JSON.parse(e.dataTransfer.getData("text/plain"));
         }
@@ -565,17 +547,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const scene = game.scenes.get(sceneId);
     if (!scene) return;
 
-    // Use native Foundry v14 Scene#pullUsers to pull all connected users without activating
-    if (typeof scene.pullUsers === "function") {
-      scene.pullUsers(game.users);
-    } else {
-      // Fallback for older versions
-      for (const u of game.users) {
-        if (!u.active || u.id === game.user.id) continue;
-        game.socket.emit("pullToScene", scene.id, u.id);
-      }
-      game.socket.emit("pullToScene", scene.id);
-    }
+    scene.pullUsers(game.users);
 
     ui.notifications.info(game.i18n.format("PF2E_AWESOME_GM.SceneSwitcher.NotificationPulled", { name: scene.name }));
     this.render({ force: false });
@@ -596,7 +568,7 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
   configureScene(sceneId) {
     const scene = game.scenes.get(sceneId);
     if (scene?.sheet) {
-      scene.sheet.render(true);
+      scene.sheet.render({ force: true });
     }
   }
 
@@ -664,19 +636,10 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
 
     await scene.update({
-      "environment.darknessLevel": newDarkness,
-      darkness: newDarkness
+      "environment.darknessLevel": newDarkness
     });
 
     this.render({ force: false });
-  }
-
-  /**
-   * Backwards-compatible alias for cycleLighting.
-   * @param {string} sceneId
-   */
-  async toggleLighting(sceneId) {
-    return this.cycleLighting(sceneId);
   }
 
   /**
@@ -786,21 +749,11 @@ export class SceneSwitcherApp extends HandlebarsApplicationMixin(ApplicationV2) 
    */
   async confirmClearSession() {
     const confirmMsg = game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.ConfirmClear");
-    let proceed = false;
-
-    if (foundry?.applications?.api?.DialogV2?.confirm) {
-      proceed = await foundry.applications.api.DialogV2.confirm({
-        window: { title: game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.ClearAll") },
-        content: `<p>${confirmMsg}</p>`,
-        rejectClose: false
-      });
-    } else {
-      proceed = await Dialog.confirm({
-        title: game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.ClearAll"),
-        content: `<p>${confirmMsg}</p>`,
-        defaultYes: false
-      });
-    }
+    const proceed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.localize("PF2E_AWESOME_GM.SceneSwitcher.ClearAll") },
+      content: `<p>${confirmMsg}</p>`,
+      rejectClose: false
+    });
 
     if (proceed) {
       await game.settings.set(MODULE_ID, "sessionScenes", []);

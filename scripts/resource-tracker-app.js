@@ -295,11 +295,8 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         }));
       }
 
-      const effectiveMax = isStage ? (t.stages?.length || 5) : (isAttitude ? 5 : maxVal);
-
       return {
         ...t,
-        index,
         theme,
         linkedActor,
         isImageIcon,
@@ -322,9 +319,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
         repPercentNegative,
         reputationTiers,
         attitudeInfo,
-        attitudes,
-        canDecrease: currentVal > minVal,
-        canIncrease: currentVal < effectiveMax
+        attitudes
       };
     });
 
@@ -339,15 +334,13 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     return {
       trackers,
       hasTrackers: trackers.length > 0,
-      totalCount: rawTrackers.length,
       activeCategory: this._activeCategory,
       filterQuery: this._filterQuery,
       allCount,
       partyCount,
       subsystemCount,
       actorCount,
-      presets,
-      isGM: game.user.isGM
+      presets
     };
   }
 
@@ -501,11 +494,6 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     const action = actionEl.dataset.action;
     const trackerId = actionEl.dataset.id;
 
-    if (action === "close") {
-      event.preventDefault();
-      return this.close();
-    }
-
     event.preventDefault();
     event.stopPropagation();
 
@@ -623,6 +611,14 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     }
   }
 
+  _getTrackerBounds(tracker) {
+    if (tracker.type === "clock") return { min: 0, max: tracker.clockSegments || 6 };
+    if (tracker.type === "stage") return { min: 1, max: tracker.stages?.length || 5 };
+    if (tracker.type === "attitude") return { min: 1, max: 5 };
+    if (tracker.type === "reputation") return { min: tracker.min ?? -50, max: tracker.max ?? 50 };
+    return { min: tracker.min ?? 0, max: tracker.max ?? 100 };
+  }
+
   /**
    * Adjusts the tracker's current value by delta (+1, -1, +5, -5).
    * @param {string} id Tracker ID
@@ -633,26 +629,9 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     const tracker = trackers.find(t => t.id === id);
     if (!tracker) return;
 
-    let min = tracker.min ?? 0;
-    let max = tracker.max ?? 100;
-
-    if (tracker.type === "clock") {
-      min = 0;
-      max = tracker.clockSegments || 6;
-    } else if (tracker.type === "stage") {
-      min = 1;
-      max = tracker.stages?.length || 5;
-    } else if (tracker.type === "attitude") {
-      min = 1;
-      max = 5;
-    } else if (tracker.type === "reputation") {
-      min = tracker.min ?? -50;
-      max = tracker.max ?? 50;
-    }
-
+    const { min, max } = this._getTrackerBounds(tracker);
     const current = tracker.value ?? (tracker.type === "reputation" ? 0 : min);
-    const newVal = Math.min(max, Math.max(min, current + delta));
-    tracker.value = newVal;
+    tracker.value = Math.min(max, Math.max(min, current + delta));
 
     await this.saveTrackers(trackers);
   }
@@ -667,23 +646,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     const tracker = trackers.find(t => t.id === id);
     if (!tracker) return;
 
-    let min = tracker.min ?? 0;
-    let max = tracker.max ?? 100;
-
-    if (tracker.type === "clock") {
-      min = 0;
-      max = tracker.clockSegments || 6;
-    } else if (tracker.type === "stage") {
-      min = 1;
-      max = tracker.stages?.length || 5;
-    } else if (tracker.type === "attitude") {
-      min = 1;
-      max = 5;
-    } else if (tracker.type === "reputation") {
-      min = tracker.min ?? -50;
-      max = tracker.max ?? 50;
-    }
-
+    const { min, max } = this._getTrackerBounds(tracker);
     tracker.value = Math.min(max, Math.max(min, val));
     await this.saveTrackers(trackers);
   }
@@ -795,26 +758,12 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     const tracker = trackers.find(t => t.id === id);
     if (!tracker) return;
 
-    let confirmed = false;
     const confirmMsg = `<p>${game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.DeleteConfirm")}</p><p><strong>${tracker.name}</strong></p>`;
-
-    if (foundry?.applications?.api?.DialogV2?.confirm) {
-      confirmed = await foundry.applications.api.DialogV2.confirm({
-        window: { title: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.DeleteTracker"), icon: "fa-solid fa-trash" },
-        content: confirmMsg,
-        rejectClose: false
-      });
-    } else {
-      confirmed = await new Promise((resolve) => {
-        Dialog.confirm({
-          title: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.DeleteTracker"),
-          content: confirmMsg,
-          yes: () => resolve(true),
-          no: () => resolve(false),
-          defaultYes: false
-        });
-      });
-    }
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.DeleteTracker"), icon: "fa-solid fa-trash" },
+      content: confirmMsg,
+      rejectClose: false
+    });
 
     if (!confirmed) return;
 
@@ -1025,7 +974,7 @@ export class ResourceTrackerApp extends HandlebarsApplicationMixin(ApplicationV2
     `;
 
     await ChatMessage.create({
-      user: game.user.id,
+      author: game.user.id,
       speaker: actor ? ChatMessage.getSpeaker({ actor }) : ChatMessage.getSpeaker(),
       content
     });

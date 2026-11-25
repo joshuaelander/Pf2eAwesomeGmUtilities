@@ -7,7 +7,6 @@
 /* Window Chrome                                                             */
 /* ------------------------------------------------------------------------- */
 
-.app.pf2e-perf-monitor-window,
 .pf2e-perf-monitor-window {
   background: var(--pf2e-gm-bg-window) !important;
   color: var(--pf2e-gm-text-primary) !important;

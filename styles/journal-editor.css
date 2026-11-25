@@ -28,23 +28,11 @@
   background: var(--pf2e-gm-bg-btn);
   color: var(--pf2e-gm-text-primary);
   border-left: 5px solid var(--pf2e-gm-red-accent);
-  border-right: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.24);
-  border-top: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.24);
-  border-bottom: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.24);
-  padding: 0;
-  position: relative;
-}
-
-/* Dark mode journal support */
-.theme-dark .pf2e-read-aloud,
-[data-theme="dark"] .pf2e-read-aloud,
-.pf2e-dark-theme .pf2e-read-aloud {
-  background: var(--pf2e-gm-bg-btn);
-  color: var(--pf2e-gm-text-primary);
-  border-left: 5px solid var(--pf2e-gm-red-accent);
   border-right: 1px solid var(--pf2e-gm-border-input);
   border-top: 1px solid var(--pf2e-gm-border-input);
   border-bottom: 1px solid var(--pf2e-gm-border-input);
+  padding: 0;
+  position: relative;
 }
 
 .pf2e-read-aloud-header {
@@ -52,7 +40,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 14px;
-  background: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.45) 0%, rgba(20, 20, 24, 0.4) 100%);
+  background: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.45) 0%, rgba(var(--pf2e-gm-bg-btn-rgb), 0.4) 100%);
   border-bottom: 1px solid var(--pf2e-gm-border-red);
   font-family: var(--font-serif, "Sabon", "Cinzel", "Georgia", serif);
   font-size: 0.9em;
@@ -60,12 +48,6 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--pf2e-gm-text-cream);
-}
-
-.theme-dark .pf2e-read-aloud-header,
-[data-theme="dark"] .pf2e-read-aloud-header {
-  color: var(--pf2e-gm-text-cream);
-  background: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.48) 0%, rgba(20, 20, 24, 0.4) 100%);
 }
 
 .pf2e-read-aloud-body {
@@ -246,7 +228,7 @@ body.is-player .pf2e-gm-block {
   align-items: center;
   gap: 14px;
   padding: 12px 16px;
-  background: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.35) 0%, rgba(20, 20, 24, 0.95) 100%);
+  background: linear-gradient(90deg, rgba(var(--pf2e-gm-red-dark-rgb), 0.35) 0%, rgba(var(--pf2e-gm-bg-btn-rgb), 0.95) 100%);
 }
 
 .pf2e-scene-card-thumb {
@@ -262,11 +244,6 @@ body.is-player .pf2e-gm-block {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65);
-}
-
-.pf2e-scene-card-thumb i {
-  font-size: 1.5em;
-  color: rgba(var(--pf2e-gm-cyan-rgb), 0.55);
 }
 
 .pf2e-scene-card-info {
@@ -302,46 +279,6 @@ body.is-player .pf2e-gm-block {
 /* Hide legacy or existing actions bar under scene cards */
 .pf2e-scene-card-actions {
   display: none !important;
-}
-
-.pf2e-scene-card-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: 0.88em;
-  font-weight: 600;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
-.pf2e-scene-card-btn.view-scene {
-  background: var(--pf2e-gm-bg-btn);
-  color: var(--pf2e-gm-cyan-mid);
-  border-color: var(--pf2e-gm-cyan);
-}
-
-.pf2e-scene-card-btn.view-scene:hover {
-  background: rgba(var(--pf2e-gm-cyan-rgb), 0.22);
-  color: var(--pf2e-gm-text-white);
-  box-shadow: 0 0 12px rgba(var(--pf2e-gm-cyan-rgb), 0.45);
-}
-
-.pf2e-scene-card-btn.activate-scene {
-  background: var(--pf2e-gm-cta-bg);
-  color: var(--pf2e-gm-text-white);
-  border-color: var(--pf2e-gm-pink-bright);
-}
-
-.pf2e-scene-card-btn.activate-scene:hover {
-  background: var(--pf2e-gm-cta-bg-hover);
-  border-color: var(--pf2e-gm-yellow);
-  box-shadow: 0 0 12px rgba(var(--pf2e-gm-pink-rgb), 0.5);
 }
 
 /* -------------------------------------------------------------------------

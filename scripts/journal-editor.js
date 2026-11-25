@@ -31,7 +31,7 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
 
   static PARTS = {
     main: {
-      template: "modules/pf2e-awesome-gm-utilities/templates/journal-template-dialog.hbs"
+      template: `modules/${MODULE_ID}/templates/journal-template-dialog.hbs`
     }
   };
 
@@ -221,26 +221,35 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
   /*  Live Preview & HTML Generators                                           */
   /* ------------------------------------------------------------------------- */
 
-  async _generatePreviewHtml(selectedEntity) {
+  _resolveCurrentTabHtml({ stripSelection = false, resolvedEntity = undefined } = {}) {
     if (this.activeTab === "templates") {
       const template = JOURNAL_AP_TEMPLATES.find(t => t.id === this.selectedTemplateId);
-      if (!template) return "<p>Select a template on the left.</p>";
-      // Strip <selection> markers for visual preview
-      const cleanHtml = template.html.replace(/<\/?selection>/gi, "");
-      return cleanHtml;
+      if (!template) return "";
+      return stripSelection ? template.html.replace(/<\/?selection>/gi, "") : template.html;
     }
 
     if (this.activeTab === "entities") {
-      if (!selectedEntity || !selectedEntity.doc) {
-        return "<p style='color: var(--pf2e-gm-text-muted);'>Select an entity on the left to preview.</p>";
-      }
-      return this._generateEntityHtml(selectedEntity.doc, this.entityFormat);
+      const entity = resolvedEntity !== undefined
+        ? resolvedEntity
+        : (this.selectedEntityUuid ? this._resolveEntity(this.selectedEntityUuid) : null);
+      if (!entity?.doc) return "";
+      return this._generateEntityHtml(entity.doc, this.entityFormat);
     }
 
     if (this.activeTab === "checks") {
       return this._generateCheckHtml(this.checkData);
     }
 
+    return "";
+  }
+
+  async _generatePreviewHtml(selectedEntity) {
+    const html = this._resolveCurrentTabHtml({ stripSelection: true, resolvedEntity: selectedEntity });
+    if (html) return html;
+    if (this.activeTab === "templates") return "<p>Select a template on the left.</p>";
+    if (this.activeTab === "entities") {
+      return "<p style='color: var(--pf2e-gm-text-muted);'>Select an entity on the left to preview.</p>";
+    }
     return "<p>No preview available.</p>";
   }
 
@@ -369,24 +378,13 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
   /* ------------------------------------------------------------------------- */
 
   async _executeInsert() {
-    let htmlToInsert = "";
-
-    if (this.activeTab === "templates") {
-      const template = JOURNAL_AP_TEMPLATES.find(t => t.id === this.selectedTemplateId);
-      if (!template) return;
-      htmlToInsert = template.html;
-    } else if (this.activeTab === "entities") {
-      const entity = this.selectedEntityUuid ? this._resolveEntity(this.selectedEntityUuid) : null;
-      if (!entity || !entity.doc) {
+    const htmlToInsert = this._resolveCurrentTabHtml({ stripSelection: false });
+    if (!htmlToInsert) {
+      if (this.activeTab === "entities") {
         ui.notifications.warn("Please select an entity first.");
-        return;
       }
-      htmlToInsert = this._generateEntityHtml(entity.doc, this.entityFormat);
-    } else if (this.activeTab === "checks") {
-      htmlToInsert = this._generateCheckHtml(this.checkData);
+      return;
     }
-
-    if (!htmlToInsert) return;
 
     // 1. Try to find active ProseMirror editor view
     const view = this._findActiveEditorView();
@@ -616,18 +614,7 @@ export class JournalTemplateDialog extends HandlebarsApplicationMixin(Applicatio
     // HTML5 Drag-and-Drop Setup
     // -------------------------------------------------------------------------
 
-    const getHtmlForCurrentPreview = () => {
-      if (this.activeTab === "templates") {
-        const t = JOURNAL_AP_TEMPLATES.find(x => x.id === this.selectedTemplateId);
-        return t ? t.html.replace(/<\/?selection>/gi, "") : "";
-      } else if (this.activeTab === "entities") {
-        const entity = this.selectedEntityUuid ? this._resolveEntity(this.selectedEntityUuid) : null;
-        return entity?.doc ? this._generateEntityHtml(entity.doc, this.entityFormat) : "";
-      } else if (this.activeTab === "checks") {
-        return this._generateCheckHtml(this.checkData);
-      }
-      return "";
-    };
+    const getHtmlForCurrentPreview = () => this._resolveCurrentTabHtml({ stripSelection: true });
 
     const attachDragToElement = (el, htmlGetter) => {
       if (!el) return;
@@ -692,9 +679,6 @@ export class JournalEditor {
 
     // 2. Register ProseMirror Toolbar Button and Editor Tracking
     this._registerProseMirrorToolbarButton();
-
-    // 3. Register Global Journal Scene Button Click Delegation
-    this._registerSceneCardClickDelegation();
 
     console.log("PF2e Awesome GM Utilities | Advanced Journal Editor & Styler initialized.");
   }
@@ -811,39 +795,5 @@ export class JournalEditor {
         JournalEditor.registerEditorView(pmDom.__pmView);
       }
     }, { capture: true, passive: true });
-  }
-
-  /**
-   * Global click delegation for interactive Scene Cards in journals.
-   */
-  static _registerSceneCardClickDelegation() {
-    document.addEventListener("click", async (event) => {
-      const btn = event.target.closest(".pf2e-scene-card-btn");
-      if (!btn) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      const sceneId = btn.dataset.sceneId;
-      if (!sceneId) return;
-
-      const scene = game.scenes.get(sceneId);
-      if (!scene) {
-        ui.notifications.warn("Linked Scene could not be found.");
-        return;
-      }
-
-      if (btn.classList.contains("view-scene")) {
-        await scene.view();
-        ui.notifications.info(`Viewing Scene: ${scene.name}`);
-      } else if (btn.classList.contains("activate-scene")) {
-        if (!game.user.isGM) {
-          ui.notifications.warn("Only GMs can activate scenes.");
-          return;
-        }
-        await scene.activate();
-        ui.notifications.info(`Activated Scene: ${scene.name}`);
-      }
-    });
   }
 }

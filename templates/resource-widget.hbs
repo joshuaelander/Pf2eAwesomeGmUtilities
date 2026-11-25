@@ -162,7 +162,7 @@
                         <path
                           d="{{path}}"
                           class="widget-clock-slice {{#if isFilled}}filled{{/if}} {{#if @root.isGM}}clickable{{/if}}"
-                          style="{{#if isFilled}}fill: {{color}}; filter: drop-shadow(0 0 2px {{color}});{{else}}fill: rgba(255, 255, 255, 0.08);{{/if}}"
+                          style="{{#if isFilled}}fill: {{fillColor}}; filter: drop-shadow(0 0 2px {{fillColor}});{{else}}fill: rgba(255, 255, 255, 0.08);{{/if}}"
                           data-action="set-clock-segment"
                           data-id="{{../id}}"
                           data-segment="{{segment}}"
@@ -174,7 +174,7 @@
                   </div>
                   <div class="widget-slim-clock-pips">
                     {{#each clockSlices}}
-                      <span class="clock-pip-dot {{#if isFilled}}filled{{/if}}" style="{{#if isFilled}}background: {{color}}; box-shadow: 0 0 4px {{color}};{{/if}}"></span>
+                      <span class="clock-pip-dot {{#if isFilled}}filled{{/if}}" style="{{#if isFilled}}background: {{fillColor}}; box-shadow: 0 0 4px {{fillColor}};{{/if}}"></span>
                     {{/each}}
                   </div>
                 </div>

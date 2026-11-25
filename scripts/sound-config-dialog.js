@@ -3,16 +3,15 @@
  */
 
 import { MODULE_ID, COLOR_THEMES } from "./constants.js";
-import { volumeToSlider, sliderToVolume } from "./audio-controller.js";
+import { audioController, volumeToSlider, sliderToVolume } from "./audio-controller.js";
 
 export class SoundConfigDialog {
   /**
    * Open the configuration dialog for a specific slot
    * @param {object} slot The slot data to configure
-   * @param {string} bankId The parent bank ID
    * @param {Function} onSave Callback when slot is saved
    */
-  static async open(slot, bankId, onSave) {
+  static async open(slot, onSave) {
     // Prepare playlists and sounds for dropdowns
     const playlists = game.playlists.contents.map(p => ({
       id: p.id,
@@ -65,9 +64,7 @@ export class SoundConfigDialog {
       { key: "restart", label: "Restart on Press (Re-triggers from start each click)", selected: slot.mode === "restart" }
     ];
 
-    const defPct = (game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40);
-    const fallbackVol = sliderToVolume(defPct / 100);
-    const currentVol = slot.volume != null ? slot.volume : fallbackVol;
+    const currentVol = slot.volume != null ? slot.volume : audioController.getDefaultVolume();
     const currentSlider = volumeToSlider(currentVol);
 
     const context = {
@@ -91,7 +88,7 @@ export class SoundConfigDialog {
       modes
     };
 
-    const content = await renderTemplate(
+    const content = await foundry.applications.handlebars.renderTemplate(
       `modules/${MODULE_ID}/templates/sound-config.hbs`,
       context
     );
@@ -117,7 +114,6 @@ export class SoundConfigDialog {
             icon: '<i class="fa-solid fa-trash"></i>',
             label: "Clear Slot",
             callback: () => {
-              const defSlotPct = (game.settings.get(MODULE_ID, "soundPadDefaultVolume") ?? 40);
               const clearedSlot = {
                 id: slot.id,
                 name: "Empty Slot",
@@ -128,7 +124,7 @@ export class SoundConfigDialog {
                 icon: "fa-solid fa-plus",
                 color: "shadow",
                 mode: "loop",
-                volume: sliderToVolume(defSlotPct / 100),
+                volume: audioController.getDefaultVolume(),
                 fadeDuration: 1.5
               };
               if (onSave) onSave(clearedSlot);
@@ -172,9 +168,7 @@ export class SoundConfigDialog {
     const icon = $html.find("#slot-icon").val()?.trim() || "fa-solid fa-music";
     const mode = $html.find("#slot-mode").val() || "loop";
     const rawSlider = parseFloat($html.find("#slot-volume").val());
-    const defPct = (game.settings?.get?.(MODULE_ID, "soundPadDefaultVolume") ?? 40);
-    const sliderVal = isNaN(rawSlider) ? (defPct / 100) : rawSlider;
-    const volume = sliderToVolume(sliderVal);
+    const volume = isNaN(rawSlider) ? audioController.getDefaultVolume() : sliderToVolume(rawSlider);
     const fadeDuration = parseFloat($html.find("#slot-fade").val()) || 1.5;
 
     return {
@@ -249,14 +243,15 @@ export class SoundConfigDialog {
     });
 
     // FilePicker button
-    html.find(".file-picker-btn").on("click", (e) => {
+    $html.find(".file-picker-btn").on("click", (e) => {
       e.preventDefault();
-      const current = html.find("#slot-file-path").val();
-      const fp = new FilePicker({
+      const current = $html.find("#slot-file-path").val();
+      const FilePickerCls = foundry.applications.apps.FilePicker.implementation;
+      const fp = new FilePickerCls({
         type: "audio",
         current: current,
         callback: (path) => {
-          html.find("#slot-file-path").val(path);
+          $html.find("#slot-file-path").val(path);
           // auto fill name from filename
           const filename = path.split("/").pop().replace(/\.[^/.]+$/, "");
           if (!slotNameInput.val() || slotNameInput.val() === "Sound Slot") {
@@ -268,9 +263,9 @@ export class SoundConfigDialog {
     });
 
     // Live volume indicator label
-    html.find("#slot-volume").on("input", (e) => {
+    $html.find("#slot-volume").on("input", (e) => {
       const pct = Math.round(e.target.value * 100);
-      html.find("#slot-volume-display").text(`${pct}%`);
+      $html.find("#slot-volume-display").text(`${pct}%`);
     });
   }
 }

@@ -4,8 +4,6 @@
  * of the party next to each other in a clean grid formation centered around the cursor.
  */
 
-import { MODULE_ID } from "./constants.js";
-
 export class PartyPlacement {
   static _activePlacement = null;
 

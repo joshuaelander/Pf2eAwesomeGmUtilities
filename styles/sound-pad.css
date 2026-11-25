@@ -7,7 +7,6 @@
 /* Window & Main Container                                                   */
 /* ------------------------------------------------------------------------- */
 
-.app.pf2e-sound-pad-window,
 .pf2e-sound-pad-window {
   background: var(--pf2e-gm-bg-window) !important;
   color: var(--pf2e-gm-text-primary) !important;
@@ -700,9 +699,6 @@
   display: block !important;
 }
 
-.pf2e-sound-config-form input[type="text"],
-.pf2e-sound-config-form input[type="number"],
-.pf2e-sound-config-form select,
 .pf2e-sound-config-dialog input[type="text"],
 .pf2e-sound-config-dialog input[type="number"],
 .pf2e-sound-config-dialog select {
@@ -716,9 +712,6 @@
   box-sizing: border-box !important;
 }
 
-.pf2e-sound-config-form input[type="text"]:focus,
-.pf2e-sound-config-form input[type="number"]:focus,
-.pf2e-sound-config-form select:focus,
 .pf2e-sound-config-dialog input[type="text"]:focus,
 .pf2e-sound-config-dialog input[type="number"]:focus,
 .pf2e-sound-config-dialog select:focus {

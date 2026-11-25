@@ -431,7 +431,6 @@ export class ResourceConfigDialog {
       isNew,
       tracker: currentTracker,
       playerActors,
-      hasPlayerActors: playerActors.length > 0,
       colorThemes,
       categories,
       types,
@@ -442,7 +441,7 @@ export class ResourceConfigDialog {
       stages
     };
 
-    const content = await renderTemplate(
+    const content = await foundry.applications.handlebars.renderTemplate(
       `modules/${MODULE_ID}/templates/resource-config.hbs`,
       context
     );
@@ -453,130 +452,54 @@ export class ResourceConfigDialog {
 
     let saved = false;
 
-    // Dialog buttons definition
-    const buttons = {
-      save: {
-        icon: '<i class="fa-solid fa-check"></i>',
-        label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Save"),
-        callback: (html) => {
-          const root = ResourceConfigDialog._resolveRoot(html);
-          const data = ResourceConfigDialog._extractFormData(root, currentTracker.id);
-          if (data && typeof onSave === "function") {
-            onSave(data);
-            saved = true;
-          }
-          return data;
-        }
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: {
+        title: dialogTitle,
+        icon: "fa-solid fa-sliders"
       },
-      cancel: {
-        icon: '<i class="fa-solid fa-xmark"></i>',
-        label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel")
-      }
-    };
-
-    if (!isNew && onDelete) {
-      buttons.delete = {
-        icon: '<i class="fa-solid fa-trash"></i>',
-        label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Delete"),
-        callback: () => {
-          onDelete(currentTracker.id);
-        }
-      };
-    }
-
-    // Render Dialog
-    const dialogOptions = {
-      title: dialogTitle,
+      classes: ["pf2e-gm-utility", "pf2e-gm-utility-dialog", "pf2e-resource-config-dialog"],
+      position: { width: 560 },
       content,
-      buttons,
-      default: "save",
-      close: () => {},
-      render: (html) => {
-        const root = ResourceConfigDialog._resolveRoot(html);
+      buttons: [
+        {
+          action: "save",
+          label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Save"),
+          icon: "fa-solid fa-check",
+          default: true,
+          callback: (event, button, dialogEl) => {
+            const root = ResourceConfigDialog._resolveRoot(button, event, dialogEl);
+            const data = ResourceConfigDialog._extractFormData(root, currentTracker.id);
+            if (data && typeof onSave === "function") {
+              onSave(data);
+              saved = true;
+            }
+            return data;
+          }
+        },
+        ...(!isNew && onDelete ? [{
+          action: "delete",
+          label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Delete"),
+          icon: "fa-solid fa-trash",
+          callback: () => {
+            onDelete(currentTracker.id);
+            return null;
+          }
+        }] : []),
+        {
+          action: "cancel",
+          label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel"),
+          icon: "fa-solid fa-xmark"
+        }
+      ],
+      render: (event, dialogEl) => {
+        const root = ResourceConfigDialog._resolveRoot(event, dialogEl);
         if (root) ResourceConfigDialog._setupEventListeners(root);
       }
-    };
+    });
 
-    if (foundry?.applications?.api?.DialogV2?.wait) {
-      const result = await foundry.applications.api.DialogV2.wait({
-        window: {
-          title: dialogTitle,
-          icon: "fa-solid fa-sliders",
-          classes: ["pf2e-gm-utility-dialog", "pf2e-resource-config-dialog"]
-        },
-        position: { width: 560 },
-        content,
-        buttons: [
-          {
-            action: "save",
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Save"),
-            icon: "fa-solid fa-check",
-            default: true,
-            callback: (event, button, dialogEl) => {
-              const root = ResourceConfigDialog._resolveRoot(button, event, dialogEl);
-              const data = ResourceConfigDialog._extractFormData(root, currentTracker.id);
-              if (data && typeof onSave === "function") {
-                onSave(data);
-                saved = true;
-              }
-              return data;
-            }
-          },
-          ...(!isNew && onDelete ? [{
-            action: "delete",
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Delete"),
-            icon: "fa-solid fa-trash",
-            callback: () => {
-              onDelete(currentTracker.id);
-              return null;
-            }
-          }] : []),
-          {
-            action: "cancel",
-            label: game.i18n.localize("PF2E_AWESOME_GM.ResourceTracker.Config.Cancel"),
-            icon: "fa-solid fa-xmark"
-          }
-        ],
-        render: (event, dialogEl) => {
-          const root = ResourceConfigDialog._resolveRoot(event, dialogEl);
-          if (root) ResourceConfigDialog._setupEventListeners(root);
-        }
-      });
-
-      // If the promise resolved with a data object and callback hasn't already handled it
-      if (!saved && result && typeof result === "object" && typeof onSave === "function") {
-        onSave(result);
-      }
-    } else {
-      const dialog = new Dialog(dialogOptions, {
-        classes: ["pf2e-gm-utility-dialog", "pf2e-resource-config-dialog"],
-        width: 560,
-        height: "auto",
-        resizable: true
-      });
-      const result = await new Promise((resolve) => {
-        dialogOptions.buttons.save.callback = (html) => {
-          const root = ResourceConfigDialog._resolveRoot(html);
-          const data = ResourceConfigDialog._extractFormData(root, currentTracker.id);
-          if (data && typeof onSave === "function") {
-            onSave(data);
-            saved = true;
-          }
-          resolve(data);
-        };
-        dialogOptions.buttons.cancel.callback = () => resolve(null);
-        if (buttons.delete) {
-          dialogOptions.buttons.delete.callback = () => {
-            if (onDelete) onDelete(currentTracker.id);
-            resolve(null);
-          };
-        }
-        dialog.render(true);
-      });
-
-      if (!saved && result && typeof result === "object" && typeof onSave === "function") {
-        onSave(result);
-      }
+    // If the promise resolved with a data object and callback hasn't already handled it
+    if (!saved && result && typeof result === "object" && typeof onSave === "function") {
+      onSave(result);
     }
   }
 
@@ -735,7 +658,8 @@ export class ResourceConfigDialog {
         const currentPath = iconInput.value && (iconInput.value.includes("/") || iconInput.value.includes("."))
           ? iconInput.value
           : "icons/";
-        const fp = new FilePicker({
+        const FilePickerCls = foundry.applications.apps.FilePicker.implementation;
+        const fp = new FilePickerCls({
           type: "image",
           current: currentPath,
           callback: (path) => {

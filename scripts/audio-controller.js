@@ -28,7 +28,7 @@ export function sliderToVolume(sliderValue) {
   return Math.pow(Math.max(0, Math.min(1, Number(sliderValue) || 0)), 1.5);
 }
 
-export class AudioController {
+class AudioController {
   constructor() {
     /** @type {HTMLAudioElement|null} Local preview player for GM sampling */
     this.previewAudio = null;
@@ -132,13 +132,6 @@ export class AudioController {
     this.playbackPollInterval = setInterval(() => {
       this._pollCurrentPlaybackTime();
     }, 250);
-  }
-
-  _stopTimeTracker() {
-    if (this.playbackPollInterval) {
-      clearInterval(this.playbackPollInterval);
-      this.playbackPollInterval = null;
-    }
   }
 
   _pollCurrentPlaybackTime() {
@@ -515,21 +508,6 @@ export class AudioController {
             this.directSounds.delete(slot.id);
             this._notifyListeners();
           });
-        }
-      } else if (typeof AudioHelper !== "undefined" && AudioHelper.play) {
-        const sound = await AudioHelper.play({
-          src: slot.src,
-          volume: volume,
-          loop: slot.mode === "loop"
-        });
-        if (sound) {
-          this.directSounds.set(slot.id, sound);
-          if (sound.on) {
-            sound.on("end", () => {
-              this.directSounds.delete(slot.id);
-              this._notifyListeners();
-            });
-          }
         }
       } else {
         const audio = new Audio(slot.src);

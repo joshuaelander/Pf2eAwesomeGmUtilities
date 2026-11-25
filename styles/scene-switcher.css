@@ -7,7 +7,6 @@
 /* Window & Base Container                                                   */
 /* ------------------------------------------------------------------------- */
 
-.app.pf2e-scene-switcher-window,
 .pf2e-scene-switcher-window {
   background: var(--pf2e-gm-bg-window) !important;
   color: var(--pf2e-gm-text-primary) !important;
@@ -132,7 +131,7 @@
   align-items: center;
 }
 
-.status-pill {
+.pf2e-scene-switcher-container .status-pill {
   font-size: 0.7em;
   padding: 1px 6px;
   border-radius: 10px;
@@ -144,27 +143,22 @@
   gap: 4px;
 }
 
-.status-pill.viewing {
+.pf2e-scene-switcher-container .status-pill.viewing,
+.pf2e-scene-switcher-container .status-pill.viewing-pill {
   background: rgba(var(--pf2e-gm-cyan-rgb), 0.16);
   color: var(--pf2e-gm-cyan-bright);
   border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.52);
+  font-weight: 600;
 }
 
-.status-pill.active-pill {
+.pf2e-scene-switcher-container .status-pill.active-pill {
   background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
   color: var(--pf2e-gm-yellow);
   border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.55);
   font-weight: 600;
 }
 
-.status-pill.viewing-pill {
-  background: rgba(var(--pf2e-gm-cyan-rgb), 0.16);
-  color: var(--pf2e-gm-cyan-bright);
-  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.52);
-  font-weight: 600;
-}
-
-.status-pill.nav-pill {
+.pf2e-scene-switcher-container .status-pill.nav-pill {
   background: rgba(var(--pf2e-gm-purple-rgb), 0.18);
   color: var(--pf2e-gm-purple-soft);
   border-color: rgba(var(--pf2e-gm-purple-rgb), 0.45);
@@ -354,7 +348,7 @@
 .media-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(10, 10, 13, 0.55);
+  background: rgba(var(--pf2e-gm-bg-sidebar-rgb), 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -387,7 +381,7 @@
   min-width: 0;
 }
 
-.scene-title {
+.pf2e-scene-switcher-container .scene-title {
   margin: 0;
   font-size: 0.95em;
   font-weight: 600;
@@ -399,7 +393,7 @@
   transition: color 0.15s ease;
 }
 
-.scene-title:hover {
+.pf2e-scene-switcher-container .scene-title:hover {
   color: var(--pf2e-gm-cyan);
 }
 
@@ -497,8 +491,7 @@
   background: rgba(var(--pf2e-gm-purple-rgb), 0.14);
 }
 
-.meta-tag.tag-lighting.is-night,
-.meta-tag.tag-lighting.is-dark {
+.meta-tag.tag-lighting.is-night {
   color: var(--pf2e-gm-cyan-bright);
   border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.45);
   background: rgba(var(--pf2e-gm-cyan-rgb), 0.12);
@@ -775,33 +768,33 @@
 /* Compact Mode                                                              */
 /* ------------------------------------------------------------------------- */
 
-.compact-mode .scene-card {
+.pf2e-scene-switcher-container.compact-mode .scene-card {
   padding: 5px 8px;
   gap: 4px;
 }
 
-.compact-mode .card-media {
+.pf2e-scene-switcher-container.compact-mode .card-media {
   width: 32px;
   height: 32px;
 }
 
-.compact-mode .card-bottom-row .card-meta-tags {
+.pf2e-scene-switcher-container.compact-mode .card-bottom-row .card-meta-tags {
   display: none;
 }
 
-.compact-mode .btn-card-action .btn-label {
+.pf2e-scene-switcher-container.compact-mode .btn-card-action .btn-label {
   display: none;
 }
 
-.compact-mode .btn-card-action {
+.pf2e-scene-switcher-container.compact-mode .btn-card-action {
   padding: 3px 6px;
 }
 
-.compact-mode .active-scene-banner {
+.pf2e-scene-switcher-container.compact-mode .active-scene-banner {
   padding: 5px 8px;
 }
 
-.compact-mode .active-banner-media {
+.pf2e-scene-switcher-container.compact-mode .active-banner-media {
   width: 36px;
   height: 36px;
 }

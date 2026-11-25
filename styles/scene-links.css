@@ -55,7 +55,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(to bottom, rgba(15, 15, 18, 0.35) 0%, rgba(10, 10, 13, 0.96) 100%);
+  background: linear-gradient(to bottom, rgba(var(--pf2e-gm-bg-window-rgb), 0.35) 0%, rgba(var(--pf2e-gm-bg-sidebar-rgb), 0.96) 100%);
   pointer-events: none;
 }
 
@@ -554,12 +554,12 @@
   gap: 12px;
 }
 
-.checkbox-group {
+.pf2e-scene-link-picker .checkbox-group {
   grid-column: span 2;
   margin-top: 4px;
 }
 
-.checkbox-label {
+.pf2e-scene-link-picker .checkbox-label {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -567,11 +567,11 @@
   color: var(--pf2e-gm-text-primary);
 }
 
-.checkbox-label input[type="checkbox"] {
+.pf2e-scene-link-picker .checkbox-label input[type="checkbox"] {
   accent-color: var(--pf2e-gm-pink);
 }
 
-.hint-text {
+.pf2e-scene-link-picker .hint-text {
   font-size: 0.7rem;
   color: var(--pf2e-gm-text-muted);
 }
@@ -598,7 +598,7 @@
   padding: 8px 12px;
   border: 1px solid var(--pf2e-gm-border-input);
   border-radius: 5px;
-  background: rgba(15, 15, 18, 0.75);
+  background: rgba(var(--pf2e-gm-bg-window-rgb), 0.75);
 }
 
 .pf2e-scene-link-fieldset legend {

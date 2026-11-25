@@ -7,7 +7,6 @@
 import {
   MODULE_ID,
   COLOR_THEMES,
-  REPUTATION_TIERS,
   getReputationTier,
   NPC_ATTITUDES,
   getAttitudeInfo
@@ -127,16 +126,19 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     }
   }
 
+  _cleanupDrag() {
+    if (!this._isDragging) return;
+    this._isDragging = false;
+    if (this._onPointerMoveBound) window.removeEventListener("pointermove", this._onPointerMoveBound);
+    if (this._onPointerUpBound) window.removeEventListener("pointerup", this._onPointerUpBound);
+  }
+
   /**
    * Safely closes the widget and ensures any active drag listeners are removed.
    */
   async close(options = {}) {
     this._userClosed = true;
-    if (this._isDragging) {
-      this._isDragging = false;
-      if (this._onPointerMoveBound) window.removeEventListener("pointermove", this._onPointerMoveBound);
-      if (this._onPointerUpBound) window.removeEventListener("pointerup", this._onPointerUpBound);
-    }
+    this._cleanupDrag();
     return super.close(options);
   }
 
@@ -166,7 +168,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
     });
 
     // Enrich each visible tracker for display
-    const trackers = filtered.map((t, index) => {
+    const trackers = filtered.map((t) => {
       const theme = COLOR_THEMES[t.color] || COLOR_THEMES.gold;
 
       // Linked player character
@@ -252,7 +254,6 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
       let reputationTier = null;
       let repPercentPositive = 0;
       let repPercentNegative = 0;
-      let reputationTiers = [];
       if (isReputation) {
         reputationTier = getReputationTier(currentVal);
         const posMax = Math.max(1, maxVal);
@@ -262,11 +263,6 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         } else {
           repPercentNegative = Math.min(100, Math.max(0, Math.round((Math.abs(currentVal) / negMin) * 100)));
         }
-
-        reputationTiers = REPUTATION_TIERS.map(tier => ({
-          ...tier,
-          isCurrent: tier.key === reputationTier.key
-        }));
       }
 
       // NPC Attitude data (1 to 5)
@@ -282,7 +278,6 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
 
       return {
         ...t,
-        index,
         theme,
         linkedActor,
         isImageIcon,
@@ -301,7 +296,6 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         reputationTier,
         repPercentPositive,
         repPercentNegative,
-        reputationTiers,
         attitudeInfo,
         attitudes
       };
@@ -471,11 +465,7 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
   }
 
   _onClose(options) {
-    if (this._isDragging) {
-      this._isDragging = false;
-      if (this._onPointerMoveBound) window.removeEventListener("pointermove", this._onPointerMoveBound);
-      if (this._onPointerUpBound) window.removeEventListener("pointerup", this._onPointerUpBound);
-    }
+    this._cleanupDrag();
     return super._onClose(options);
   }
 
@@ -539,29 +529,10 @@ export class ResourceWidgetApp extends HandlebarsApplicationMixin(ApplicationV2)
         break;
       }
 
-      case "set-reputation-tier": {
-        if (!game.user.isGM) return;
-        const thresh = parseInt(actionEl.dataset.threshold, 10);
-        await game.pf2eAwesomeGmUtilities?.resourceTracker?.setValue(trackerId, Number.isNaN(thresh) ? 0 : thresh);
-        break;
-      }
-
       case "set-attitude": {
         if (!game.user.isGM) return;
         const attVal = parseInt(actionEl.dataset.value, 10);
         await game.pf2eAwesomeGmUtilities?.resourceTracker?.setValue(trackerId, Number.isNaN(attVal) ? 3 : attVal);
-        break;
-      }
-
-      case "post-chat": {
-        if (!game.user.isGM) return;
-        await game.pf2eAwesomeGmUtilities?.resourceTracker?.postToChat(trackerId);
-        break;
-      }
-
-      case "unpin-tracker": {
-        if (!game.user.isGM) return;
-        await game.pf2eAwesomeGmUtilities?.resourceTracker?.app?.togglePin(trackerId);
         break;
       }
     }
