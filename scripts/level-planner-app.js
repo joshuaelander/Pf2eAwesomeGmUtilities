@@ -845,7 +845,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     const traits = Array.isArray(doc.system?.traits?.value) ? doc.system.traits.value : [];
-    const docTrads = Array.isArray(doc.system?.traits?.traditions) ? doc.system.traits.traditions : [];
+    const rawTrads = doc.system?.traits?.traditions ?? doc.system?.traditions?.value ?? doc.system?.traditions;
+    const docTrads = Array.isArray(rawTrads) ? rawTrads : (rawTrads instanceof Set ? Array.from(rawTrads) : []);
     const snapshot = {
       id: foundry.utils.randomID(8),
       uuid: doc.uuid,
@@ -1178,6 +1179,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     const content = `
       <div class="pf2e-lp-picker">
+        <div class="pf2e-lp-picker-goal" style="display:none;"></div>
         <div class="pf2e-lp-picker-controls">
           <input type="text" class="pf2e-lp-picker-search" placeholder="Search spells to plan for Level ${levelNum}..." autofocus />
           <select class="pf2e-lp-picker-trad" title="Spell Tradition">
@@ -1221,12 +1223,32 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const root = dialog.element?.querySelector?.(".pf2e-lp-picker");
       if (!root) return;
 
+      const goalEl = root.querySelector(".pf2e-lp-picker-goal");
       const searchInput = root.querySelector(".pf2e-lp-picker-search");
       const tradSelect = root.querySelector(".pf2e-lp-picker-trad");
       const rankSelect = root.querySelector(".pf2e-lp-picker-rank");
       const browserBtn = root.querySelector(".pf2e-lp-picker-browser-btn");
       const statusEl = root.querySelector(".pf2e-lp-picker-status");
       const listEl = root.querySelector(".pf2e-lp-picker-list");
+
+      const updateGoalBanner = () => {
+        if (!goalEl) return;
+        const rm = buildLevelRoadmap(actor);
+        const lvlRow = rm?.levels?.find(l => l.level === levelNum);
+        const targetMilestone = entryKey
+          ? lvlRow?.spellMilestones?.find(m => m.entryKey === entryKey)
+          : (lvlRow?.spellMilestones?.find(m => m.isMandatory) || lvlRow?.spellMilestones?.[0]);
+
+        if (targetMilestone?.promptText) {
+          goalEl.style.display = "";
+          goalEl.classList.toggle("is-complete", Boolean(targetMilestone.isMandatory && targetMilestone.complete));
+          goalEl.classList.toggle("is-needed", Boolean(targetMilestone.isMandatory && !targetMilestone.complete));
+          goalEl.innerHTML = `<strong>Level ${levelNum} (${esc(targetMilestone.title)}):</strong> ${esc(targetMilestone.promptText)}${targetMilestone.signatureNote ? ` · <em>${esc(targetMilestone.signatureNote)}</em>` : ""}`;
+        } else {
+          goalEl.style.display = "none";
+        }
+      };
+      updateGoalBanner();
 
       browserBtn?.addEventListener("click", async (ev) => {
         ev.preventDefault();
@@ -1259,7 +1281,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
         const matched = [];
         for (const sp of allSpells) {
-          // Skip focus spells without traditions unless unfiltered
+          if (sp.isRitual && (trad || !query)) continue;
+          // Skip focus spells without traditions when filtering by tradition
           if (trad && !sp.traditions.includes(trad)) continue;
 
           if (rankFilter === "cantrip") {
@@ -1283,14 +1306,14 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           : `${matched.length} matching spell(s) — click Add to bookmark multiple`;
 
         if (capped.length === 0) {
-          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No spells match the current filter.</div>`;
+          listEl.innerHTML = `<div class="pf2e-lp-picker-empty">No spells match the current filter. Try switching Tradition or Rank filter above.</div>`;
           return;
         }
 
         listEl.innerHTML = capped.map((sp, idx) => {
           const isAdded = addedUuids.has(sp.uuid);
           const isKnown = knownSpellUuids.has(sp.uuid) || knownSpellNames.has(String(sp.name || "").toLowerCase());
-          const tradText = sp.traditions.map(capitalize).join(", ") || "Focus / Special";
+          const tradText = sp.traditions.map(capitalize).join(", ") || (sp.isFocus ? "Focus" : "Special");
           return `
             <div class="pf2e-lp-picker-row">
               <img src="${esc(sp.img)}" alt="" class="pf2e-lp-picker-img" />
@@ -1342,6 +1365,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             addedUuids.add(chosen.uuid);
             btn.classList.add("is-added");
             btn.textContent = "Added ✓";
+            updateGoalBanner();
             this.render({ force: false });
           });
         });
@@ -1666,6 +1690,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           revertSkills: true,
           revertSpells: true,
           revertFormulas: true,
+          postChatReminder: true,
           manualSkillPicks: {}
         });
       }
@@ -1680,6 +1705,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       revertSkills: true,
       revertSpells: true,
       revertFormulas: true,
+      postChatReminder: true,
       manualSkillPicks: {}
     };
 
@@ -1842,6 +1868,13 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             </label>
           `);
         }
+
+        optionRows.push(`
+          <label class="pf2e-lp-revert-opt">
+            <input type="checkbox" data-revert-opt="postChatReminder" ${state.postChatReminder ? "checked" : ""} />
+            <span>Post whispered Chat Reminder Card with exact counts of any manual removals (skills, languages, spells, formulas)</span>
+          </label>
+        `);
 
         const levelCardsHtml = preview.levels.map(info => {
           const rows = [];
@@ -2008,14 +2041,19 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         revertSkills: payload.revertSkills,
         revertSpells: payload.revertSpells,
         revertFormulas: payload.revertFormulas,
+        postChatReminder: payload.postChatReminder !== false,
         manualSkillPicks: payload.manualSkillPicks
       });
 
       if (res.ok) {
         const summaryStr = res.summary.length > 0 ? ` — ${res.summary.join(" | ")}` : "";
-        ui.notifications?.info(`${actor.name} reverted from Level ${res.oldLevel} → Level ${res.newLevel}!${summaryStr}`);
-        if (Array.isArray(res.reminders) && res.reminders.length > 0) {
-          ui.notifications?.warn(`Level ${res.newLevel} Revert Notes: ${res.reminders.join(" · ")}`);
+        const manualCount = Array.isArray(res.manualActions) ? res.manualActions.length : 0;
+        const chatNote = manualCount > 0 && payload.postChatReminder !== false
+          ? ` | Posted ${manualCount} manual cleanup reminder${manualCount === 1 ? "" : "s"} to Chat.`
+          : "";
+        ui.notifications?.info(`${actor.name} reverted from Level ${res.oldLevel} → Level ${res.newLevel}!${summaryStr}${chatNote}`);
+        if (manualCount > 0 && payload.postChatReminder === false) {
+          ui.notifications?.warn(`Level ${res.newLevel} Manual Cleanup: ${res.manualActions.map(a => a.title).join(" · ")}`);
         }
         // Focus the newly reverted next level so the saved plan is immediately visible & editable!
         this._selectedLevel = Math.min(20, res.newLevel + 1);

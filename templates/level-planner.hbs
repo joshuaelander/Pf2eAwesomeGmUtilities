@@ -415,7 +415,14 @@
                 {{/if}}
               >
                 <div class="pf2e-lp-panel-head">
-                  <h4><i class="fa-solid fa-hat-wizard"></i> Spellcasting &amp; Planned Spells</h4>
+                  <h4>
+                    <i class="fa-solid fa-hat-wizard"></i> Spellcasting &amp; Planned Spells
+                    {{#if focusedLevel.hasMandatorySpells}}
+                      <span class="pf2e-lp-formula-counter {{#if focusedLevel.spellsComplete}}is-complete{{else}}is-incomplete{{/if}}">
+                        {{focusedLevel.spellGoalBannerText}}
+                      </span>
+                    {{/if}}
+                  </h4>
                   {{#if focusedLevel.canEditThisLevel}}
                     <div class="pf2e-lp-panel-actions">
                       <button
@@ -452,19 +459,42 @@
                         <div class="pf2e-lp-milestone-info">
                           <strong>{{this.title}}</strong>
                           <span class="pf2e-lp-milestone-delta">{{this.deltaText}}</span>
+                          {{#if this.promptText}}
+                            <span class="pf2e-lp-spell-goal-pill {{#if this.isMandatory}}{{#if this.complete}}is-complete{{else}}is-needed{{/if}}{{else}}is-optional{{/if}}">
+                              {{this.promptText}}
+                            </span>
+                          {{/if}}
+                          {{#if this.signatureNote}}
+                            <span class="pf2e-lp-spell-sig-pill">{{this.signatureNote}}</span>
+                          {{/if}}
                           <span class="pf2e-lp-milestone-full">({{this.traditionLabel}} &middot; Total Slots: {{this.fullSlotsText}})</span>
                         </div>
                         {{#if ../focusedLevel.canEditThisLevel}}
-                          <button
-                            type="button"
-                            class="pf2e-lp-btn pf2e-lp-btn-sm"
-                            data-lp-action="browse-spells"
-                            data-tradition="{{this.tradition}}"
-                            data-max-rank="{{this.maxRank}}"
-                            data-unlock-rank="{{this.unlockedNewRank}}"
-                          >
-                            <i class="fa-solid fa-compass"></i> Browse {{this.traditionLabel}}
-                          </button>
+                          <div class="pf2e-lp-milestone-actions">
+                            <button
+                              type="button"
+                              class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-btn-gold"
+                              data-lp-action="pick-spell"
+                              data-level="{{../focusedLevel.level}}"
+                              data-tradition="{{this.tradition}}"
+                              data-entry-key="{{this.entryKey}}"
+                              data-max-rank="{{this.maxRank}}"
+                              data-unlock-rank="{{this.unlockedNewRank}}"
+                              title="Pick {{this.traditionLabel}} spells for {{this.title}}"
+                            >
+                              <i class="fa-solid fa-plus"></i> Pick
+                            </button>
+                            <button
+                              type="button"
+                              class="pf2e-lp-btn pf2e-lp-btn-sm"
+                              data-lp-action="browse-spells"
+                              data-tradition="{{this.tradition}}"
+                              data-max-rank="{{this.maxRank}}"
+                              data-unlock-rank="{{this.unlockedNewRank}}"
+                            >
+                              <i class="fa-solid fa-compass"></i> Browse {{this.traditionLabel}}
+                            </button>
+                          </div>
                         {{/if}}
                       </div>
                     {{/each}}

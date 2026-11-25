@@ -1005,6 +1005,49 @@
   font-size: 0.9em;
 }
 
+.pf2e-lp-container .pf2e-lp-milestone-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-goal-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.88em;
+  font-weight: 700;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-goal-pill.is-needed {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.55);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-container .pf2e-lp-spell-goal-pill.is-complete {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.5);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-container .pf2e-lp-spell-goal-pill.is-optional {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.18);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.45);
+  color: var(--pf2e-gm-purple-soft);
+  font-weight: 600;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-sig-pill {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.84em;
+  font-weight: 700;
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.24);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.52);
+  color: var(--pf2e-gm-purple-pale);
+}
+
 .pf2e-lp-container .pf2e-lp-planned-spells {
   display: flex;
   flex-wrap: wrap;
@@ -1440,6 +1483,32 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.pf2e-lp-picker-goal {
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.16);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.48);
+  color: var(--pf2e-gm-text-primary);
+  font-size: 0.84em;
+  line-height: 1.35;
+}
+
+.pf2e-lp-picker-goal.is-needed {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.14);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.55);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-picker-goal.is-complete {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.16);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.52);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-picker-goal strong {
+  color: var(--pf2e-gm-text-white);
 }
 
 .pf2e-lp-picker-search {
@@ -1894,5 +1963,156 @@
   border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.45);
   color: var(--pf2e-gm-purple-pale);
   font-size: 0.85em;
+  line-height: 1.4;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 9. DE-LEVEL WHISPERED CHAT REMINDER CARD (.pf2e-lp-chat-card)             */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-lp-chat-card {
+  background: linear-gradient(180deg, var(--pf2e-gm-bg-card) 0%, var(--pf2e-gm-bg-inset) 100%);
+  border: 1px solid var(--pf2e-gm-border-window);
+  border-left: 4px solid var(--pf2e-gm-cyan);
+  border-radius: 6px;
+  padding: 8px 10px;
+  color: var(--pf2e-gm-text-primary);
+  font-size: 0.88em;
+  box-shadow: var(--pf2e-gm-shadow-card);
+}
+
+.pf2e-lp-chat-card.has-actions {
+  border-left-color: var(--pf2e-gm-yellow);
+}
+
+.pf2e-lp-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid var(--pf2e-gm-border-red);
+}
+
+.pf2e-lp-chat-header img {
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  object-fit: cover;
+  border: 1px solid var(--pf2e-gm-border-btn);
+  flex: 0 0 34px;
+}
+
+.pf2e-lp-chat-head-meta {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.pf2e-lp-chat-title {
+  font-weight: 700;
+  color: var(--pf2e-gm-text-white);
+  line-height: 1.25;
+}
+
+.pf2e-lp-chat-sub {
+  margin-top: 3px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pf2e-lp-chat-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 700;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.45);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-chat-section {
+  margin-top: 6px;
+}
+
+.pf2e-lp-chat-section.is-auto {
+  padding-top: 6px;
+  border-top: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-lp-chat-sec-title {
+  font-size: 0.8em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--pf2e-gm-text-cream);
+  margin-bottom: 4px;
+}
+
+.pf2e-lp-chat-sec-title.is-alert {
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-chat-sec-title.is-ok {
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pf2e-lp-chat-action {
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.1);
+  border: 1px solid rgba(var(--pf2e-gm-pink-rgb), 0.35);
+  border-left: 3px solid var(--pf2e-gm-pink);
+}
+
+.pf2e-lp-chat-action-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--pf2e-gm-text-white);
+  line-height: 1.3;
+}
+
+.pf2e-lp-chat-cat {
+  font-size: 0.76em;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-lp-chat-action-detail {
+  margin-top: 2px;
+  font-size: 0.88em;
+  color: var(--pf2e-gm-text-secondary);
+  line-height: 1.35;
+}
+
+.pf2e-lp-chat-ok {
+  padding: 5px 7px;
+  border-radius: 4px;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.12);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.38);
+  color: var(--pf2e-gm-cyan-tint-text);
+}
+
+.pf2e-lp-chat-auto-list {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 0.85em;
+  color: var(--pf2e-gm-text-subtle);
   line-height: 1.4;
 }

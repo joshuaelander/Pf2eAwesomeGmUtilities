@@ -169,10 +169,24 @@ export async function clearPlannedFeat(actor, levelNum, slotKey) {
   if (!actor || actor.type !== "character" || !slotKey) return false;
   if (!game.user?.isGM && !actor.isOwner) return false;
   const key = String(levelNum);
-  await actor.update({
-    [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.-=${slotKey}`]: null
-  });
-  // Defensive fallback in case any exotic slotKey wasn't deleted by -= syntax
+
+  // Use Foundry v14's native ForcedDeletion operator (`_del`) to avoid legacy `-=` deprecation warnings
+  const ForcedDeletion = foundry?.data?.operators?.ForcedDeletion;
+  const delOp = globalThis._del !== undefined
+    ? globalThis._del
+    : (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+
+  if (delOp !== undefined) {
+    await actor.update({
+      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}`]: delOp
+    });
+  } else {
+    await actor.update({
+      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.-=${slotKey}`]: null
+    });
+  }
+
+  // Defensive fallback in case an exotic slotKey wasn't deleted by the operator
   const stillPresent = actor.getFlag?.(MODULE_ID, PLAN_FLAG_KEY)?.levels?.[key]?.feats?.[slotKey];
   if (stillPresent) {
     await actor.update({
@@ -498,16 +512,136 @@ function checkPlannedFeatPrereqs(plannedFeat, slotLevel, projectedSkillRanks, kn
   return warnings;
 }
 
+const SPELLBOOK_CLASS_SLUGS = new Set(["wizard", "witch", "magus"]);
+
 /**
- * Computes which spell ranks unlock or gain extra slots at a specific future level `lvl`
- * based on the actor's active spellcasting sources (Primary Class, Dual Class, Free Archetype).
+ * Formats a concise human-readable prompt for how many spells remain to be picked for a milestone.
+ * e.g. "Choose 2 Rank 2 spells", "Choose 1 more Rank 2 spell", "Choose 1 more spell (up to Rank 3)", "2/2 planned ✓".
+ */
+function formatSpellPickPrompt(milestone, plannedForSource = []) {
+  const nonCantrips = plannedForSource.filter(sp => !sp?.isCantrip);
+
+  if (milestone.learnMode === "upto-rank") {
+    const req = Math.max(0, Number(milestone.requiredTotal || 0));
+    const eligible = nonCantrips.filter(sp => Number(sp.rank || 1) <= milestone.maxRank);
+    const picked = eligible.length;
+    const left = Math.max(0, req - picked);
+    const complete = left === 0;
+    const bookLabel = milestone.classSlug === "witch" ? "Familiar" : "Spellbook";
+    let promptText = "";
+    if (complete) {
+      promptText = `${picked}/${req} ${bookLabel} spell${req === 1 ? "" : "s"} planned ✓`;
+    } else if (picked > 0) {
+      promptText = `Add ${left} more ${bookLabel} spell${left === 1 ? "" : "s"} (up to Rank ${milestone.maxRank})`;
+    } else {
+      promptText = `Add ${req} ${bookLabel} spell${req === 1 ? "" : "s"} (up to Rank ${milestone.maxRank})`;
+    }
+    return {
+      pickedCount: picked,
+      requiredCount: req,
+      remainingCount: left,
+      remainingByRank: {},
+      complete,
+      isMandatory: req > 0,
+      promptText
+    };
+  }
+
+  if (milestone.learnMode === "by-rank") {
+    const reqByRank = milestone.requiredByRank || {};
+    const ranks = Object.keys(reqByRank).map(Number).filter(r => r >= 1 && reqByRank[r] > 0).sort((a, b) => a - b);
+    const reqTotal = ranks.reduce((sum, r) => sum + Number(reqByRank[r] || 0), 0);
+
+    const pickedByRank = {};
+    for (const sp of nonCantrips) {
+      const r = Math.max(1, Number(sp.rank || 1));
+      pickedByRank[r] = (pickedByRank[r] || 0) + 1;
+    }
+
+    // Match exact rank first, and allow any unmatched lower-rank planned spell to count toward a higher-rank slot
+    // if the player explicitly planned a lower-rank spell for their higher-rank repertoire pick (valid in PF2e!)
+    const remainingByRank = {};
+    let pickedMatched = 0;
+    const leftoverPicked = { ...pickedByRank };
+
+    for (const r of ranks) {
+      const need = Number(reqByRank[r] || 0);
+      const exact = Math.min(need, leftoverPicked[r] || 0);
+      leftoverPicked[r] = (leftoverPicked[r] || 0) - exact;
+      remainingByRank[r] = need - exact;
+      pickedMatched += exact;
+    }
+    // Any remaining planned spells of rank <= r can fill remaining slot at rank r
+    for (const r of ranks) {
+      let stillNeed = remainingByRank[r] || 0;
+      if (stillNeed <= 0) continue;
+      for (let lr = r; lr >= 1 && stillNeed > 0; lr--) {
+        const avail = leftoverPicked[lr] || 0;
+        if (avail <= 0) continue;
+        const used = Math.min(stillNeed, avail);
+        leftoverPicked[lr] -= used;
+        stillNeed -= used;
+        pickedMatched += used;
+      }
+      remainingByRank[r] = stillNeed;
+    }
+
+    const totalLeft = Object.values(remainingByRank).reduce((s, n) => s + n, 0);
+    const complete = totalLeft === 0;
+    const hasAnyPicked = pickedMatched > 0;
+
+    let promptText = "";
+    if (complete) {
+      promptText = `${pickedMatched}/${reqTotal} spell${reqTotal === 1 ? "" : "s"} planned ✓`;
+    } else {
+      const parts = ranks
+        .filter(r => (remainingByRank[r] || 0) > 0)
+        .map(r => {
+          const left = remainingByRank[r];
+          return `${left} ${hasAnyPicked ? "more " : ""}Rank ${r} spell${left === 1 ? "" : "s"}`;
+        });
+      promptText = `Choose ${parts.join(" & ")}`;
+    }
+
+    return {
+      pickedCount: pickedMatched,
+      requiredCount: reqTotal,
+      remainingCount: totalLeft,
+      remainingByRank,
+      complete,
+      isMandatory: reqTotal > 0,
+      promptText
+    };
+  }
+
+  // Optional (Full-list prepared casters like Cleric, Druid, Animist, Necromancer)
+  const picked = nonCantrips.length;
+  const maxR = milestone.unlockedNewRank || milestone.maxRank || 1;
+  const promptText = milestone.unlockedNewRank > 0
+    ? `Full ${milestone.traditionLabel} list — bookmark optional Rank ${maxR} spells`
+    : `Full ${milestone.traditionLabel} list — bookmark favorite spells (optional)`;
+
+  return {
+    pickedCount: picked,
+    requiredCount: 0,
+    remainingCount: 0,
+    remainingByRank: {},
+    complete: true,
+    isMandatory: false,
+    promptText
+  };
+}
+
+/**
+ * Computes which spell ranks unlock, gain extra slots, and how many new spells to learn
+ * at each level `1..20` based on the actor's active spellcasting sources.
  */
 function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport) {
   const byLevel = {};
   const sources = baseReport?.spellcasting?.sources || [];
   if (sources.length === 0) return byLevel;
 
-  // Determine highest rank & slot note for each non-focus casting source at level L
+  // Determine highest rank & slot table for each non-focus casting source at level L
   const getSlotsAtLevel = (src, lvl) => {
     const slots = {};
     if (src.isFocus || src.castingType === "focus") {
@@ -519,7 +653,6 @@ function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport
       return { slots, maxRank: r };
     }
     if (src.sourceKind === "archetype") {
-      // Standard Basic (4/6/8), Expert (12/14/16), Master (18/20)
       if (lvl >= 4) slots[1] = 1;
       if (lvl >= 6) slots[2] = 1;
       if (lvl >= 8) slots[3] = 1;
@@ -528,9 +661,16 @@ function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport
       if (lvl >= 16) slots[6] = 1;
       if (lvl >= 18) slots[7] = 1;
       if (lvl >= 20) slots[8] = 1;
+      // Breadth feat (Lv 8+): +1 slot for every rank except the top two
+      const hasBreadth = Boolean(src.hasBreadth || /\bbreadth\b/i.test(String(src.expectedSpellsNote || "")));
       let maxRank = 0;
       for (let r = 8; r >= 1; r--) {
         if (slots[r] > 0) { maxRank = r; break; }
+      }
+      if (hasBreadth && lvl >= 8 && maxRank >= 3) {
+        for (let r = 1; r <= maxRank - 2; r++) {
+          if (slots[r] > 0) slots[r] += 1;
+        }
       }
       return { slots, maxRank };
     }
@@ -567,26 +707,62 @@ function computeSpellMilestonesByLevel(actor, currentLevel, dualInfo, baseReport
       const prev = lvl > 1 ? getSlotsAtLevel(src, lvl - 1) : { slots: {}, maxRank: 0 };
 
       const gained = [];
+      const requiredByRank = {};
       let unlockedNewRank = 0;
+      let totalSlotGain = 0;
+
       for (let r = 1; r <= 10; r++) {
         const diff = (cur.slots[r] || 0) - (prev.slots[r] || 0);
         if (diff > 0) {
-          gained.push(`+${diff} Rank ${r}`);
+          gained.push(`+${diff} Rank ${r} slot${diff === 1 ? "" : "s"}`);
+          requiredByRank[r] = diff;
+          totalSlotGain += diff;
           if ((prev.slots[r] || 0) === 0) unlockedNewRank = Math.max(unlockedNewRank, r);
         }
       }
-      if (gained.length > 0) {
+
+      const slug = String(src.classSlug || "").toLowerCase();
+      const isSpellbookClass = src.sourceKind !== "archetype" && SPELLBOOK_CLASS_SLUGS.has(slug);
+      const isSpontaneous = src.castingType === "spontaneous" && !(slug === "animist");
+      const isSpellbookArchetype = src.sourceKind === "archetype" && SPELLBOOK_CLASS_SLUGS.has(slug);
+
+      let learnMode = "optional";
+      let requiredTotal = 0;
+      if (lvl >= 2) {
+        if (isSpellbookClass) {
+          learnMode = "upto-rank";
+          requiredTotal = 2;
+        } else if (isSpontaneous || isSpellbookArchetype) {
+          learnMode = "by-rank";
+          requiredTotal = totalSlotGain;
+        }
+      }
+
+      const signatureNote = (isSpontaneous && src.sourceKind !== "archetype" && lvl >= 3 && lvl % 2 === 1 && unlockedNewRank > 0)
+        ? "+1 Signature Spell"
+        : "";
+
+      if (gained.length > 0 || (isSpellbookClass && lvl >= 2 && cur.maxRank > 0)) {
+        const deltaText = gained.length > 0
+          ? gained.join(", ")
+          : `+2 Spellbook Spells (up to Rank ${cur.maxRank})`;
         notes.push({
           entryKey: src.key,
           entryId: src.entryId || null,
           title: src.title,
+          classSlug: slug,
+          sourceKind: src.sourceKind || "class",
           tradition: src.tradition || "",
           traditionLabel: TRADITION_LABELS[src.tradition] || "Any",
           castingType: src.castingType,
           maxRank: cur.maxRank || 1,
           unlockedNewRank,
-          deltaText: gained.join(", "),
-          fullSlotsText: formatSlotsSummary(cur.slots)
+          deltaText,
+          fullSlotsText: formatSlotsSummary(cur.slots),
+          learnMode,
+          requiredByRank,
+          requiredTotal,
+          signatureNote
         });
       }
     }
@@ -1041,9 +1217,57 @@ export function buildLevelRoadmap(actor, options = {}) {
     // D. Class Features unlocked at this level
     const classFeatures = classFeaturesByLevel[lvl] || [];
 
-    // E. Spellcasting milestones & planned spells
-    const milestones = spellMilestones[lvl] || [];
+    // E. Spellcasting milestones & planned spells (with live "Choose X more Rank Y" tracking!)
+    const rawMilestones = spellMilestones[lvl] || [];
     const plannedSpells = isFuture && Array.isArray(lp.spells) ? lp.spells : [];
+    const milestones = rawMilestones.map(m => {
+      const matchedPlanned = plannedSpells.filter(sp => {
+        if (sp?.entryKey && m.entryKey) return sp.entryKey === m.entryKey;
+        if (rawMilestones.length === 1) return true;
+        if (sp?.tradition && m.tradition) return sp.tradition === m.tradition;
+        return false;
+      });
+      const pickState = isFuture
+        ? formatSpellPickPrompt(m, matchedPlanned)
+        : {
+            pickedCount: 0,
+            requiredCount: m.requiredTotal || 0,
+            remainingCount: 0,
+            remainingByRank: {},
+            complete: true,
+            isMandatory: false,
+            promptText: m.learnMode === "upto-rank"
+              ? `Learned +${m.requiredTotal || 2} spells (up to Rank ${m.maxRank})`
+              : (m.learnMode === "by-rank" && m.requiredTotal > 0
+                ? `Learned ${m.requiredTotal} new spell${m.requiredTotal === 1 ? "" : "s"}`
+                : `Slots: ${m.fullSlotsText}`)
+          };
+      return {
+        ...m,
+        ...pickState
+      };
+    });
+
+    const mandatoryMilestones = isFuture ? milestones.filter(m => m.isMandatory) : [];
+    const hasMandatorySpells = mandatoryMilestones.length > 0;
+    const mandatorySpellsRequired = mandatoryMilestones.reduce((s, m) => s + (m.requiredCount || 0), 0);
+    const mandatorySpellsPicked = mandatoryMilestones.reduce((s, m) => s + (m.pickedCount || 0), 0);
+    const mandatorySpellsRemaining = mandatoryMilestones.reduce((s, m) => s + (m.remainingCount || 0), 0);
+    const spellsComplete = !hasMandatorySpells || mandatorySpellsRemaining === 0;
+
+    let spellGoalBannerText = "";
+    if (hasMandatorySpells) {
+      if (mandatoryMilestones.length === 1) {
+        spellGoalBannerText = mandatoryMilestones[0].promptText;
+      } else if (spellsComplete) {
+        spellGoalBannerText = `${mandatorySpellsPicked}/${mandatorySpellsRequired} spell${mandatorySpellsRequired === 1 ? "" : "s"} planned ✓`;
+      } else {
+        spellGoalBannerText = mandatoryMilestones
+          .filter(m => !m.complete)
+          .map(m => `${m.title.replace(/ Spellcasting$/i, "")}: ${m.promptText}`)
+          .join(" · ");
+      }
+    }
 
     // E2. Alchemist Free Formulas milestone & planned formulas (Remaster PC2: 8 at Lv 1, +2 per level Lv 2-20)
     const formulaMilestone = isAlchemist
@@ -1074,11 +1298,13 @@ export function buildLevelRoadmap(actor, options = {}) {
       + (hasBoosts ? 1 : 0)
       + (hasIntBonus ? 1 : 0)
       + (hasSkillIncrease ? 1 : 0)
+      + (hasMandatorySpells ? 1 : 0)
       + (isAlchemistFutureGain ? 1 : 0);
     let plannedItemsDone = featSlots.filter(s => s.filled).length
       + (hasBoosts && boostInfo?.complete ? 1 : 0)
       + (hasIntBonus && intBonusInfo?.complete ? 1 : 0)
       + (hasSkillIncrease && skillIncreaseInfo?.complete ? 1 : 0)
+      + (hasMandatorySpells && spellsComplete ? 1 : 0)
       + (isAlchemistFutureGain && formulasComplete ? 1 : 0);
 
     levels.push({
@@ -1099,6 +1325,12 @@ export function buildLevelRoadmap(actor, options = {}) {
       hasFeatSlots: featSlots.length > 0,
       spellMilestones: milestones,
       hasSpellMilestones: milestones.length > 0,
+      hasMandatorySpells,
+      mandatorySpellsRequired,
+      mandatorySpellsPicked,
+      mandatorySpellsRemaining,
+      spellsComplete,
+      spellGoalBannerText,
       plannedSpells,
       hasPlannedSpells: plannedSpells.length > 0,
       formulaMilestone,
@@ -1579,52 +1811,181 @@ export async function getLightweightFeatIndex() {
     }
   }
 
+  // Tier 3 fallback for Feats: silently hydrate PF2e Compendium Browser feat index if pack index lacked traits
+  if (!results.some(r => r.traits.length > 0)) {
+    const featTab = game.pf2e?.compendiumBrowser?.tabs?.feat;
+    if (featTab) {
+      try {
+        if (!featTab.isInitialized && typeof featTab.init === "function") {
+          await featTab.init();
+        }
+        const curRaw = featTab.indexData;
+        const curLen = Array.isArray(curRaw) ? curRaw.length : (curRaw?.size ?? Object.keys(curRaw || {}).length);
+        if (curLen === 0 && typeof featTab.loadData === "function") {
+          await featTab.loadData();
+        }
+        const raw = featTab.indexData;
+        const iter = Array.isArray(raw) ? raw : (typeof raw?.values === "function" ? Array.from(raw.values()) : Object.values(raw || {}));
+        if (iter.length > 0) {
+          const byUuid = new Map(results.map(r => [r.uuid, r]));
+          for (const e of iter) {
+            if (!e?.uuid || !e?.name) continue;
+            const rec = {
+              uuid: e.uuid,
+              name: e.name,
+              img: e.img || "systems/pf2e/icons/default-icons/feat.svg",
+              level: Number((typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 0),
+              category: e.category || e.featType || e.system?.category || "",
+              traits: extractAnyItemTraits(e),
+              rarity: e.rarity || e.system?.traits?.rarity || "common",
+              prerequisites: toStringArray(e.prerequisites ?? e.system?.prerequisites?.value)
+                .map(p => (typeof p === "string" ? p : (p?.value || "")))
+                .filter(Boolean)
+            };
+            const prev = byUuid.get(rec.uuid);
+            if (!prev || (prev.traits.length === 0 && rec.traits.length > 0)) byUuid.set(rec.uuid, rec);
+          }
+          results.length = 0;
+          results.push(...byUuid.values());
+        }
+      } catch (err) {
+        console.warn("PF2e Awesome GM Utilities | Fallback feat browser hydration failed:", err);
+      }
+    }
+  }
+
   results.sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
-  if (results.length > 0) _featIndexCache = results;
+  if (results.length > 0 && results.some(r => r.traits.length > 0)) _featIndexCache = results;
   return results;
+}
+
+const VALID_SPELL_TRADITIONS = new Set(["arcane", "divine", "occult", "primal"]);
+
+/**
+ * Robustly extracts normalized PF2e spell tradition slugs (`arcane`, `divine`, `occult`, `primal`)
+ * from any Foundry v14 / PF2e index entry shape (Set, Array, `{ value }`, or boolean-map object).
+ */
+function extractSpellTraditions(e) {
+  const out = new Set();
+  const ingest = (raw) => {
+    if (!raw) return;
+    if (typeof raw === "string") {
+      const s = normalizeSlug(raw);
+      if (VALID_SPELL_TRADITIONS.has(s)) out.add(s);
+      return;
+    }
+    if (Array.isArray(raw) || raw instanceof Set) {
+      for (const v of raw) ingest(v);
+      return;
+    }
+    if (typeof raw[Symbol.iterator] === "function") {
+      for (const v of raw) ingest(v);
+      return;
+    }
+    if (typeof raw === "object") {
+      if ("value" in raw) ingest(raw.value);
+      for (const [k, v] of Object.entries(raw)) {
+        const s = normalizeSlug(k);
+        if (v === true && VALID_SPELL_TRADITIONS.has(s)) out.add(s);
+      }
+    }
+  };
+
+  ingest(e?.traditions);
+  ingest(e?.traits?.traditions);
+  ingest(e?.system?.traits?.traditions);
+  ingest(e?.system?.traditions);
+  ingest(e?.["system.traits.traditions"]);
+  ingest(e?.["system.traditions"]);
+  return Array.from(out);
+}
+
+function buildSpellRecord(e, fallbackPackCollection = "") {
+  const uuid = e?.uuid || (fallbackPackCollection && e?._id ? `Compendium.${fallbackPackCollection}.Item.${e._id}` : "");
+  if (!uuid || !e?.name) return null;
+
+  const traits = extractAnyItemTraits(e);
+  const traditions = extractSpellTraditions(e);
+  const category = normalizeSlug(e?.category || e?.system?.category || e?.["system.category"] || "");
+  const rawRank = e?.rank
+    ?? (typeof e?.level === "object" ? e.level?.value : e?.level)
+    ?? (typeof e?.system?.level === "object" ? e.system.level?.value : e?.system?.level)
+    ?? e?.["system.level.value"]
+    ?? 1;
+  const rank = Number.isFinite(Number(rawRank)) ? Number(rawRank) : 1;
+  const isCantrip = Boolean(e?.isCantrip || traits.includes("cantrip") || category === "cantrip");
+  const isFocus = Boolean(e?.isFocus || traits.includes("focus") || category === "focus");
+  const isRitual = Boolean(e?.isRitual || category === "ritual" || Boolean(e?.system?.ritual));
+  const rarity = normalizeSlug(
+    e?.rarity
+    || e?.traits?.rarity
+    || e?.system?.traits?.rarity
+    || e?.["system.traits.rarity"]
+    || "common"
+  ) || "common";
+
+  return {
+    uuid,
+    name: String(e.name),
+    img: e.img || "systems/pf2e/icons/default-icons/spell.svg",
+    rank,
+    isCantrip,
+    isFocus,
+    isRitual,
+    traits,
+    traditions,
+    rarity
+  };
+}
+
+function collectBrowserSpellRecords(rawIndexData) {
+  if (!rawIndexData) return [];
+  let iter = [];
+  if (Array.isArray(rawIndexData)) iter = rawIndexData;
+  else if (rawIndexData instanceof Map || typeof rawIndexData.values === "function") iter = Array.from(rawIndexData.values());
+  else if (typeof rawIndexData[Symbol.iterator] === "function") iter = Array.from(rawIndexData);
+  else if (typeof rawIndexData === "object") iter = Object.values(rawIndexData);
+
+  const out = [];
+  const seen = new Set();
+  for (const e of iter) {
+    const rec = buildSpellRecord(e);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    out.push(rec);
+  }
+  return out;
 }
 
 /**
  * Lazily retrieves lightweight Spell index entries (zero startup overhead).
+ * Uses a 3-tier pipeline (Browser Cache -> Direct Compendium Index -> Silent Browser Tab Hydration)
+ * so Pick Spells ALWAYS shows spells with traditions even if PF2e Browser hasn't been opened yet!
  */
 export async function getLightweightSpellIndex() {
-  if (_spellIndexCache && _spellIndexCache.length > 0) return _spellIndexCache;
-
-  const browserIndex = game.pf2e?.compendiumBrowser?.tabs?.spell?.indexData;
-  if (Array.isArray(browserIndex) && browserIndex.length > 0) {
-    _spellIndexCache = browserIndex.map(e => {
-      const spTraits = extractAnyItemTraits(e);
-      const rawRank = e.rank ?? (typeof e.level === "object" ? e.level?.value : e.level) ?? e.system?.level?.value ?? 1;
-      return {
-        uuid: e.uuid,
-        name: e.name,
-        img: e.img || "systems/pf2e/icons/default-icons/spell.svg",
-        rank: Number.isFinite(Number(rawRank)) ? Number(rawRank) : 1,
-        isCantrip: Boolean(e.isCantrip || spTraits.includes("cantrip")),
-        traditions: toStringArray(e.traditions ?? e.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
-        rarity: e.rarity || e.system?.traits?.rarity || "common"
-      };
-    });
+  if (_spellIndexCache && _spellIndexCache.length > 0 && _spellIndexCache.some(r => r.traditions.length > 0)) {
     return _spellIndexCache;
   }
 
+  // Tier 1: Reuse PF2e Compendium Browser's Spell cache ONLY if already populated with traditions
+  const spellTab = game.pf2e?.compendiumBrowser?.tabs?.spell;
+  const browserRecords = collectBrowserSpellRecords(spellTab?.indexData);
+  if (browserRecords.some(r => r.traditions.length > 0)) {
+    browserRecords.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
+    _spellIndexCache = browserRecords;
+    return _spellIndexCache;
+  }
+
+  // Tier 2: Direct lightweight `pack.getIndex` on World items + spell compendiums
   const results = [];
   const seen = new Set();
 
   for (const item of game.items || []) {
     if (item.type !== "spell") continue;
-    if (seen.has(item.uuid)) continue;
-    seen.add(item.uuid);
-    const traits = extractAnyItemTraits(item);
-    results.push({
-      uuid: item.uuid,
-      name: item.name,
-      img: item.img || "systems/pf2e/icons/default-icons/spell.svg",
-      rank: Number(item.system?.level?.value ?? 1),
-      isCantrip: traits.includes("cantrip"),
-      traditions: toStringArray(item.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
-      rarity: item.system?.traits?.rarity || "common"
-    });
+    const rec = buildSpellRecord(item);
+    if (!rec || seen.has(rec.uuid)) continue;
+    seen.add(rec.uuid);
+    results.push(rec);
   }
 
   const packs = Array.from(game.packs || []).filter(p => {
@@ -1634,37 +1995,67 @@ export async function getLightweightSpellIndex() {
     if (col === "pf2e.spells-srd" || col === "pf2e.spells") return true;
     if (/effect|condition|action|feat|equipment|hazard|bestiary/i.test(col) || /\beffects?\b/i.test(title)) return false;
     return /spell/i.test(col) || /\bspells?\b/i.test(title);
-  });
+  }).sort((a, b) => (b.collection === "pf2e.spells-srd" ? 1 : 0) - (a.collection === "pf2e.spells-srd" ? 1 : 0));
 
-  const spellIndexFields = ["img", "system.level", "system.traits"];
+  const spellIndexFields = ["img", "system.level", "system.traits", "system.traditions", "system.category", "system.ritual"];
 
   for (const pack of packs) {
     try {
       const idx = await pack.getIndex({ fields: spellIndexFields });
       for (const e of idx) {
         if (e.type !== "spell") continue;
-        const uuid = e.uuid || `Compendium.${pack.collection}.Item.${e._id}`;
-        if (seen.has(uuid)) continue;
-        seen.add(uuid);
-        const traits = extractAnyItemTraits(e);
-        const rawRank = (typeof e.system?.level === "object" ? e.system.level?.value : e.system?.level) ?? 1;
-        results.push({
-          uuid,
-          name: e.name,
-          img: e.img || "systems/pf2e/icons/default-icons/spell.svg",
-          rank: Number.isFinite(Number(rawRank)) ? Number(rawRank) : 1,
-          isCantrip: traits.includes("cantrip"),
-          traditions: toStringArray(e.system?.traits?.traditions).map(normalizeSlug).filter(Boolean),
-          rarity: e.system?.traits?.rarity || "common"
-        });
+        const rec = buildSpellRecord(e, pack.collection);
+        if (!rec || seen.has(rec.uuid)) continue;
+        seen.add(rec.uuid);
+        results.push(rec);
       }
     } catch (err) {
       console.warn(`PF2e Awesome GM Utilities | Failed indexing spell pack "${pack.collection}":`, err);
     }
   }
 
+  if (results.some(r => r.traditions.length > 0)) {
+    results.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
+    _spellIndexCache = results;
+    return _spellIndexCache;
+  }
+
+  // Tier 3: Silently ask PF2e's native Compendium Browser Spell tab to hydrate its index
+  // (never opens the browser window; guarantees traditions/ranks load on first Pick Spells click!)
+  if (spellTab) {
+    try {
+      if (!spellTab.isInitialized && typeof spellTab.init === "function") {
+        await spellTab.init();
+      }
+      if (collectBrowserSpellRecords(spellTab.indexData).length === 0 && typeof spellTab.loadData === "function") {
+        await spellTab.loadData();
+      }
+      const hydrated = collectBrowserSpellRecords(spellTab.indexData);
+      if (hydrated.length > 0) {
+        const byUuid = new Map(results.map(r => [r.uuid, r]));
+        for (const rec of hydrated) {
+          const prev = byUuid.get(rec.uuid);
+          if (!prev || (prev.traditions.length === 0 && rec.traditions.length > 0)) {
+            byUuid.set(rec.uuid, rec);
+          }
+        }
+        results.length = 0;
+        results.push(...byUuid.values());
+      }
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Fallback spell browser loadData failed:", err);
+    }
+  }
+
   results.sort((a, b) => (a.rank - b.rank) || a.name.localeCompare(b.name));
-  if (results.length > 0) _spellIndexCache = results;
+  if (results.some(r => r.traditions.length > 0)) {
+    _spellIndexCache = results;
+  } else {
+    console.warn(
+      "PF2e Awesome GM Utilities | Spell index loaded 0 spells with traditions.",
+      { packCount: packs.length, totalItems: results.length, sample: results[0] || null }
+    );
+  }
   return results;
 }
 
@@ -2080,6 +2471,13 @@ export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurren
         label: "Planned Spells",
         text: lvlData.plannedSpells.map(s => s.name).join(", ")
       });
+    }
+    if (lvlData.hasMandatorySpells && !lvlData.spellsComplete) {
+      for (const m of lvlData.spellMilestones || []) {
+        if (m.isMandatory && !m.complete) {
+          unplannedItems.push(`${m.title}: ${m.promptText}`);
+        }
+      }
     }
 
     if (lvlData.isAlchemistFutureGain) {
@@ -3208,15 +3606,16 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
     revertSkills = true,
     revertSpells = true,
     revertFormulas = true,
+    postChatReminder = true,
     manualSkillPicks = {}
   } = options || {};
 
   if (!actor || actor.type !== "character") {
-    return { ok: false, oldLevel: 0, newLevel: 0, savedLevels: [], summary: [], reminders: [] };
+    return { ok: false, oldLevel: 0, newLevel: 0, savedLevels: [], summary: [], reminders: [], manualActions: [] };
   }
   if (!game.user?.isGM && !actor.isOwner) {
     ui.notifications?.warn("You do not have permission to update this character.");
-    return { ok: false, oldLevel: actor.level || 1, newLevel: actor.level || 1, savedLevels: [], summary: [], reminders: [] };
+    return { ok: false, oldLevel: actor.level || 1, newLevel: actor.level || 1, savedLevels: [], summary: [], reminders: [], manualActions: [] };
   }
 
   const preview = await inspectLevelRevert(actor, targetLevel);
@@ -3227,7 +3626,8 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
       newLevel: preview.currentLevel,
       savedLevels: [],
       summary: [],
-      reminders: []
+      reminders: [],
+      manualActions: []
     };
   }
 
@@ -3638,12 +4038,260 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
     }
   }
 
-  return {
+  // -------------------------------------------------------------------------
+  // STEP 6: Post-Revert Audit -> Exact Manual Removal Counts + Whispered Chat Card
+  // -------------------------------------------------------------------------
+  const postReport = analyzeCharacter(actor);
+  const manualActions = [];
+
+  // 6a. Unreverted Skill Increases
+  const unrevertedSkillLvls = preview.levels
+    .filter(info => info.hasSkillIncreaseSlot && (!revertSkills || (info.untrackedSkillIncrease && !cleanManualSkills[info.level])))
+    .map(info => info.level);
+  const excessIncOnSheet = Number(postReport?.skills?.excessIncreases ?? 0);
+  const skillIncToRemove = Math.max(unrevertedSkillLvls.length, excessIncOnSheet);
+  if (skillIncToRemove > 0) {
+    const lvlList = unrevertedSkillLvls.length > 0 ? `untracked from Lv ${unrevertedSkillLvls.join(", ")}` : `above Lv ${cleanTarget} allowance`;
+    const sheetCounts = postReport?.skills
+      ? ` — currently ${postReport.skills.spentIncreases}/${postReport.skills.expectedIncreases} spent on Skills tab`
+      : "";
+    manualActions.push({
+      category: "Skills",
+      title: `Remove ${skillIncToRemove} Skill Increase${skillIncToRemove === 1 ? "" : "s"}`,
+      detail: `Lower ${skillIncToRemove} skill rank${skillIncToRemove === 1 ? "" : "s"} by 1 step (${lvlList}${sheetCounts}).`
+    });
+  }
+
+  // 6b. Any skills still above targetLevel's rank cap (e.g. if user unchecked revertSkills)
+  if (postReport?.skills?.overCapSkills?.length > 0) {
+    manualActions.push({
+      category: "Skills",
+      title: `Lower ${postReport.skills.overCapSkills.length} Over-Cap Skill${postReport.skills.overCapSkills.length === 1 ? "" : "s"}`,
+      detail: postReport.skills.overCapSkills.map(s => `${s.label} (${s.rankLabel}, requires Lv ${s.requiredLevel}+)`).join(", ")
+    });
+  }
+
+  // 6c. Unreverted INT Drop Trained Skills & Languages
+  const unrevertedIntSkillLvls = [];
+  const unrevertedIntLangLvls = [];
+  for (const info of preview.levels) {
+    if (!info.intModDrop) continue;
+    if (!revertSkills || !info.trackedIntBonusSkillRevert) {
+      unrevertedIntSkillLvls.push(`Lv ${info.level} (${info.intModDrop.fromModStr} → ${info.intModDrop.toModStr})`);
+    }
+    if (!revertSkills || !info.trackedIntBonusLanguageWillRemove) {
+      unrevertedIntLangLvls.push(`Lv ${info.level} (${info.intModDrop.fromModStr} → ${info.intModDrop.toModStr})`);
+    }
+  }
+  const excessTrainedOnSheet = postReport?.skills
+    ? Math.max(0, postReport.skills.currentTrained - postReport.skills.expectedTrained)
+    : 0;
+  const trainedToRemove = Math.max(unrevertedIntSkillLvls.length, unrevertedIntSkillLvls.length > 0 ? excessTrainedOnSheet : 0);
+  if (trainedToRemove > 0) {
+    const sheetCounts = postReport?.skills
+      ? ` (currently ${postReport.skills.currentTrained}/${postReport.skills.expectedTrained} Trained)`
+      : "";
+    manualActions.push({
+      category: "Skills",
+      title: `Remove ${trainedToRemove} Trained Skill${trainedToRemove === 1 ? "" : "s"} (or Lore)`,
+      detail: `INT modifier dropped at ${unrevertedIntSkillLvls.join(", ")}${sheetCounts}. Untrain ${trainedToRemove} skill or remove a Lore skill on the Skills tab.`
+    });
+  }
+
+  const excessLangsOnSheet = postReport?.languages
+    ? Math.max(0, postReport.languages.current - postReport.languages.expected)
+    : 0;
+  const langsToRemove = Math.max(unrevertedIntLangLvls.length, unrevertedIntLangLvls.length > 0 ? excessLangsOnSheet : 0);
+  if (langsToRemove > 0) {
+    const sheetCounts = postReport?.languages
+      ? ` (currently ${postReport.languages.current}/${postReport.languages.expected} Languages)`
+      : "";
+    manualActions.push({
+      category: "Languages",
+      title: `Remove ${langsToRemove} Language${langsToRemove === 1 ? "" : "s"}`,
+      detail: `INT modifier dropped at ${unrevertedIntLangLvls.join(", ")}${sheetCounts}. Remove ${langsToRemove} language${langsToRemove === 1 ? "" : "s"} on the Character tab.`
+    });
+  }
+
+  // 6d. Spells that couldn't be auto-removed (lower-rank repertoire / spellbook spells!)
+  const removedSpellsByEntryKey = new Map();
+  if (revertSpells) {
+    for (const info of preview.levels) {
+      for (const sp of info.spells) {
+        if (sp.entryKey) {
+          removedSpellsByEntryKey.set(sp.entryKey, (removedSpellsByEntryKey.get(sp.entryKey) || 0) + 1);
+        }
+      }
+    }
+  }
+
+  const preMilestonesByLvl = computeSpellMilestonesByLevel(actor, oldLevel, getActorDualClassInfo(actor), preReport);
+  const learnedInRevertedRangeByEntry = new Map();
+  for (const lvl of preview.revertedLevels) {
+    for (const m of preMilestonesByLvl[lvl] || []) {
+      if (m.learnMode !== "optional" && m.requiredTotal > 0) {
+        const prevRec = learnedInRevertedRangeByEntry.get(m.entryKey) || { count: 0, title: m.title, learnMode: m.learnMode };
+        prevRec.count += m.requiredTotal;
+        learnedInRevertedRangeByEntry.set(m.entryKey, prevRec);
+      }
+    }
+  }
+
+  for (const src of postReport?.spellcasting?.sources || []) {
+    if (src.isFocus || src.isDivineFont || !src.entryExists) continue;
+    const autoRemovedCount = removedSpellsByEntryKey.get(src.key) || 0;
+    const learnedRec = learnedInRevertedRangeByEntry.get(src.key);
+
+    if (src.repertoireExpected != null && src.currentLeveledSpells > src.repertoireExpected) {
+      const excessSpells = src.currentLeveledSpells - src.repertoireExpected;
+      manualActions.push({
+        category: "Spells",
+        title: `Remove ${excessSpells} Spell${excessSpells === 1 ? "" : "s"} from ${src.matchedEntryName || src.title}`,
+        detail: `Currently ${src.currentLeveledSpells}/${src.repertoireExpected} leveled spells for Lv ${cleanTarget}${autoRemovedCount > 0 ? ` (${autoRemovedCount} over-rank/tracked already removed)` : ""}. Remove ${excessSpells} lower-rank spell${excessSpells === 1 ? "" : "s"} on the Spellcasting tab.`
+      });
+    } else if (learnedRec && learnedRec.learnMode === "upto-rank") {
+      const remainingSpellbook = Math.max(0, learnedRec.count - autoRemovedCount);
+      if (remainingSpellbook > 0) {
+        manualActions.push({
+          category: "Spells",
+          title: `Remove ${remainingSpellbook} Lower-Rank Spell${remainingSpellbook === 1 ? "" : "s"} from ${src.matchedEntryName || src.title}`,
+          detail: `Gained +${learnedRec.count} spellbook/familiar spells across Lv ${cleanTarget + 1}–${oldLevel}; ${autoRemovedCount} over-rank/tracked removed automatically.`
+        });
+      }
+    }
+  }
+
+  // 6e. Alchemist Free Formulas not auto-removed
+  if (preReport?.formulas?.isAlchemist) {
+    const gainedFreeFormulas = preview.revertedLevels.length * 2;
+    const autoRemovedFormulas = revertFormulas
+      ? preview.levels.reduce((s, info) => s + info.formulas.length, 0)
+      : 0;
+    const remainingFormulas = Math.max(0, gainedFreeFormulas - autoRemovedFormulas);
+    if (remainingFormulas > 0) {
+      manualActions.push({
+        category: "Formulas",
+        title: `Review / Remove up to ${remainingFormulas} Formula${remainingFormulas === 1 ? "" : "s"}`,
+        detail: `Alchemist gained +${gainedFreeFormulas} free formulas across Lv ${cleanTarget + 1}–${oldLevel}${autoRemovedFormulas > 0 ? ` (${autoRemovedFormulas} already removed)` : ""}. Lower-level or purchased formulas aren't auto-removed — review the Crafting tab.`
+      });
+    }
+  }
+
+  // 6f. Manual Attributes or Remaining Generic Reminders (e.g. Orphaned Archetype Entry)
+  if (preview.manualAttributes) {
+    manualActions.push({
+      category: "Attributes",
+      title: "Adjust Attribute Modifiers Manually",
+      detail: "Attribute Builder is in Manual mode — check if any attribute boosts from reverted levels need to be lowered on the Character tab."
+    });
+  }
+  for (const rem of reminders) {
+    if (/granting feat reverted|could not be deleted/i.test(rem)) {
+      manualActions.push({
+        category: "Sheet Check",
+        title: "Review Reverted Item / Entry",
+        detail: rem
+      });
+    }
+  }
+
+  const result = {
     ok: true,
     oldLevel,
     newLevel: cleanTarget,
     savedLevels,
     summary,
-    reminders
+    reminders,
+    manualActions
   };
+
+  if (postChatReminder) {
+    try {
+      await postDeLevelReminderToChat(actor, result, { whisper: true });
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed posting de-level reminder chat card:", err);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Posts a persistent whispered Chat Card summarizing a De-Level / Revert operation
+ * and clearly listing exact counts of any skills, languages, spells, or formulas
+ * the player/GM should manually remove on the sheet.
+ *
+ * @param {Actor} actor
+ * @param {object} revertResult
+ * @param {{ whisper?: boolean }} [options]
+ */
+export async function postDeLevelReminderToChat(actor, revertResult, { whisper = true } = {}) {
+  if (!actor || !revertResult?.ok) return null;
+
+  const esc = foundry.utils.escapeHTML;
+  const { oldLevel, newLevel, savedLevels = [], summary = [], manualActions = [] } = revertResult;
+  const rangeStr = (newLevel + 1 === oldLevel) ? `Lv ${oldLevel}` : `Lv ${newLevel + 1}–${oldLevel}`;
+
+  const autoRowsHtml = summary.length > 0
+    ? summary.map(line => `<li>${esc(line)}</li>`).join("")
+    : `<li>Reverted character level from Lv ${oldLevel} to Lv ${newLevel}.</li>`;
+
+  const manualRowsHtml = manualActions.length > 0
+    ? manualActions.map(act => `
+        <li class="pf2e-lp-chat-action">
+          <div class="pf2e-lp-chat-action-title">
+            <span class="pf2e-lp-chat-cat">${esc(act.category)}</span>
+            <strong>${esc(act.title)}</strong>
+          </div>
+          <div class="pf2e-lp-chat-action-detail">${esc(act.detail)}</div>
+        </li>
+      `).join("")
+    : `<li class="pf2e-lp-chat-ok"><strong>All Clear!</strong> No leftover skills, languages, spells, or formulas need manual removal.</li>`;
+
+  const savedBadge = savedLevels.length > 0
+    ? `<span class="pf2e-lp-chat-badge">Saved ${esc(rangeStr)} to Build Plan</span>`
+    : "";
+
+  const content = `
+    <div class="pf2e-lp-chat-card ${manualActions.length > 0 ? "has-actions" : "is-clean"}">
+      <div class="pf2e-lp-chat-header">
+        <img src="${esc(actor.img || "icons/svg/mystery-man.svg")}" alt="" />
+        <div class="pf2e-lp-chat-head-meta">
+          <div class="pf2e-lp-chat-title">${esc(actor.name)} &mdash; De-Leveled (Lv ${oldLevel} &rarr; Lv ${newLevel})</div>
+          <div class="pf2e-lp-chat-sub">${savedBadge}</div>
+        </div>
+      </div>
+
+      <div class="pf2e-lp-chat-section">
+        <div class="pf2e-lp-chat-sec-title ${manualActions.length > 0 ? "is-alert" : "is-ok"}">
+          ${manualActions.length > 0
+            ? `Manual Cleanup Checklist (${manualActions.length} item${manualActions.length === 1 ? "" : "s"})`
+            : "Manual Cleanup Checklist"}
+        </div>
+        <ul class="pf2e-lp-chat-list">${manualRowsHtml}</ul>
+      </div>
+
+      <div class="pf2e-lp-chat-section is-auto">
+        <div class="pf2e-lp-chat-sec-title">Auto-Saved &amp; Reverted</div>
+        <ul class="pf2e-lp-chat-auto-list">${autoRowsHtml}</ul>
+      </div>
+    </div>
+  `;
+
+  const msgData = {
+    speaker: ChatMessage.getSpeaker({ alias: "Level Planner" }),
+    content
+  };
+
+  if (whisper) {
+    const ownerIds = (game.users?.contents || [])
+      .filter(u => !u.isGM && actor.testUserPermission(u, "OWNER"))
+      .map(u => u.id);
+    const gmIds = (game.users?.contents || [])
+      .filter(u => u.isGM)
+      .map(u => u.id);
+    msgData.whisper = Array.from(new Set([...ownerIds, ...gmIds, game.user?.id].filter(Boolean)));
+  }
+
+  return await ChatMessage.create(msgData);
 }
