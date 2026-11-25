@@ -161,6 +161,62 @@
 
                   <div class="pf2e-cc-spell-note">{{this.expectedSpellsNote}}</div>
 
+                  {{#if this.hasMissingAutoSpells}}
+                    <div class="pf2e-cc-auto-spells">
+                      <span class="pf2e-cc-auto-label">
+                        <i class="fa-solid fa-sparkles"></i>
+                        {{#if this.entryExists}}Auto-Add Ready:{{else}}Will Auto-Add:{{/if}}
+                      </span>
+                      <div class="pf2e-cc-auto-chips">
+                        {{#each this.missingAutoSpellsDisplay}}
+                          <span class="pf2e-cc-auto-chip" title="{{this.sourceLabel}}">
+                            <img src="{{this.img}}" alt="" />
+                            <span>{{this.name}}</span>
+                            <em>{{this.rankTag}}</em>
+                          </span>
+                        {{/each}}
+                      </div>
+                    </div>
+                  {{/if}}
+
+                  {{#if this.hasPendingChoices}}
+                    <div class="pf2e-cc-choice-groups">
+                      {{#each this.pendingChoiceGroups}}
+                        <div class="pf2e-cc-choice-box">
+                          <div class="pf2e-cc-choice-head">
+                            <strong>{{this.label}}</strong>
+                            <span>({{this.remainingCount}} left)</span>
+                          </div>
+                          <div class="pf2e-cc-choice-chips">
+                            {{#each this.options}}
+                              {{#unless this.alreadyKnown}}
+                                {{#if ../../entryExists}}
+                                  {{#if ../../../report.canModifySpells}}
+                                    <button
+                                      type="button"
+                                      class="pf2e-cc-choice-btn"
+                                      data-cc-action="add-choice-spell"
+                                      data-entry-id="{{../../entryId}}"
+                                      data-uuid="{{this.uuid}}"
+                                      data-rank="{{#if this.isCantrip}}0{{else}}{{this.rank}}{{/if}}"
+                                      title="Add {{this.name}} directly to {{../../matchedEntryName}}"
+                                    >
+                                      <i class="fa-solid fa-plus"></i> {{this.name}}{{#if this.qualifier}} ({{this.qualifier}}){{/if}}
+                                    </button>
+                                  {{else}}
+                                    <span class="pf2e-cc-auto-chip">{{this.name}}</span>
+                                  {{/if}}
+                                {{else}}
+                                  <span class="pf2e-cc-auto-chip">{{this.name}}{{#if this.qualifier}} ({{this.qualifier}}){{/if}}</span>
+                                {{/if}}
+                              {{/unless}}
+                            {{/each}}
+                          </div>
+                        </div>
+                      {{/each}}
+                    </div>
+                  {{/if}}
+
                   {{#if this.isOutdated}}
                     <div class="pf2e-cc-spell-diff">
                       <i class="fa-solid fa-triangle-exclamation"></i> Slot differences: {{this.slotDiffText}}
@@ -181,15 +237,15 @@
                           </label>
                         {{/if}}
                         <button type="button" class="pf2e-cc-btn pf2e-cc-btn-gold pf2e-cc-btn-sm" data-cc-action="create-spell-entry" data-source-key="{{this.key}}">
-                          <i class="fa-solid fa-plus"></i> Add Spellcasting Entry
+                          <i class="fa-solid fa-plus"></i> {{this.createBtnLabel}}
                         </button>
                       </div>
                     {{/if}}
 
-                    {{#if this.isOutdated}}
+                    {{#if this.canSyncEntry}}
                       <div class="pf2e-cc-spell-actions">
-                        <button type="button" class="pf2e-cc-btn pf2e-cc-btn-sm" data-cc-action="sync-spell-entry" data-source-key="{{this.key}}" data-entry-id="{{this.entryId}}">
-                          <i class="fa-solid fa-arrows-rotate"></i> Sync Slots to Level {{../report.level}}
+                        <button type="button" class="pf2e-cc-btn {{#if this.hasMissingAutoSpells}}pf2e-cc-btn-gold{{/if}} pf2e-cc-btn-sm" data-cc-action="sync-spell-entry" data-source-key="{{this.key}}" data-entry-id="{{this.entryId}}">
+                          <i class="fa-solid fa-wand-magic-sparkles"></i> {{this.syncBtnLabel}}
                         </button>
                       </div>
                     {{/if}}

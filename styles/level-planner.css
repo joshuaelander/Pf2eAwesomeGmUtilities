@@ -1047,6 +1047,141 @@
   color: var(--pf2e-gm-purple-pale);
 }
 
+.pf2e-lp-container .pf2e-lp-auto-spells-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.1);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.36);
+}
+
+.pf2e-lp-container .pf2e-lp-auto-spells-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-container .pf2e-lp-spell-chip.is-auto-chip {
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.5);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pf2e-lp-container .pf2e-lp-choice-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.08);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.38);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-box.is-complete {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.08);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.38);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8em;
+  color: var(--pf2e-gm-text-cream);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pf2e-lp-container .pf2e-lp-choice-btn,
+.pf2e-lp-container .pf2e-lp-choice-readonly {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  width: auto !important;
+  height: auto !important;
+  padding: 3px 8px 3px 4px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.55);
+  color: var(--pf2e-gm-text-cream);
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.pf2e-lp-container .pf2e-lp-choice-btn:hover {
+  background: var(--pf2e-gm-cta-bg-hover);
+  border-color: var(--pf2e-gm-yellow-bright);
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-btn.is-chosen,
+.pf2e-lp-container .pf2e-lp-choice-readonly.is-chosen {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.22);
+  border-color: var(--pf2e-gm-cyan);
+  color: var(--pf2e-gm-cyan-tint-text);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-readonly {
+  cursor: default;
+  border-color: var(--pf2e-gm-border-card);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-readonly a {
+  color: var(--pf2e-gm-text-white);
+  cursor: pointer;
+}
+
+.pf2e-lp-container .pf2e-lp-choice-readonly em {
+  font-style: normal;
+  font-size: 0.84em;
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-lp-container .pf2e-lp-choice-btn img,
+.pf2e-lp-container .pf2e-lp-choice-readonly img {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: cover;
+  border: none;
+}
+
+.pf2e-lp-container .pf2e-lp-spell-curr-tag {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--pf2e-gm-yellow-bright);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
+}
+
+.pf2e-lp-container .pf2e-lp-ov-auto-sp {
+  font-size: 0.85em;
+  color: var(--pf2e-gm-cyan-bright);
+  margin-top: 2px;
+}
+
 .pf2e-lp-container .pf2e-lp-planned-spells {
   display: flex;
   flex-wrap: wrap;

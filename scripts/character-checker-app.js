@@ -15,6 +15,7 @@ import {
   ABILITY_LABELS,
   CASTING_TYPE_LABELS,
   TRADITION_LABELS,
+  addSingleSpellToEntry,
   analyzeCharacter,
   createOrSyncAllSpellcastingEntries,
   createSpellcastingEntry,
@@ -188,17 +189,45 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
     // Enrich spellcasting rows with template-friendly flags & dropdown options
     if (selectedReport) {
-      selectedReport.spellcasting.sources = selectedReport.spellcasting.sources.map(src => ({
-        ...src,
-        castingTypeLabel: src.flexible ? "Flexible" : (CASTING_TYPE_LABELS[src.castingType] || src.castingType),
-        traditionLabel: TRADITION_LABELS[src.tradition] || "Choose Tradition",
-        abilityLabel: ABILITY_LABELS[src.ability] || String(src.ability || "").toUpperCase(),
-        isFocus: src.castingType === "focus",
-        isMissing: !src.entryExists,
-        isOutdated: Boolean(src.entryExists && src.slotsOutdated),
-        hasCantrips: src.cantrips > 0,
-        traditionOptions: getTraditionOptions(src.tradition || "arcane")
-      }));
+      selectedReport.spellcasting.sources = selectedReport.spellcasting.sources.map(src => {
+        const isFocus = src.castingType === "focus";
+        const autoCount = Number(src.missingAutoSpellsCount || 0);
+        const canSyncEntry = Boolean(src.entryExists && (src.slotsOutdated || autoCount > 0));
+        let syncBtnLabel = `Sync Slots to Level ${selectedReport.level}`;
+        if (src.slotsOutdated && autoCount > 0) {
+          syncBtnLabel = `Sync Slots & Add ${autoCount} Spell${autoCount === 1 ? "" : "s"}`;
+        } else if (!src.slotsOutdated && autoCount > 0) {
+          syncBtnLabel = isFocus
+            ? `Add ${autoCount} Focus Spell${autoCount === 1 ? "" : "s"}`
+            : `Add ${autoCount} Auto Spell${autoCount === 1 ? "" : "s"}`;
+        }
+        const createBtnLabel = autoCount > 0
+          ? `Add Entry + ${autoCount} Spell${autoCount === 1 ? "" : "s"}`
+          : "Add Spellcasting Entry";
+
+        const missingAutoSpellsDisplay = (src.missingAutoSpells || []).map(sp => ({
+          ...sp,
+          rankTag: sp.isFocus
+            ? "Focus"
+            : (sp.isCantrip ? "Cantrip" : `Rank ${sp.rank || 1}`)
+        }));
+
+        return {
+          ...src,
+          castingTypeLabel: src.flexible ? "Flexible" : (CASTING_TYPE_LABELS[src.castingType] || src.castingType),
+          traditionLabel: TRADITION_LABELS[src.tradition] || "Choose Tradition",
+          abilityLabel: ABILITY_LABELS[src.ability] || String(src.ability || "").toUpperCase(),
+          isFocus,
+          isMissing: !src.entryExists,
+          isOutdated: Boolean(src.entryExists && src.slotsOutdated),
+          canSyncEntry,
+          syncBtnLabel,
+          createBtnLabel,
+          missingAutoSpellsDisplay,
+          hasCantrips: src.cantrips > 0,
+          traditionOptions: getTraditionOptions(src.tradition || "arcane")
+        };
+      });
 
       selectedReport.skills.isTrainedMissing = selectedReport.skills.trainedStatus === "missing";
       selectedReport.skills.isIncreasesMissing = selectedReport.skills.increasesStatus === "missing";
@@ -366,11 +395,18 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
 
         const card = btn.closest(".pf2e-cc-spell-card");
         const tradSelect = card?.querySelector(".pf2e-cc-trad-select");
-        const overrides = tradSelect?.value ? { tradition: tradSelect.value } : {};
+        const resOut = {};
+        const overrides = {
+          ...(tradSelect?.value ? { tradition: tradSelect.value } : {}),
+          resultOut: resOut
+        };
 
         const created = await createSpellcastingEntry(actor, spec, overrides);
         if (created) {
-          ui.notifications?.info(`Created spellcasting entry "${created.name}" on ${actor.name}!`);
+          const spellNote = resOut.addedSpells?.length
+            ? ` (auto-added: ${resOut.addedSpells.join(", ")})`
+            : "";
+          ui.notifications?.info(`Created spellcasting entry "${created.name}" on ${actor.name}${spellNote}!`);
           this.render({ force: false });
         }
         break;
@@ -384,10 +420,33 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         const spec = report?.spellcasting?.sources?.find(s => s.key === sourceKey);
         if (!spec || !entryId) return;
 
-        const ok = await syncSpellcastingEntrySlots(actor, entryId, spec);
+        const resOut = {};
+        const ok = await syncSpellcastingEntrySlots(actor, entryId, spec, { includeAutoSpells: true, resultOut: resOut });
         if (ok) {
-          ui.notifications?.info(`Updated spell slots for "${spec.matchedEntryName || spec.title}" to Level ${report.level}!`);
+          const parts = [];
+          if (resOut.slotsChanged) parts.push(`synced slots to Level ${report.level}`);
+          if (resOut.addedSpells?.length) parts.push(`added ${resOut.addedSpells.join(", ")}`);
+          ui.notifications?.info(`${spec.matchedEntryName || spec.title}: ${parts.join(" & ") || "up to date"}!`);
           this.render({ force: false });
+        } else {
+          ui.notifications?.info(`"${spec.matchedEntryName || spec.title}" is already up to date.`);
+        }
+        break;
+      }
+
+      case "add-choice-spell": {
+        if (!actor || !canAutoModifySpellcasting(actor)) return;
+        const entryId = btn.dataset.entryId;
+        const uuid = btn.dataset.uuid;
+        const rank = btn.dataset.rank ? Number(btn.dataset.rank) : null;
+        if (!entryId || !uuid) return;
+
+        const created = await addSingleSpellToEntry(actor, entryId, uuid, { rank });
+        if (created) {
+          ui.notifications?.info(`Added "${created.name}" to ${actor.name}'s spellcasting entry!`);
+          this.render({ force: false });
+        } else {
+          ui.notifications?.info("That spell is already in this spellcasting entry.");
         }
         break;
       }
@@ -398,6 +457,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         const parts = [];
         if (res.created.length > 0) parts.push(`Created: ${res.created.join(", ")}`);
         if (res.synced.length > 0) parts.push(`Synced slots: ${res.synced.join(", ")}`);
+        if (res.addedSpells?.length > 0) parts.push(`Auto-added spells: ${res.addedSpells.join(", ")}`);
         if (res.skippedNeedsTradition.length > 0) {
           parts.push(`Choose tradition first for: ${res.skippedNeedsTradition.join(", ")}`);
         }
@@ -718,25 +778,37 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         const abilLabel = ABILITY_LABELS[src.ability] || String(src.ability || "").toUpperCase();
 
         let actionHtml = "";
+        const autoCount = Number(src.missingAutoSpellsCount || 0);
         if (!src.entryExists && isEditable) {
           const tradSelectHtml = src.traditionMissing ? `
             <select class="pf2e-cc-sheet-select pf2e-cc-sheet-trad" title="Choose Spellcasting Tradition">
               ${Object.entries(TRADITION_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}
             </select>
           ` : "";
+          const createLbl = autoCount > 0 ? `+ Entry (+${autoCount})` : "+ Add Entry";
           actionHtml = `
             <div class="pf2e-cc-sheet-row-actions">
               ${tradSelectHtml}
-              <button type="button" class="pf2e-cc-sheet-btn is-primary" data-cc-create="${esc(src.key)}" title="Create ${esc(src.entryName)} with Level ${report.level} slots">
-                + Add Entry
+              <button type="button" class="pf2e-cc-sheet-btn is-primary" data-cc-create="${esc(src.key)}" title="Create ${esc(src.entryName)} with Level ${report.level} slots${autoCount > 0 ? ` and auto-add ${esc(src.missingAutoSpellsText)}` : ""}">
+                ${createLbl}
               </button>
             </div>
           `;
-        } else if (src.entryExists && src.slotsOutdated && isEditable) {
+        } else if (src.entryExists && (src.slotsOutdated || autoCount > 0) && isEditable) {
+          const syncLbl = src.slotsOutdated && autoCount > 0
+            ? `Sync + ${autoCount}`
+            : (src.slotsOutdated
+              ? "Sync Slots"
+              : (src.isFocus ? `+ ${autoCount} Focus` : `+ ${autoCount} Auto`));
+          const btnCls = src.slotsOutdated ? "is-warn" : "is-primary";
+          const syncTip = [
+            src.slotsOutdated ? `Update slots to Level ${report.level} (${src.slotDiffText})` : "",
+            autoCount > 0 ? `Auto-add: ${src.missingAutoSpellsText}` : ""
+          ].filter(Boolean).join(" · ");
           actionHtml = `
             <div class="pf2e-cc-sheet-row-actions">
-              <button type="button" class="pf2e-cc-sheet-btn is-warn" data-cc-sync="${esc(src.key)}" data-entry-id="${esc(src.entryId)}" title="Update spell slot maximums to Level ${report.level} (${esc(src.slotDiffText)})">
-                Sync Slots
+              <button type="button" class="pf2e-cc-sheet-btn ${btnCls}" data-cc-sync="${esc(src.key)}" data-entry-id="${esc(src.entryId)}" title="${esc(syncTip)}">
+                ${syncLbl}
               </button>
             </div>
           `;
@@ -760,6 +832,23 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
           ? `<strong>Focus:</strong> ${esc(src.slotsSummary)}`
           : `${src.cantrips > 0 ? `<strong>Cantrips:</strong> ${src.cantrips} · ` : ""}<strong>Slots:</strong> ${esc(src.slotsSummary)}${src.slotsOutdated ? ` · <span class="pf2e-cc-sheet-warn-text">Diff: ${esc(src.slotDiffText)}</span>` : ""}`;
 
+        const autoLineHtml = autoCount > 0
+          ? `<div class="pf2e-cc-sheet-subline pf2e-cc-sheet-auto-line"><strong>${src.entryExists ? "Auto-Add Ready:" : "Will Auto-Add:"}</strong> ${esc(src.missingAutoSpellsText)}</div>`
+          : "";
+
+        let choicesLineHtml = "";
+        if (src.entryExists && isEditable && Array.isArray(src.pendingChoiceGroups) && src.pendingChoiceGroups.length > 0) {
+          choicesLineHtml = src.pendingChoiceGroups.slice(0, 3).map(g => {
+            const btns = g.options
+              .filter(o => !o.alreadyKnown)
+              .map(o => `<button type="button" class="pf2e-cc-sheet-choice-chip" data-cc-add-choice="1" data-entry-id="${esc(src.entryId)}" data-uuid="${esc(o.uuid)}" data-rank="${o.isCantrip ? 0 : (o.rank || 1)}" title="Add ${esc(o.name)} to ${esc(src.matchedEntryName || src.title)}">+ ${esc(o.name)}${o.qualifier ? ` (${esc(o.qualifier)})` : ""}</button>`)
+              .join("");
+            if (!btns) return "";
+            const rankLbl = g.isCantrip ? "Cantrip" : `Rank ${g.rank}`;
+            return `<div class="pf2e-cc-sheet-choice-strip"><span class="pf2e-cc-sheet-choice-lbl">${esc(g.isCurriculum ? `Curriculum ${rankLbl}` : g.sourceLabel)} (${g.remainingCount} left):</span> ${btns}</div>`;
+          }).join("");
+        }
+
         const rowStatusCls = !src.entryExists || src.status === "incomplete"
           ? "is-missing"
           : (src.slotsOutdated ? "is-warn" : "is-ok");
@@ -775,6 +864,8 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
               <div class="pf2e-cc-sheet-subline">
                 ${slotLineHtml}
               </div>
+              ${autoLineHtml}
+              ${choicesLineHtml}
               <div class="pf2e-cc-sheet-subline is-muted">${esc(src.expectedSpellsNote)}</div>
             </div>
             ${actionHtml}
@@ -789,7 +880,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
           </div>
           <div class="pf2e-cc-sheet-header-btns">
             ${isEditable && sp.needsActionCount > 0 ? `
-              <button type="button" class="pf2e-cc-sheet-btn is-primary" data-cc-sync-all="1" title="Create all missing entries and sync outdated slots">
+              <button type="button" class="pf2e-cc-sheet-btn is-primary" data-cc-sync-all="1" title="Create missing entries, sync outdated slots, and auto-add focus / subclass / deity spells">
                 Auto-Add / Sync
               </button>
             ` : ""}
@@ -815,6 +906,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         const msg = [];
         if (res.created.length) msg.push(`Created: ${res.created.join(", ")}`);
         if (res.synced.length) msg.push(`Synced: ${res.synced.join(", ")}`);
+        if (res.addedSpells?.length) msg.push(`Auto-added spells: ${res.addedSpells.join(", ")}`);
         if (res.skippedNeedsTradition.length) msg.push(`Pick tradition for: ${res.skippedNeedsTradition.join(", ")}`);
         ui.notifications?.info(msg.length ? `Spellcasting | ${msg.join(" | ")}` : "Spellcasting entries are already up to date.");
       });
@@ -828,9 +920,14 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
           if (!spec) return;
           const row = btn.closest(".pf2e-cc-sheet-spell-row");
           const tradVal = row?.querySelector(".pf2e-cc-sheet-trad")?.value;
-          const created = await createSpellcastingEntry(actor, spec, tradVal ? { tradition: tradVal } : {});
+          const resOut = {};
+          const created = await createSpellcastingEntry(actor, spec, {
+            ...(tradVal ? { tradition: tradVal } : {}),
+            resultOut: resOut
+          });
           if (created) {
-            ui.notifications?.info(`Added spellcasting entry "${created.name}" to ${actor.name}!`);
+            const spellNote = resOut.addedSpells?.length ? ` (auto-added: ${resOut.addedSpells.join(", ")})` : "";
+            ui.notifications?.info(`Added spellcasting entry "${created.name}" to ${actor.name}${spellNote}!`);
           }
         });
       });
@@ -843,9 +940,28 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
           const entryId = btn.dataset.entryId;
           const spec = report.spellcasting.sources.find(s => s.key === key);
           if (!spec || !entryId) return;
-          const ok = await syncSpellcastingEntrySlots(actor, entryId, spec);
+          const resOut = {};
+          const ok = await syncSpellcastingEntrySlots(actor, entryId, spec, { includeAutoSpells: true, resultOut: resOut });
           if (ok) {
-            ui.notifications?.info(`Synced spell slots for "${spec.matchedEntryName || spec.title}" to Level ${report.level}!`);
+            const parts = [];
+            if (resOut.slotsChanged) parts.push(`synced slots to Level ${report.level}`);
+            if (resOut.addedSpells?.length) parts.push(`added ${resOut.addedSpells.join(", ")}`);
+            ui.notifications?.info(`${spec.matchedEntryName || spec.title}: ${parts.join(" & ") || "up to date"}!`);
+          }
+        });
+      });
+
+      panel.querySelectorAll("[data-cc-add-choice]").forEach(btn => {
+        btn.addEventListener("click", async (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          const entryId = btn.dataset.entryId;
+          const uuid = btn.dataset.uuid;
+          const rank = btn.dataset.rank ? Number(btn.dataset.rank) : null;
+          if (!entryId || !uuid) return;
+          const created = await addSingleSpellToEntry(actor, entryId, uuid, { rank });
+          if (created) {
+            ui.notifications?.info(`Added "${created.name}" to ${actor.name}!`);
           }
         });
       });

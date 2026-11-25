@@ -21,12 +21,14 @@ import {
   VARIANT_RULES_MODULE_ID,
   analyzeCharacter,
   capitalize,
+  collectActorGrantedSpellsProgression,
   createOrSyncAllSpellcastingEntries,
   extractGroupSlots,
   formatSlotsSummary,
   getActiveVariantRules,
   getActorDualClassInfo,
   normalizeSlug,
+  resolveSpellDocumentByUuid,
   syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
 
@@ -530,12 +532,17 @@ const SPELLBOOK_CLASS_SLUGS = new Set(["wizard", "witch", "magus"]);
  * Formats a concise human-readable prompt for how many spells remain to be picked for a milestone.
  * e.g. "Choose 2 Rank 2 spells", "Choose 1 more Rank 2 spell", "Choose 1 more spell (up to Rank 3)", "2/2 planned ✓".
  */
-function formatSpellPickPrompt(milestone, plannedForSource = []) {
+function formatSpellPickPrompt(milestone, plannedForSource = [], claimedCurriculumSpells = null) {
   const nonCantrips = plannedForSource.filter(sp => !sp?.isCantrip);
 
   if (milestone.learnMode === "upto-rank") {
     const req = Math.max(0, Number(milestone.requiredTotal || 0));
-    const eligible = nonCantrips.filter(sp => Number(sp.rank || 1) <= milestone.maxRank);
+    // Remaster Wizard Curriculum picks are bonus spells on top of the 2 free spells learned per level
+    const eligible = nonCantrips.filter(sp =>
+      !sp?.isCurriculumPick
+      && !(claimedCurriculumSpells?.has(sp))
+      && Number(sp.rank || 1) <= milestone.maxRank
+    );
     const picked = eligible.length;
     const left = Math.max(0, req - picked);
     const complete = left === 0;
@@ -563,6 +570,20 @@ function formatSpellPickPrompt(milestone, plannedForSource = []) {
     const reqByRank = milestone.requiredByRank || {};
     const ranks = Object.keys(reqByRank).map(Number).filter(r => r >= 1 && reqByRank[r] > 0).sort((a, b) => a - b);
     const reqTotal = ranks.reduce((sum, r) => sum + Number(reqByRank[r] || 0), 0);
+    const autoFilled = Number(milestone.autoFilledCount || 0);
+    const autoSuffix = autoFilled > 0 ? ` (+${autoFilled} auto-granted)` : "";
+
+    if (reqTotal === 0 && autoFilled > 0) {
+      return {
+        pickedCount: 0,
+        requiredCount: 0,
+        remainingCount: 0,
+        remainingByRank: {},
+        complete: true,
+        isMandatory: false,
+        promptText: `${autoFilled} repertoire spell${autoFilled === 1 ? "" : "s"} auto-granted ✓`
+      };
+    }
 
     const pickedByRank = {};
     for (const sp of nonCantrips) {
@@ -604,7 +625,7 @@ function formatSpellPickPrompt(milestone, plannedForSource = []) {
 
     let promptText = "";
     if (complete) {
-      promptText = `${pickedMatched}/${reqTotal} spell${reqTotal === 1 ? "" : "s"} planned ✓`;
+      promptText = `${pickedMatched}/${reqTotal} spell${reqTotal === 1 ? "" : "s"} planned ✓${autoSuffix}`;
     } else {
       const parts = ranks
         .filter(r => (remainingByRank[r] || 0) > 0)
@@ -612,7 +633,7 @@ function formatSpellPickPrompt(milestone, plannedForSource = []) {
           const left = remainingByRank[r];
           return `${left} ${hasAnyPicked ? "more " : ""}Rank ${r} spell${left === 1 ? "" : "s"}`;
         });
-      promptText = `Choose ${parts.join(" & ")}`;
+      promptText = `Choose ${parts.join(" & ")}${autoSuffix}`;
     }
 
     return {
@@ -905,8 +926,58 @@ export function buildLevelRoadmap(actor, options = {}) {
     }
   }
 
-  // 4. Spellcasting milestones across Levels 1-20
+  // 4. Spellcasting milestones & dynamically discovered Subclass / Focus / Deity auto-spells across Levels 1-20
   const spellMilestones = computeSpellMilestonesByLevel(checkerReport);
+
+  // Collect planned future feat slugs -> level so planned tier feats (e.g. Advanced Bloodline at Lv 6)
+  // immediately preview their unlocked focus spell at that exact planned level!
+  const plannedFeatLevelsBySlug = new Map();
+  for (let l = currentLevel + 1; l <= 20; l++) {
+    const lpFeats = plan.levels[String(l)]?.feats;
+    if (!lpFeats || typeof lpFeats !== "object") continue;
+    for (const fSnap of Object.values(lpFeats)) {
+      if (!fSnap?.name) continue;
+      const slug = normalizeSlug(fSnap.name);
+      if (slug && !plannedFeatLevelsBySlug.has(slug)) {
+        plannedFeatLevelsBySlug.set(slug, l);
+      }
+    }
+  }
+
+  const grantedProgression = collectActorGrantedSpellsProgression(actor, dualInfo, { plannedFeatLevelsBySlug });
+  const autoSpellsByLevel = {};
+  for (const sp of grantedProgression.autoSpells || []) {
+    const uLvl = Math.max(1, Math.min(20, Number(sp.unlockLevel || 1)));
+    if (!autoSpellsByLevel[uLvl]) autoSpellsByLevel[uLvl] = [];
+    autoSpellsByLevel[uLvl].push({
+      ...sp,
+      rankLabel: sp.isFocus ? "Focus" : (sp.isCantrip ? "Cantrip" : `Rank ${sp.rank || 1}`)
+    });
+  }
+
+  const sourceTraditionByKey = new Map();
+  for (const src of checkerReport?.spellcasting?.sources || []) {
+    if (src?.key) sourceTraditionByKey.set(src.key, src.tradition || "");
+  }
+
+  const choiceGroupsByLevel = {};
+  for (const g of grantedProgression.choiceGroups || []) {
+    const uLvl = Math.max(1, Math.min(20, Number(g.unlockLevel || 1)));
+    if (!choiceGroupsByLevel[uLvl]) choiceGroupsByLevel[uLvl] = [];
+    choiceGroupsByLevel[uLvl].push({
+      ...g,
+      tradition: sourceTraditionByKey.get(g.targetSourceKey) || ""
+    });
+  }
+
+  // Index live actor spell UUIDs & names so past/current curriculum choices show live completion state
+  const liveSpellUuids = new Set();
+  const liveSpellNames = new Set();
+  for (const sp of actor.itemTypes?.spell || []) {
+    const cSrc = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
+    if (typeof cSrc === "string" && cSrc.trim()) liveSpellUuids.add(cSrc.trim().toLowerCase());
+    if (sp.name) liveSpellNames.add(String(sp.name).trim().toLowerCase());
+  }
 
   // 5. Running Projections for Attributes & Skill Ranks across Levels 1-20
   const projectedBoostCounts = getBaseBoostCounts(actor, currentLevel, dualInfo);
@@ -1210,55 +1281,148 @@ export function buildLevelRoadmap(actor, options = {}) {
     // D. Class Features unlocked at this level
     const classFeatures = classFeaturesByLevel[lvl] || [];
 
-    // E. Spellcasting milestones & planned spells (with live "Choose X more Rank Y" tracking!)
+    // E. Spellcasting milestones, auto-granted subclass/focus/deity spells & planned spells
     const rawMilestones = spellMilestones[lvl] || [];
     const plannedSpells = isFuture && Array.isArray(lp.spells) ? lp.spells : [];
+    const autoGrantedSpells = autoSpellsByLevel[lvl] || [];
+    const rawChoiceGroups = choiceGroupsByLevel[lvl] || [];
+
+    const plannedUuidSet = new Set(plannedSpells.map(s => String(s?.uuid || "").toLowerCase()).filter(Boolean));
+    const plannedNameSet = new Set(plannedSpells.map(s => String(s?.name || "").trim().toLowerCase()).filter(Boolean));
+    const claimedCurriculumSpells = new Set();
+
+    const subclassSpellChoices = rawChoiceGroups.map(g => {
+      const options = (g.options || []).map(o => {
+        const uLower = String(o.uuid || "").toLowerCase();
+        const nLower = String(o.name || "").trim().toLowerCase();
+        const isKnown = Boolean((uLower && liveSpellUuids.has(uLower)) || (nLower && liveSpellNames.has(nLower)));
+        const isPlanned = isFuture && Boolean((uLower && plannedUuidSet.has(uLower)) || (nLower && plannedNameSet.has(nLower)));
+        return {
+          ...o,
+          isKnown,
+          isPlanned,
+          rankLabel: o.isCantrip ? "Cantrip" : `Rank ${o.rank || 1}`
+        };
+      });
+      const pickedCount = isFuture
+        ? options.filter(o => o.isPlanned).length
+        : options.filter(o => o.isKnown).length;
+      const remainingCount = Math.max(0, (g.pickCount || 1) - pickedCount);
+
+      // Claim up to `pickCount` planned spells satisfying a Wizard Curriculum group so they never double-count
+      // toward the 2 regular free Spellbook spells even if added via Pick Spells or Drag & Drop!
+      if (isFuture && g.isCurriculum && pickedCount > 0) {
+        const optUuids = new Set(options.map(o => String(o.uuid || "").toLowerCase()).filter(Boolean));
+        const optNames = new Set(options.map(o => String(o.name || "").trim().toLowerCase()).filter(Boolean));
+        const matchingPlanned = plannedSpells
+          .filter(sp =>
+            !claimedCurriculumSpells.has(sp)
+            && ((sp?.uuid && optUuids.has(String(sp.uuid).toLowerCase()))
+              || (sp?.name && optNames.has(String(sp.name).trim().toLowerCase())))
+          )
+          .sort((a, b) => (b?.isCurriculumPick ? 1 : 0) - (a?.isCurriculumPick ? 1 : 0));
+        for (const sp of matchingPlanned.slice(0, g.pickCount || 1)) {
+          claimedCurriculumSpells.add(sp);
+        }
+      }
+
+      return {
+        ...g,
+        options,
+        pickedCount,
+        remainingCount,
+        complete: remainingCount === 0
+      };
+    });
+
     const milestones = rawMilestones.map(m => {
+      // Adjust spontaneous repertoire picks when a bloodline Sorcerous Gift automatically fills 1 slot of a new rank
+      const autoRepertoireSpells = autoGrantedSpells.filter(sp =>
+        sp.targetSourceKey === m.entryKey && sp.countsTowardRepertoire && !sp.isCantrip && !sp.isFocus
+      );
+      let adjustedMilestone = m;
+      if (m.learnMode === "by-rank" && autoRepertoireSpells.length > 0) {
+        const adjReqByRank = { ...(m.requiredByRank || {}) };
+        let autoFilledCount = 0;
+        for (const sp of autoRepertoireSpells) {
+          const r = Number(sp.rank || 0);
+          if (r >= 1 && (adjReqByRank[r] || 0) > 0) {
+            adjReqByRank[r] -= 1;
+            autoFilledCount += 1;
+          }
+        }
+        const adjReqTotal = Object.values(adjReqByRank).reduce((s, n) => s + Math.max(0, Number(n || 0)), 0);
+        adjustedMilestone = {
+          ...m,
+          requiredByRank: adjReqByRank,
+          requiredTotal: adjReqTotal,
+          autoFilledCount
+        };
+      }
+
       const matchedPlanned = plannedSpells.filter(sp => {
-        if (sp?.entryKey && m.entryKey) return sp.entryKey === m.entryKey;
+        if (sp?.entryKey && adjustedMilestone.entryKey) return sp.entryKey === adjustedMilestone.entryKey;
         if (rawMilestones.length === 1) return true;
-        if (sp?.tradition && m.tradition) return sp.tradition === m.tradition;
+        if (sp?.tradition && adjustedMilestone.tradition) return sp.tradition === adjustedMilestone.tradition;
         return false;
       });
       const pickState = isFuture
-        ? formatSpellPickPrompt(m, matchedPlanned)
+        ? formatSpellPickPrompt(adjustedMilestone, matchedPlanned, claimedCurriculumSpells)
         : {
             pickedCount: 0,
-            requiredCount: m.requiredTotal || 0,
+            requiredCount: adjustedMilestone.requiredTotal || 0,
             remainingCount: 0,
             remainingByRank: {},
             complete: true,
             isMandatory: false,
-            promptText: m.learnMode === "upto-rank"
-              ? `Learned +${m.requiredTotal || 2} spells (up to Rank ${m.maxRank})`
-              : (m.learnMode === "by-rank" && m.requiredTotal > 0
-                ? `Learned ${m.requiredTotal} new spell${m.requiredTotal === 1 ? "" : "s"}`
-                : `Slots: ${m.fullSlotsText}`)
+            promptText: adjustedMilestone.learnMode === "upto-rank"
+              ? `Learned +${adjustedMilestone.requiredTotal || 2} spells (up to Rank ${adjustedMilestone.maxRank})`
+              : (adjustedMilestone.learnMode === "by-rank" && adjustedMilestone.requiredTotal > 0
+                ? `Learned ${adjustedMilestone.requiredTotal} new spell${adjustedMilestone.requiredTotal === 1 ? "" : "s"}`
+                : `Slots: ${adjustedMilestone.fullSlotsText}`)
           };
       return {
-        ...m,
+        ...adjustedMilestone,
         ...pickState
       };
     });
 
     const mandatoryMilestones = isFuture ? milestones.filter(m => m.isMandatory) : [];
-    const hasMandatorySpells = mandatoryMilestones.length > 0;
-    const mandatorySpellsRequired = mandatoryMilestones.reduce((s, m) => s + (m.requiredCount || 0), 0);
-    const mandatorySpellsPicked = mandatoryMilestones.reduce((s, m) => s + (m.pickedCount || 0), 0);
-    const mandatorySpellsRemaining = mandatoryMilestones.reduce((s, m) => s + (m.remainingCount || 0), 0);
+    // Only count bonus choice groups (e.g. Wizard Curriculum or standalone Focus choices) separately;
+    // repertoire-counting bloodline choices are already covered by `mandatoryMilestones`!
+    const mandatoryChoiceGroups = isFuture && lvl >= 2
+      ? subclassSpellChoices.filter(g => g.isCurriculum || (!g.countsTowardRepertoire && g.pickCount > 0))
+      : [];
+    const hasMandatorySpells = mandatoryMilestones.length > 0 || mandatoryChoiceGroups.length > 0;
+    const mandatorySpellsRequired = mandatoryMilestones.reduce((s, m) => s + (m.requiredCount || 0), 0)
+      + mandatoryChoiceGroups.reduce((s, g) => s + (g.pickCount || 0), 0);
+    const mandatorySpellsPicked = mandatoryMilestones.reduce((s, m) => s + (m.pickedCount || 0), 0)
+      + mandatoryChoiceGroups.reduce((s, g) => s + Math.min(g.pickCount || 1, g.pickedCount || 0), 0);
+    const mandatorySpellsRemaining = mandatoryMilestones.reduce((s, m) => s + (m.remainingCount || 0), 0)
+      + mandatoryChoiceGroups.reduce((s, g) => s + (g.remainingCount || 0), 0);
     const spellsComplete = !hasMandatorySpells || mandatorySpellsRemaining === 0;
 
     let spellGoalBannerText = "";
     if (hasMandatorySpells) {
-      if (mandatoryMilestones.length === 1) {
-        spellGoalBannerText = mandatoryMilestones[0].promptText;
-      } else if (spellsComplete) {
+      if (spellsComplete) {
         spellGoalBannerText = `${mandatorySpellsPicked}/${mandatorySpellsRequired} spell${mandatorySpellsRequired === 1 ? "" : "s"} planned ✓`;
+      } else if (mandatoryMilestones.length === 1 && mandatoryChoiceGroups.length === 0) {
+        spellGoalBannerText = mandatoryMilestones[0].promptText;
       } else {
-        spellGoalBannerText = mandatoryMilestones
-          .filter(m => !m.complete)
-          .map(m => `${m.title.replace(/ Spellcasting$/i, "")}: ${m.promptText}`)
-          .join(" · ");
+        const parts = [];
+        for (const m of mandatoryMilestones) {
+          if (!m.complete) {
+            parts.push(mandatoryMilestones.length > 1
+              ? `${m.title.replace(/ Spellcasting$/i, "")}: ${m.promptText}`
+              : m.promptText);
+          }
+        }
+        for (const g of mandatoryChoiceGroups) {
+          if (!g.complete) {
+            parts.push(`${g.isCurriculum ? "Curriculum" : g.sourceLabel}: pick ${g.remainingCount}`);
+          }
+        }
+        spellGoalBannerText = parts.join(" · ");
       }
     }
 
@@ -1318,6 +1482,10 @@ export function buildLevelRoadmap(actor, options = {}) {
       hasFeatSlots: featSlots.length > 0,
       spellMilestones: milestones,
       hasSpellMilestones: milestones.length > 0,
+      autoGrantedSpells,
+      hasAutoGrantedSpells: autoGrantedSpells.length > 0,
+      subclassSpellChoices,
+      hasSubclassSpellChoices: subclassSpellChoices.length > 0,
       hasMandatorySpells,
       mandatorySpellsRequired,
       mandatorySpellsPicked,
@@ -2264,11 +2432,13 @@ async function materializePlannedItem(planned, expectedType) {
   if (!planned) return null;
   let obj = null;
   if (planned.uuid) {
-    const sourceDoc = await fromUuid(planned.uuid);
+    const sourceDoc = expectedType === "spell"
+      ? await resolveSpellDocumentByUuid(planned.uuid)
+      : await fromUuid(planned.uuid);
     if (sourceDoc && sourceDoc.type === expectedType) {
       obj = sourceDoc.toObject();
       obj._stats = obj._stats || {};
-      obj._stats.compendiumSource = planned.uuid;
+      obj._stats.compendiumSource = sourceDoc.uuid || planned.uuid;
     }
   }
   if (!obj && planned.itemData && typeof planned.itemData === "object") {
@@ -2394,6 +2564,14 @@ export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurren
       });
     }
 
+    if (lvlData.hasAutoGrantedSpells) {
+      plannedItems.push({
+        kind: "auto",
+        label: "Auto-Granted Spells (Subclass / Focus / Deity)",
+        text: lvlData.autoGrantedSpells.map(s => `${s.name} (${s.rankLabel})`).join(", ")
+      });
+    }
+
     if (lvlData.hasPlannedSpells) {
       hasPlanned = true;
       plannedItems.push({
@@ -2406,6 +2584,11 @@ export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurren
       for (const m of lvlData.spellMilestones || []) {
         if (m.isMandatory && !m.complete) {
           unplannedItems.push(`${m.title}: ${m.promptText}`);
+        }
+      }
+      for (const g of lvlData.subclassSpellChoices || []) {
+        if (!g.complete) {
+          unplannedItems.push(`${g.label} (${g.remainingCount} remaining)`);
         }
       }
     }
@@ -2666,11 +2849,12 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     summary.push(`Feats: ${addedFeats.join(", ")}`);
   }
 
-  // 3. Sync Spellcasting Entry slots for the new level
+  // 3. Sync Spellcasting Entry slots & auto-granted focus / subclass / deity spells for the new level
   try {
     const syncRes = await createOrSyncAllSpellcastingEntries(actor);
     if (syncRes.created.length > 0) summary.push(`Created entries: ${syncRes.created.join(", ")}`);
     if (syncRes.synced.length > 0) summary.push(`Synced spell slots: ${syncRes.synced.join(", ")}`);
+    if (syncRes.addedSpells?.length > 0) summary.push(`Auto-added spells: ${syncRes.addedSpells.join(", ")}`);
   } catch (err) {
     console.warn("PF2e Awesome GM Utilities | Spellcasting sync during level-up failed:", err);
   }
@@ -2695,19 +2879,27 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
         if (!obj) continue;
 
         let targetEntryId = null;
+        const isFocusPlanned = String(sp.entryKey || "").startsWith("focus:");
         if (sp.entryKey) {
           const matchedSrc = postReport?.spellcasting?.sources?.find(s => s.key === sp.entryKey && s.entryId);
           if (matchedSrc) targetEntryId = matchedSrc.entryId;
         }
-        if (!targetEntryId && sp.tradition) {
-          const byTrad = (actor.itemTypes?.spellcastingEntry || []).find(e =>
-            e.system?.tradition?.value === sp.tradition && e.system?.prepared?.value !== "focus"
-          );
-          if (byTrad) targetEntryId = byTrad.id;
-        }
-        if (!targetEntryId) {
-          const fallbackEntry = (actor.itemTypes?.spellcastingEntry || []).find(e => e.system?.prepared?.value !== "focus");
-          if (fallbackEntry) targetEntryId = fallbackEntry.id;
+        if (!targetEntryId && isFocusPlanned) {
+          const focusMatch = (actor.itemTypes?.spellcastingEntry || []).find(e =>
+            e.system?.prepared?.value === "focus" && (!sp.tradition || e.system?.tradition?.value === sp.tradition)
+          ) || (actor.itemTypes?.spellcastingEntry || []).find(e => e.system?.prepared?.value === "focus");
+          if (focusMatch) targetEntryId = focusMatch.id;
+        } else {
+          if (!targetEntryId && sp.tradition) {
+            const byTrad = (actor.itemTypes?.spellcastingEntry || []).find(e =>
+              e.system?.tradition?.value === sp.tradition && e.system?.prepared?.value !== "focus"
+            );
+            if (byTrad) targetEntryId = byTrad.id;
+          }
+          if (!targetEntryId) {
+            const fallbackEntry = (actor.itemTypes?.spellcastingEntry || []).find(e => e.system?.prepared?.value !== "focus");
+            if (fallbackEntry) targetEntryId = fallbackEntry.id;
+          }
         }
         if (!targetEntryId) continue;
 
@@ -2722,10 +2914,12 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
         );
         if (duplicate) continue;
 
+        const targetEntryDoc = actor.items?.get(targetEntryId);
+        const isFocusTarget = targetEntryDoc?.system?.prepared?.value === "focus";
         obj.system = obj.system || {};
         obj.system.location = obj.system.location || {};
         obj.system.location.value = targetEntryId;
-        if (sp.rank && Number(sp.rank) > Number(obj.system.level?.value ?? 1)) {
+        if (!isFocusTarget && !sp.isCantrip && sp.rank && Number(sp.rank) > Number(obj.system.level?.value ?? 1)) {
           obj.system.location.heightenedLevel = Number(sp.rank);
         }
 
@@ -3862,7 +4056,7 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
         if (src.entryExists && src.entryId) {
           postMatchedEntryIds.add(src.entryId);
           if (src.slotsOutdated) {
-            const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src);
+            const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src, { includeAutoSpells: false });
             if (ok) syncedNames.push(src.matchedEntryName || src.title);
           }
         }

@@ -14,7 +14,8 @@ import {
   TRADITION_LABELS,
   analyzeCharacter,
   capitalize,
-  normalizeSlug
+  normalizeSlug,
+  resolveSpellDocumentByUuid
 } from "./character-checker-engine.js";
 import { collectCandidateActors } from "./character-checker-app.js";
 import {
@@ -100,7 +101,8 @@ async function inspectDocumentByUuid(uuid) {
     return;
   }
   try {
-    const doc = await fromUuid(uuid);
+    let doc = await fromUuid(uuid);
+    if (!doc) doc = await resolveSpellDocumentByUuid(uuid);
     if (doc?.sheet) {
       doc.sheet.render({ force: true });
     } else {
@@ -278,7 +280,7 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             hasBoosts: l.hasBoosts,
             hasIntBonus: l.hasIntBonus,
             hasSkillIncrease: l.hasSkillIncrease,
-            hasSpellMilestones: l.hasSpellMilestones,
+            hasSpellMilestones: Boolean(l.hasSpellMilestones || l.hasAutoGrantedSpells || l.hasSubclassSpellChoices),
             isAlchemistFutureGain: l.isAlchemistFutureGain,
             pillText,
             pillClass
@@ -301,7 +303,13 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
           canStepNext: rawFocused.level < 20,
           prevLevel: Math.max(1, rawFocused.level - 1),
           nextStepLevel: Math.min(20, rawFocused.level + 1),
-          showSpellsPanel: Boolean(rawFocused.hasSpellMilestones || rawFocused.hasPlannedSpells || (rawFocused.isFuture && hasAnySpellcasting)),
+          showSpellsPanel: Boolean(
+            rawFocused.hasSpellMilestones
+            || rawFocused.hasAutoGrantedSpells
+            || rawFocused.hasSubclassSpellChoices
+            || rawFocused.hasPlannedSpells
+            || (rawFocused.isFuture && hasAnySpellcasting)
+          ),
           showFormulasPanel: Boolean(rawFocused.hasFormulaMilestone || rawFocused.hasPlannedFormulas),
           defaultSpellTradition: defaultTrad,
           defaultSpellEntryKey: defaultEntryKey,
@@ -343,6 +351,9 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             hasWarnings: s.hasWarnings
           })),
           plannedSpellsCount: l.plannedSpells.length,
+          autoSpellsText: l.hasAutoGrantedSpells
+            ? `Auto: ${l.autoGrantedSpells.map(s => s.name).join(", ")}`
+            : "",
           formulasText: l.isAlchemistFutureGain
             ? `Formulas: ${l.plannedFormulasCount}/${l.formulaMilestone?.gain || 2} (+${l.formulaMilestone?.gain || 2} free)`
             : (l.hasPlannedFormulas ? `${l.plannedFormulasCount} planned formula(s)` : "")
@@ -705,6 +716,58 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
             spellPlanId ? sp.id !== spellPlanId : sp.uuid !== spellUuid
           );
         });
+        this.render({ force: false });
+        break;
+      }
+
+      case "plan-choice-spell": {
+        if (!actor) return;
+        const levelNum = Number(el.dataset.level);
+        const uuid = el.dataset.uuid;
+        const name = el.dataset.name || "Spell";
+        const img = el.dataset.img || "systems/pf2e/icons/default-icons/spell.svg";
+        const isCantrip = el.dataset.isCantrip === "1";
+        const rank = isCantrip ? 0 : Math.max(1, Number(el.dataset.rank || 1));
+        const entryKey = el.dataset.entryKey || "";
+        const tradition = el.dataset.tradition || "";
+        const isCurriculumPick = el.dataset.isCurriculum === "1";
+        if (!levelNum || !uuid || levelNum <= (actor.level || 1)) return;
+
+        let removed = false;
+        const uuidLower = uuid.toLowerCase();
+        const nameLower = String(name || "").trim().toLowerCase();
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          const list = Array.isArray(entry.spells) ? entry.spells : [];
+          const existingIdx = list.findIndex(s => {
+            if (String(s?.uuid || "").toLowerCase() === uuidLower) return true;
+            const sName = String(s?.name || "").trim().toLowerCase();
+            if (!nameLower || sName !== nameLower) return false;
+            return Boolean(s?.isCantrip) === isCantrip && (isCantrip || Number(s?.rank || 1) === rank);
+          });
+          if (existingIdx >= 0) {
+            list.splice(existingIdx, 1);
+            removed = true;
+          } else {
+            list.push({
+              id: foundry.utils.randomID(8),
+              uuid,
+              name,
+              img,
+              rank,
+              isCantrip,
+              tradition,
+              entryKey,
+              isCurriculumPick
+            });
+          }
+          entry.spells = list;
+        });
+
+        ui.notifications?.info(
+          removed
+            ? `Removed "${name}" from Level ${levelNum} plan.`
+            : `Planned "${name}" for Level ${levelNum}!`
+        );
         this.render({ force: false });
         break;
       }
@@ -1969,7 +2032,7 @@ export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
 
         const rangeLabel = formatLevelRange(prevLevel + 1, newLevel, { prefix: "Level", pluralPrefix: "Levels" });
         const hasAnythingToApply = inspection.hasPlannedChoicesInRange
-          || inspection.levels.some(ls => ls.lvlData?.hasSpellMilestones);
+          || inspection.levels.some(ls => ls.lvlData?.hasSpellMilestones || ls.lvlData?.hasAutoGrantedSpells);
 
         const content = `
           <div class="pf2e-lp-confirm-body">

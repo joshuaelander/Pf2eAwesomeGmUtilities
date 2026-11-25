@@ -501,6 +501,74 @@
                   </div>
                 {{/if}}
 
+                {{#if focusedLevel.hasAutoGrantedSpells}}
+                  <div class="pf2e-lp-auto-spells-box">
+                    <div class="pf2e-lp-auto-spells-head">
+                      <span><i class="fa-solid fa-sparkles"></i> Auto-Granted Spells (Subclass / Focus / Deity)</span>
+                      <span class="pf2e-lp-hint">Added automatically on Sync &amp; Level-Up</span>
+                    </div>
+                    <div class="pf2e-lp-planned-spells">
+                      {{#each focusedLevel.autoGrantedSpells}}
+                        <div class="pf2e-lp-spell-chip is-auto-chip" title="{{this.sourceLabel}}">
+                          <img src="{{this.img}}" alt="" />
+                          {{#if this.uuid}}
+                            <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}" title="Open spell sheet ({{this.sourceLabel}})">{{this.name}}</a>
+                          {{else}}
+                            <span>{{this.name}}</span>
+                          {{/if}}
+                          <span class="pf2e-lp-spell-rank">{{this.rankLabel}}</span>
+                          <em class="pf2e-lp-chip-src">{{this.sourceLabel}}</em>
+                        </div>
+                      {{/each}}
+                    </div>
+                  </div>
+                {{/if}}
+
+                {{#if focusedLevel.hasSubclassSpellChoices}}
+                  <div class="pf2e-lp-choice-list">
+                    {{#each focusedLevel.subclassSpellChoices}}
+                      <div class="pf2e-lp-choice-box {{#if this.complete}}is-complete{{/if}}">
+                        <div class="pf2e-lp-choice-head">
+                          <strong>{{this.label}}</strong>
+                          <span class="pf2e-lp-spell-goal-pill {{#if this.complete}}is-complete{{else}}is-needed{{/if}}">
+                            {{#if this.complete}}{{this.pickedCount}}/{{this.pickCount}} picked ✓{{else}}Pick {{this.remainingCount}}{{/if}}
+                          </span>
+                        </div>
+                        <div class="pf2e-lp-choice-chips">
+                          {{#each this.options}}
+                            {{#if ../../focusedLevel.canEditThisLevel}}
+                              <button
+                                type="button"
+                                class="pf2e-lp-choice-btn {{#if this.isPlanned}}is-chosen{{/if}}"
+                                data-lp-action="plan-choice-spell"
+                                data-level="{{../../focusedLevel.level}}"
+                                data-uuid="{{this.uuid}}"
+                                data-name="{{this.name}}"
+                                data-img="{{this.img}}"
+                                data-rank="{{this.rank}}"
+                                data-is-cantrip="{{#if this.isCantrip}}1{{else}}0{{/if}}"
+                                data-entry-key="{{../targetSourceKey}}"
+                                data-tradition="{{../tradition}}"
+                                data-is-curriculum="{{#if ../isCurriculum}}1{{else}}0{{/if}}"
+                                title="{{#if this.isPlanned}}Remove {{this.name}} from Level {{../../focusedLevel.level}} plan{{else}}Plan {{this.name}} for Level {{../../focusedLevel.level}}{{/if}}"
+                              >
+                                <img src="{{this.img}}" alt="" />
+                                <span>{{#if this.isPlanned}}✓ {{else}}+ {{/if}}{{this.name}}{{#if this.qualifier}} ({{this.qualifier}}){{/if}}</span>
+                              </button>
+                            {{else}}
+                              <span class="pf2e-lp-choice-readonly {{#if this.isKnown}}is-chosen{{/if}}">
+                                <img src="{{this.img}}" alt="" />
+                                <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}">{{this.name}}{{#if this.qualifier}} ({{this.qualifier}}){{/if}}</a>
+                                {{#if this.isKnown}}<em>Known</em>{{/if}}
+                              </span>
+                            {{/if}}
+                          {{/each}}
+                        </div>
+                      </div>
+                    {{/each}}
+                  </div>
+                {{/if}}
+
                 {{#if focusedLevel.hasPlannedSpells}}
                   <div class="pf2e-lp-planned-spells">
                     {{#each focusedLevel.plannedSpellsDisplay}}
@@ -508,6 +576,7 @@
                         <img src="{{this.img}}" alt="" />
                         <a data-lp-action="inspect-uuid" data-uuid="{{this.uuid}}" title="Open spell sheet">{{this.name}}</a>
                         <span class="pf2e-lp-spell-rank">{{this.rankLabel}}</span>
+                        {{#if this.isCurriculumPick}}<span class="pf2e-lp-spell-curr-tag">Curriculum</span>{{/if}}
                         {{#if ../focusedLevel.canEditThisLevel}}
                           <button
                             type="button"
@@ -673,6 +742,9 @@
 
                   <div class="pf2e-lp-ov-extra">
                     <div class="pf2e-lp-ov-cf">{{this.classFeaturesText}}</div>
+                    {{#if this.autoSpellsText}}
+                      <div class="pf2e-lp-ov-auto-sp">{{this.autoSpellsText}}</div>
+                    {{/if}}
                     {{#if this.plannedSpellsCount}}
                       <div class="pf2e-lp-ov-sp">{{this.plannedSpellsCount}} planned spell(s)</div>
                     {{/if}}

@@ -2325,9 +2325,1957 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
   return focusSources;
 }
 
+/* ------------------------------------------------------------------------- */
+/* 6B. DATA-DRIVEN PF2E AUTO-GRANTED & FOCUS SPELL DISCOVERY (ZERO HARDCODE) */
+/* ------------------------------------------------------------------------- */
+
+const SPELL_UUID_TOKEN_REGEX = /@UUID\[([^\]]+)\](?:\{([^}]+)\})?/g;
+const NON_SPELL_PACK_REGEX = /(?:^|[._-])(?:spell-effects|effects?|actions?|conditions?|feats?|equipment|journals?|macros?|tables?|rolltables?|ancestr|heritage|background|class|deit|hazard|bestiary|boon|campaign)/i;
+const RANK_SUBHEADER_REGEX = /^(?:cantrips?|1st|2nd|3rd|[4-9]th|1[0-9]th|20th)(?:\s+rank)?\s*:?$/i;
+const TIER_SUBHEADER_REGEX = /^(?:initial|advanced|greater|surface|deeper|deepest)\s*:?$/i;
+
+/** Lazily populated per-pack `{ size, byName }` lookup for named `@UUID[Compendium...Item.Name]` links */
+const _packNameIndexCache = new Map();
+
+/** Lazily populated domainSlug -> { initial: { uuid, name }|null, advanced: { uuid, name }|null } from PF2e's own Journals */
+let _domainSpellCache = null;
+let _domainSpellCachePromise = null;
+
+function lookupCompendiumIndexEntrySync(uuid) {
+  if (typeof uuid !== "string" || !uuid.startsWith("Compendium.")) return null;
+  const parts = uuid.split(".");
+  // Compendium.<scope>.<pack>.Item.<idOrName> OR Compendium.<scope>.<pack>.<idOrName>
+  if (parts.length < 4) return null;
+  const packKey = `${parts[1]}.${parts[2]}`;
+  const pack = game.packs?.get?.(packKey);
+  if (!pack?.index || pack.index.size === 0) return null;
+
+  const docKey = parts.length >= 5 && parts[3] === "Item" ? parts.slice(4).join(".") : parts.slice(3).join(".");
+  if (!docKey) return null;
+
+  const direct = pack.index.get(docKey);
+  if (direct) return { packKey, entry: direct, canonicalUuid: `Compendium.${packKey}.Item.${direct._id}` };
+
+  // Fallback for name-based UUID links (e.g. Compendium.pf2e.spells-srd.Item.Force Bolt)
+  let cached = _packNameIndexCache.get(packKey);
+  if (!cached || cached.size !== pack.index.size) {
+    const byName = new Map();
+    for (const e of pack.index.values()) {
+      if (e?.name) byName.set(String(e.name).toLowerCase(), e);
+    }
+    cached = { size: pack.index.size, byName };
+    if (byName.size > 0) _packNameIndexCache.set(packKey, cached);
+  }
+  const named = cached.byName.get(docKey.toLowerCase());
+  if (named) return { packKey, entry: named, canonicalUuid: `Compendium.${packKey}.Item.${named._id}` };
+  return null;
+}
+
+/**
+ * Synchronously checks whether a Foundry `@UUID[...]` target points to a PF2e Spell document.
+ * Inspects live loaded documents & compendium indices first (zero hardcoded spell lists).
+ */
+function isLikelySpellUuid(uuid) {
+  if (typeof uuid !== "string" || !uuid.trim()) return false;
+  const clean = uuid.trim();
+
+  try {
+    if (typeof fromUuidSync === "function") {
+      const syncDoc = fromUuidSync(clean);
+      if (syncDoc && typeof syncDoc === "object" && "type" in syncDoc) {
+        return syncDoc.type === "spell";
+      }
+    }
+  } catch { /* ignore sync lookup errors */ }
+
+  if (clean.startsWith("Item.")) {
+    const worldItem = game.items?.get?.(clean.slice(5));
+    return worldItem ? worldItem.type === "spell" : false;
+  }
+
+  const idxHit = lookupCompendiumIndexEntrySync(clean);
+  if (idxHit?.entry) {
+    return idxHit.entry.type === "spell";
+  }
+
+  if (clean.startsWith("Compendium.")) {
+    const parts = clean.split(".");
+    const packName = parts[2] || "";
+    if (NON_SPELL_PACK_REGEX.test(packName)) return false;
+    return /spell/i.test(packName);
+  }
+
+  return false;
+}
+
+/**
+ * Resolves live display metadata (`uuid`, `name`, `img`) for a spell UUID synchronously
+ * from Foundry's already-loaded compendium index or world items.
+ */
+function resolveSyncSpellMeta(rawUuid, fallbackLabel = "") {
+  const cleanUuid = String(rawUuid || "").trim();
+  let canonicalUuid = cleanUuid;
+  let name = String(fallbackLabel || "").trim();
+  let img = "systems/pf2e/icons/default-icons/spell.svg";
+  let isCantrip = null;
+  let isFocus = null;
+  let baseRank = null;
+
+  try {
+    if (typeof fromUuidSync === "function") {
+      const doc = fromUuidSync(cleanUuid);
+      if (doc && doc.type === "spell") {
+        if (doc.uuid) canonicalUuid = doc.uuid;
+        if (!name && doc.name) name = String(doc.name);
+        if (doc.img) img = doc.img;
+        const traits = Array.isArray(doc.system?.traits?.value) ? doc.system.traits.value : [];
+        if (doc.isCantrip != null || traits.includes("cantrip")) isCantrip = Boolean(doc.isCantrip || traits.includes("cantrip"));
+        if (doc.isFocusSpell != null || doc.isFocus != null || traits.includes("focus")) {
+          isFocus = Boolean(doc.isFocusSpell || doc.isFocus || traits.includes("focus"));
+        }
+        const lvl = Number(doc.system?.level?.value);
+        if (Number.isFinite(lvl) && lvl > 0) baseRank = lvl;
+      }
+    }
+  } catch { /* ignore */ }
+
+  const idxHit = lookupCompendiumIndexEntrySync(cleanUuid);
+  if (idxHit?.entry) {
+    canonicalUuid = idxHit.canonicalUuid;
+    if (!name && idxHit.entry.name) name = String(idxHit.entry.name);
+    if (idxHit.entry.img && img === "systems/pf2e/icons/default-icons/spell.svg") img = idxHit.entry.img;
+  }
+
+  if (!name) {
+    const lastSeg = cleanUuid.split(".").pop() || "Spell";
+    name = /^[A-Za-z0-9]{16}$/.test(lastSeg) ? "Spell" : lastSeg;
+  }
+
+  return { uuid: canonicalUuid, rawUuid: cleanUuid, name, img, isCantrip, isFocus, baseRank };
+}
+
+function decodeHtmlEntities(text) {
+  return String(text || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&rsquo;|&#8217;|&#39;/gi, "'")
+    .replace(/&lsquo;|&#8216;/gi, "'")
+    .replace(/&ldquo;|&rdquo;|&quot;/gi, '"')
+    .replace(/&mdash;|&#8212;/gi, "—")
+    .replace(/&ndash;|&#8211;/gi, "–")
+    .replace(/&amp;/gi, "&");
+}
+
+function htmlToPlainLines(html) {
+  return decodeHtmlEntities(
+    String(html || "")
+      .replace(/<hr\b[^>]*>/gi, "\n---HR---\n")
+      .replace(/<(?:br\s*\/?|\/p|\/li|\/div|\/tr|\/h[1-6])[^>]*>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "\n• ")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Extracts all spell `@UUID[...]{...}` tokens from a plain/HTML snippet, along with
+ * any immediate trailing parenthetical qualifier (e.g. `(fire)`, `(arcane)`, `(air)`).
+ */
+function extractSpellRefsFromText(text) {
+  const plain = htmlToPlainLines(text);
+  const refs = [];
+  const seen = new Set();
+  const re = new RegExp(SPELL_UUID_TOKEN_REGEX.source, "g");
+  let match;
+
+  while ((match = re.exec(plain)) !== null) {
+    const rawUuid = (match[1] || "").trim();
+    const rawLabel = (match[2] || "").trim();
+    if (!isLikelySpellUuid(rawUuid)) continue;
+
+    const meta = resolveSyncSpellMeta(rawUuid, rawLabel);
+    const dedupeKey = meta.uuid.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const endIdx = match.index + match[0].length;
+    const afterImmediate = plain.slice(endIdx, endIdx + 48);
+    const beforeCtx = plain.slice(Math.max(0, match.index - 90), match.index);
+    const afterCtx = plain.slice(endIdx, endIdx + 70);
+
+    // Immediate trailing qualifier like `(fire)`, `(water)`, `(arcane)`, `(acid or fire)`
+    let qualifier = "";
+    const qualMatch = afterImmediate.match(/^\s*\(([a-z][a-z\s/-]{1,32})\)/i);
+    if (qualMatch) {
+      const cand = qualMatch[1].trim().toLowerCase();
+      if (!/^(?:see|page|pg|p\.|apg|crb|pc\d|da|som|roe|remaster|legacy|only|if|at|heightened|cantrip|rank)/i.test(cand)) {
+        qualifier = cand;
+      }
+    }
+
+    refs.push({
+      ...meta,
+      qualifier,
+      beforeCtx,
+      afterCtx,
+      index: match.index,
+      endIndex: endIdx
+    });
+  }
+
+  return refs;
+}
+
+/**
+ * Extracts the HTML slice belonging to a named bold/heading section in a PF2e item description
+ * (e.g. `Sorcerous Gifts`, `Granted Spells`, `Curriculum`, `Bloodline Spells`, `School Spells`,
+ * `Revelation Spells`, `Standard Psi Cantrips`, `Unique Psi Cantrips`, `Hex Cantrip`, `Conflux Spell`).
+ * Stops cleanly at the next major bold/heading section or `<hr>` while keeping rank/tier sub-labels inside.
+ */
+function extractNamedSectionHtml(descHtml, headingPatterns) {
+  const html = String(descHtml || "");
+  if (!html) return "";
+
+  const headingRegex = /<(?:strong|b|h[1-6])[^>]*>([^<]{1,64})<\/(?:strong|b|h[1-6])>|<hr\b[^>]*>/gi;
+  const markers = [];
+  let m;
+  while ((m = headingRegex.exec(html)) !== null) {
+    const isHr = /^<hr/i.test(m[0]);
+    const label = isHr
+      ? "---HR---"
+      : decodeHtmlEntities(m[1] || "").replace(/[:—–-]+\s*$/, "").trim();
+    markers.push({
+      isHr,
+      label,
+      start: m.index,
+      end: m.index + m[0].length
+    });
+  }
+
+  for (let i = 0; i < markers.length; i++) {
+    const mk = markers[i];
+    if (mk.isHr) continue;
+    if (!headingPatterns.some(pat => pat.test(mk.label))) continue;
+
+    // Collect content until the next major heading (ignoring rank labels like "1st" or tier labels like "initial")
+    let endPos = html.length;
+    for (let j = i + 1; j < markers.length; j++) {
+      const next = markers[j];
+      if (next.isHr) {
+        endPos = next.start;
+        break;
+      }
+      if (RANK_SUBHEADER_REGEX.test(next.label) || TIER_SUBHEADER_REGEX.test(next.label)) {
+        continue;
+      }
+      endPos = next.start;
+      break;
+    }
+    return html.slice(mk.end, endPos);
+  }
+
+  return "";
+}
+
+/**
+ * Collects normalized qualifier tokens (element, dragon tradition, domain, etc.) currently chosen
+ * on the actor from `flags.pf2e.rulesSelections`, `ChoiceSet` rules, `actor.rollOptions.all`,
+ * and parenthetical feat names so conditional spell lists disambiguate automatically.
+ */
+function extractActorQualifiers(actor, focusFeat = null) {
+  const tokens = new Set();
+  const ignore = new Set(["true", "false", "spell", "spells", "bloodline", "patron", "school", "mystery", "tradition", "choice", "feat", "feature", "arcane-school", "elemental"]);
+
+  const ingest = (raw) => {
+    if (!raw || typeof raw !== "string") return;
+    if (raw.startsWith("Compendium.") || raw.startsWith("Item.") || raw.startsWith("Actor.")) return;
+    const clean = normalizeSlug(raw);
+    if (!clean) return;
+    if (!ignore.has(clean)) tokens.add(clean);
+    for (const part of clean.split("-")) {
+      if (part.length >= 3 && !ignore.has(part)) tokens.add(part);
+    }
+  };
+
+  const inspectFeat = (feat) => {
+    if (!feat) return;
+    const sels = feat.flags?.pf2e?.rulesSelections;
+    if (sels && typeof sels === "object") {
+      for (const val of Object.values(sels)) {
+        if (typeof val === "string") ingest(val);
+        else if (val && typeof val === "object" && typeof val.value === "string") ingest(val.value);
+      }
+    }
+    const rules = Array.isArray(feat.system?.rules) ? feat.system.rules : [];
+    for (const r of rules) {
+      if (r?.key === "ChoiceSet" && typeof r.selection === "string") ingest(r.selection);
+    }
+    const paren = String(feat.name || "").match(/\(([^)]+)\)/);
+    if (paren) ingest(paren[1]);
+  };
+
+  if (focusFeat) inspectFeat(focusFeat);
+  for (const f of actor?.itemTypes?.feat || []) {
+    if (f !== focusFeat) inspectFeat(f);
+  }
+
+  const rollAll = actor?.rollOptions?.all || {};
+  for (const [k, v] of Object.entries(rollAll)) {
+    if (!v) continue;
+    const m = k.match(/(?:^|:)(?:element|elemental-bloodline|dragon-type|bloodline|patron|mystery|school|domain|tradition|energy|damage-type|mind|order|study):([a-z0-9-]+)$/i);
+    if (m) ingest(m[1]);
+  }
+
+  return tokens;
+}
+
+function qualifierMatchesActor(qualifierText, actorQualifiers) {
+  if (!qualifierText || !actorQualifiers || actorQualifiers.size === 0) return false;
+  const parts = qualifierText.toLowerCase().split(/\s*(?:,|\/|\bor\b|\band\b)\s*/).map(normalizeSlug).filter(Boolean);
+  return parts.some(p => actorQualifiers.has(p));
+}
+
+/**
+ * Extracts direct spell UUIDs stored in PF2e `rulesSelections`, `ChoiceSet.selection`, or `GrantItem.uuid` on a feat.
+ */
+function extractDirectRuleSpellUuids(feat) {
+  const out = [];
+  const seen = new Set();
+  const pushIfSpell = (val) => {
+    if (typeof val !== "string") return;
+    const clean = val.trim();
+    if (!clean || !isLikelySpellUuid(clean)) return;
+    const meta = resolveSyncSpellMeta(clean);
+    const key = meta.uuid.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(meta);
+  };
+
+  const sels = feat?.flags?.pf2e?.rulesSelections;
+  if (sels && typeof sels === "object") {
+    for (const val of Object.values(sels)) {
+      if (typeof val === "string") pushIfSpell(val);
+      else if (val && typeof val === "object" && typeof val.value === "string") pushIfSpell(val.value);
+    }
+  }
+
+  const rules = Array.isArray(feat?.system?.rules) ? feat.system.rules : [];
+  for (const r of rules) {
+    if (r?.key === "ChoiceSet" && typeof r.selection === "string") pushIfSpell(r.selection);
+    if (r?.key === "GrantItem" && typeof r.uuid === "string") pushIfSpell(r.uuid);
+  }
+
+  return out;
+}
+
+/**
+ * Extracts the selected Cleric/Champion Domain slug from a domain feat
+ * (e.g. `Domain Initiate (Fire)` -> `"fire"`, `Advanced Domain (Healing)` -> `"healing"`).
+ */
+function extractSelectedDomainSlug(feat) {
+  if (!feat) return "";
+  const sels = feat.flags?.pf2e?.rulesSelections;
+  if (sels && typeof sels === "object") {
+    for (const [k, v] of Object.entries(sels)) {
+      const val = typeof v === "string" ? v : (typeof v?.value === "string" ? v.value : "");
+      if (!val || val.startsWith("Compendium.") || val.startsWith("Item.")) continue;
+      if (/domain/i.test(k) || Object.keys(sels).length === 1) {
+        return normalizeSlug(val.replace(/^domain:/i, ""));
+      }
+    }
+  }
+  const rules = Array.isArray(feat.system?.rules) ? feat.system.rules : [];
+  for (const r of rules) {
+    if (r?.key === "ChoiceSet" && typeof r.selection === "string" && !r.selection.startsWith("Compendium.")) {
+      return normalizeSlug(r.selection.replace(/^domain:/i, ""));
+    }
+  }
+  const paren = String(feat.name || "").match(/\(([^)]+)\)/);
+  if (paren) return normalizeSlug(paren[1]);
+  return "";
+}
+
+/**
+ * Lazily scans PF2e's own Journals (`pf2e.journals` -> Domains journal, plus World Journals)
+ * to map every PF2e Domain slug to its live Initial and Advanced Domain Spell UUIDs.
+ * Zero hardcoded domain/spell tables — stays automatically up to date with PF2e & homebrew.
+ */
+async function warmDomainSpellCache() {
+  if (_domainSpellCache) return _domainSpellCache;
+  if (_domainSpellCachePromise) return _domainSpellCachePromise;
+
+  _domainSpellCachePromise = (async () => {
+    const cache = new Map();
+
+    const ingestDomainJournal = (journal) => {
+      if (!journal?.pages) return;
+      for (const page of journal.pages) {
+        const rawName = String(page.name || "").trim();
+        if (!rawName) continue;
+        const html = String(page.text?.content || "");
+        if (!html.includes("@UUID[")) continue;
+
+        // PF2e Domains journal pages list "Domain Spell" / "Initial" and "Advanced Domain Spell" / "Advanced"
+        const advSec = extractNamedSectionHtml(html, [/^advanced(?:\s+domain)?\s+spell$/i, /^advanced$/i]);
+        const initSec = extractNamedSectionHtml(html, [/^domain\s+spell$/i, /^initial(?:\s+domain)?\s+spell$/i, /^initial$/i]);
+        let initialRef = extractSpellRefsFromText(initSec)[0] || null;
+        let advancedRef = extractSpellRefsFromText(advSec)[0] || null;
+
+        if (!initialRef || !advancedRef) {
+          const allRefs = extractSpellRefsFromText(html);
+          if (!initialRef && allRefs[0]) initialRef = allRefs[0];
+          if (!advancedRef && allRefs[1]) advancedRef = allRefs[1];
+        }
+
+        if (initialRef || advancedRef) {
+          const slug = normalizeSlug(rawName.replace(/\s+domain$/i, ""));
+          if (slug && !cache.has(slug)) {
+            cache.set(slug, {
+              initial: initialRef ? { uuid: initialRef.uuid, name: initialRef.name, img: initialRef.img } : null,
+              advanced: advancedRef ? { uuid: advancedRef.uuid, name: advancedRef.name, img: advancedRef.img } : null
+            });
+          }
+        }
+      }
+    };
+
+    try {
+      // 1. World journals first (supports custom/homebrew domain journals)
+      for (const j of game.journal?.contents || []) {
+        if (/\bdomains?\b/i.test(String(j.name || ""))) {
+          ingestDomainJournal(j);
+        }
+      }
+
+      // 2. PF2e system & module JournalEntry compendiums (prioritize pf2e.journals)
+      const journalPacks = Array.from(game.packs || [])
+        .filter(p => p.documentName === "JournalEntry")
+        .sort((a, b) => (b.collection === "pf2e.journals" ? 1 : 0) - (a.collection === "pf2e.journals" ? 1 : 0));
+
+      for (const pack of journalPacks) {
+        const col = String(pack.collection || "");
+        if (col !== "pf2e.journals" && !/domain|journal/i.test(col)) continue;
+        try {
+          const idx = await pack.getIndex();
+          for (const entry of idx) {
+            if (!/\bdomains?\b/i.test(String(entry.name || ""))) continue;
+            const doc = await pack.getDocument(entry._id);
+            if (doc) ingestDomainJournal(doc);
+          }
+        } catch (err) {
+          console.warn(`PF2e Awesome GM Utilities | Failed scanning domain journal pack "${col}":`, err);
+        }
+      }
+    } catch (err) {
+      console.warn("PF2e Awesome GM Utilities | Failed building dynamic domain spell cache:", err);
+    }
+
+    _domainSpellCache = cache;
+    _domainSpellCachePromise = null;
+    return cache;
+  })();
+
+  return _domainSpellCachePromise;
+}
+
+/**
+ * Estimates the character level at which an embedded feat/feature was acquired on the actor.
+ */
+function inferFeatAcquiredLevel(feat, fallbackLevel = 1) {
+  if (!feat) return fallbackLevel;
+  const loc = String(feat.system?.location || "");
+  const m = loc.match(/-(\d+)$/);
+  if (m) return Math.max(1, Math.min(20, Number(m[1])));
+  const lvl = Number(feat.system?.level?.value);
+  if (Number.isFinite(lvl) && lvl >= 1 && lvl <= 20) return lvl;
+  return fallbackLevel;
+}
+
+/**
+ * Parses a ranked spell progression section (Sorcerous Gifts, Granted Spells, Wizard Curriculum,
+ * Apparition Spells, etc.) into `{ autoSpells, choiceGroups }` across ranks Cantrip & 1st–10th.
+ */
+function parseRankedSpellSection(sectionHtml, actorQualifiers, {
+  isCurriculum = false,
+  targetSourceKey,
+  targetClassSlug,
+  sourceLabel,
+  tier = "gift",
+  countsTowardRepertoire = false
+}) {
+  const autoSpells = [];
+  const choiceGroups = [];
+  if (!sectionHtml) return { autoSpells, choiceGroups };
+
+  const plain = htmlToPlainLines(sectionHtml);
+  if (!plain.includes("@UUID[")) return { autoSpells, choiceGroups };
+
+  // Find every rank marker (`cantrip(s)`, `1st`..`10th`) that introduces spells
+  const rankRe = /(?:^|[\n;•])\s*(cantrips?|1st|2nd|3rd|[4-9]th|10th)(?:\s+rank)?\s*[:—–-]?\s*/gi;
+  const rankMatches = [];
+  let m;
+  while ((m = rankRe.exec(plain)) !== null) {
+    const rawToken = m[1].toLowerCase();
+    const rank = rawToken.startsWith("cantrip") ? 0 : Number.parseInt(rawToken, 10);
+    if (!Number.isFinite(rank) || rank < 0 || rank > 10) continue;
+    rankMatches.push({
+      rank,
+      start: m.index,
+      contentStart: m.index + m[0].length
+    });
+  }
+
+  // Fallback for single-rank `Granted Spell` sections without an explicit "1st:" prefix
+  if (rankMatches.length === 0) {
+    const refs = extractSpellRefsFromText(plain);
+    if (refs.length > 0) {
+      const rank = refs[0].isCantrip ? 0 : (refs[0].baseRank || 1);
+      rankMatches.push({ rank, start: 0, contentStart: 0 });
+    }
+  }
+
+  for (let i = 0; i < rankMatches.length; i++) {
+    const cur = rankMatches[i];
+    const nextStart = i + 1 < rankMatches.length ? rankMatches[i + 1].start : plain.length;
+    const segText = plain.slice(cur.contentStart, nextStart);
+    const refs = extractSpellRefsFromText(segText);
+    if (refs.length === 0) continue;
+
+    const rank = cur.rank;
+    const isCantrip = rank === 0;
+    const unlockLevel = isCantrip ? 1 : Math.max(1, rank * 2 - 1);
+
+    const makeRecord = (ref) => ({
+      uuid: ref.uuid,
+      name: ref.name,
+      img: ref.img,
+      rank,
+      isCantrip,
+      isFocus: false,
+      unlockLevel,
+      targetSourceKey,
+      targetClassSlug,
+      sourceLabel,
+      tier,
+      countsTowardRepertoire: Boolean(countsTowardRepertoire && !isCantrip)
+    });
+
+    if (isCurriculum) {
+      // PF2e Remaster Wizard Arcane School Curriculum: 1 cantrip + 2 1st-rank at Lv 1, 1 per new rank Lv 3..17
+      const pickCount = rank === 1 ? 2 : 1;
+      if (refs.length <= pickCount) {
+        for (const ref of refs) autoSpells.push(makeRecord(ref));
+      } else {
+        choiceGroups.push({
+          id: `${targetSourceKey}:curriculum:r${rank}`,
+          targetSourceKey,
+          targetClassSlug,
+          sourceLabel,
+          rank,
+          isCantrip,
+          isFocus: false,
+          isCurriculum: true,
+          unlockLevel,
+          pickCount,
+          label: isCantrip
+            ? `${sourceLabel} — Pick ${pickCount} Curriculum Cantrip`
+            : `${sourceLabel} — Pick ${pickCount} Rank ${rank} Curriculum Spell${pickCount === 1 ? "" : "s"}`,
+          options: refs.map(ref => ({
+            uuid: ref.uuid,
+            name: ref.name,
+            img: ref.img,
+            rank,
+            isCantrip,
+            qualifier: ref.qualifier || ""
+          }))
+        });
+      }
+      continue;
+    }
+
+    // Non-curriculum ranked spell (Sorcerous Gifts, Psychic Granted Spells, Oracle Granted Spells, Apparition Spells)
+    if (refs.length === 1) {
+      autoSpells.push(makeRecord(refs[0]));
+      continue;
+    }
+
+    // Check if options carry parenthetical qualifiers like `(fire)`, `(water)`, `(arcane)`
+    const hasQualifiers = refs.some(r => Boolean(r.qualifier));
+    if (hasQualifiers) {
+      const matched = refs.filter(r => qualifierMatchesActor(r.qualifier, actorQualifiers));
+      if (matched.length === 1) {
+        autoSpells.push(makeRecord(matched[0]));
+      } else {
+        const pool = matched.length > 1 ? matched : refs;
+        choiceGroups.push({
+          id: `${targetSourceKey}:${tier}:r${rank}`,
+          targetSourceKey,
+          targetClassSlug,
+          sourceLabel,
+          rank,
+          isCantrip,
+          isFocus: false,
+          isCurriculum: false,
+          countsTowardRepertoire: Boolean(countsTowardRepertoire && !isCantrip),
+          unlockLevel,
+          pickCount: 1,
+          label: isCantrip
+            ? `${sourceLabel} — Choose Cantrip`
+            : `${sourceLabel} — Choose Rank ${rank} Granted Spell`,
+          options: pool.map(ref => ({
+            uuid: ref.uuid,
+            name: ref.name,
+            img: ref.img,
+            rank,
+            isCantrip,
+            qualifier: ref.qualifier || ""
+          }))
+        });
+      }
+      continue;
+    }
+
+    // Multiple unqualified spells in the same rank: check if joined by "or" (exclusive choice) vs "and"/comma (all granted)
+    const betweenFirstTwo = segText.slice(refs[0].endIndex, refs[1].index);
+    if (/\bor\b/i.test(betweenFirstTwo) && !/\band\b/i.test(betweenFirstTwo)) {
+      choiceGroups.push({
+        id: `${targetSourceKey}:${tier}:r${rank}`,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel,
+        rank,
+        isCantrip,
+        isFocus: false,
+        isCurriculum: false,
+        countsTowardRepertoire: Boolean(countsTowardRepertoire && !isCantrip),
+        unlockLevel,
+        pickCount: 1,
+        label: isCantrip
+          ? `${sourceLabel} — Choose Cantrip`
+          : `${sourceLabel} — Choose Rank ${rank} Spell`,
+        options: refs.map(ref => ({
+          uuid: ref.uuid,
+          name: ref.name,
+          img: ref.img,
+          rank,
+          isCantrip,
+          qualifier: ""
+        }))
+      });
+    } else {
+      for (const ref of refs) autoSpells.push(makeRecord(ref));
+    }
+  }
+
+  return { autoSpells, choiceGroups };
+}
+
+/**
+ * Parses a tiered focus/psi section (`initial:`, `advanced:`, `greater:` OR `surface:`, `deeper:`, `deepest:`)
+ * into a map `{ tierName -> SpellRef[] }`.
+ */
+function parseTieredSpellSection(sectionHtml) {
+  const byTier = {};
+  if (!sectionHtml) return byTier;
+  const plain = htmlToPlainLines(sectionHtml);
+  if (!plain.includes("@UUID[")) return byTier;
+
+  const tierRe = /(?:^|[\n;•])\s*(initial|advanced|greater|surface|deeper|deepest)\s*[:—–-]?\s*/gi;
+  const matches = [];
+  let m;
+  while ((m = tierRe.exec(plain)) !== null) {
+    matches.push({
+      tier: m[1].toLowerCase(),
+      start: m.index,
+      contentStart: m.index + m[0].length
+    });
+  }
+
+  for (let i = 0; i < matches.length; i++) {
+    const cur = matches[i];
+    const nextStart = i + 1 < matches.length ? matches[i + 1].start : plain.length;
+    const seg = plain.slice(cur.contentStart, nextStart);
+    const refs = extractSpellRefsFromText(seg);
+    if (refs.length > 0) byTier[cur.tier] = refs;
+  }
+
+  return byTier;
+}
+
+/**
+ * Parses focus or direct-grant spells from an individual feat/classfeature dynamically
+ * using PF2e's own `rulesSelections` / `ChoiceSet` / `GrantItem` first, then grant-context `@UUID[...]` parsing.
+ */
+function parseDirectFeatSpells(feat, actorQualifiers, { sectionPatterns = null, allowAllIfSingle = true } = {}) {
+  if (!feat) return { auto: [], choice: null };
+
+  // 1. Authoritative PF2e ChoiceSet / GrantItem / rulesSelections direct spell UUIDs
+  const ruleRefs = extractDirectRuleSpellUuids(feat);
+  if (ruleRefs.length > 0) {
+    return { auto: ruleRefs, choice: null };
+  }
+
+  const desc = String(feat.system?.description?.value || "");
+  if (!desc.includes("@UUID[")) return { auto: [], choice: null };
+
+  // 2. Explicit named section if requested (e.g. "Hex Cantrip", "Conflux Spell", "Vessel Spell")
+  let targetHtml = "";
+  if (Array.isArray(sectionPatterns) && sectionPatterns.length > 0) {
+    targetHtml = extractNamedSectionHtml(desc, sectionPatterns);
+  }
+
+  if (!targetHtml) {
+    // Strip leading PF2e statblock header lines (Prerequisites/Access/Trigger/Requirements/Frequency + divider <hr>)
+    // without discarding the feat body that follows them!
+    let body = desc.replace(/^\s*(?:<p[^>]*>\s*<(?:strong|b)[^>]*>\s*(?:Prerequisites?|Access|Frequency|Trigger|Requirements?|Cost)\b[\s\S]*?<\/p>\s*)+/i, "");
+    body = body.replace(/^\s*<hr\b[^>]*>\s*/i, "");
+    // Only truncate trailing Special tail sections so cross-references aren't misread
+    const specialIdx = body.search(/<p[^>]*>\s*<(?:strong|b)[^>]*>\s*Special\b/i);
+    targetHtml = specialIdx >= 0 ? body.slice(0, specialIdx) : body;
+  }
+
+  const allRefs = extractSpellRefsFromText(targetHtml);
+  if (allRefs.length === 0) return { auto: [], choice: null };
+
+  const grantBeforeRe = /(?:you\s+(?:gain|learn|receive|know|add|can\s+cast)|grants?\s+you|familiar\s+learns?|cast\s+the|focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|granted\s+spell)\b/i;
+  const grantAfterRe = /^\s*(?:\([^)]+\)\s*)?(?:focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|cantrip|spell)\b/i;
+  const refOnlyBeforeRe = /(?:instead\s+of|similar\s+to|as\s+if\s+casting|when\s+you\s+cast|if\s+you\s+cast|affecting|prerequisite)\s*$/i;
+
+  let filtered = allRefs.filter(r => {
+    if (refOnlyBeforeRe.test(r.beforeCtx.trim())) return false;
+    return grantBeforeRe.test(r.beforeCtx) || grantAfterRe.test(r.afterCtx);
+  });
+
+  if (filtered.length === 0 && allowAllIfSingle && allRefs.length === 1 && !refOnlyBeforeRe.test(allRefs[0].beforeCtx.trim())) {
+    filtered = allRefs;
+  }
+  if (filtered.length === 0) return { auto: [], choice: null };
+  if (filtered.length === 1) return { auto: filtered, choice: null };
+
+  // Check if multiple spells represent an unresolved "choose A or B" choice
+  const plain = htmlToPlainLines(targetHtml);
+  const firstRef = filtered[0];
+  const secondRef = filtered[1];
+  const between = plain.slice(firstRef.endIndex, secondRef.index);
+  const isChoiceWording = /\b(?:choose|either|one\s+of|select)\b/i.test(firstRef.beforeCtx)
+    || (/\bor\b/i.test(between) && !/\band\b/i.test(between));
+
+  if (isChoiceWording) {
+    // Try disambiguating via actor qualifiers (e.g. ChoiceSet selection slug matching a spell name!)
+    const matched = filtered.filter(r =>
+      qualifierMatchesActor(r.qualifier, actorQualifiers)
+      || actorQualifiers.has(normalizeSlug(r.name))
+    );
+    if (matched.length === 1) return { auto: matched, choice: null };
+    return { auto: [], choice: filtered };
+  }
+
+  return { auto: filtered, choice: null };
+}
+
+/**
+ * Dynamically collects ALL auto-granted subclass, deity, font, and focus spells (plus structured
+ * subclass spell choices like Remaster Wizard Arcane School Curriculum) across Levels 1–20 directly
+ * from the actor's live PF2e items and compendiums (zero hardcoded spell lists).
+ *
+ * Used by BOTH Character Completeness Checker (`analyzeSpellcasting` / sync) and Level 1–20 Build Planner!
+ *
+ * @param {Actor} actor
+ * @param {object|null} dualInfo
+ * @param {{ plannedFeatLevelsBySlug?: Map<string, number> }} [options]
+ * @returns {{ autoSpells: object[], choiceGroups: object[], hasDeferredDomain: boolean }}
+ */
+export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { plannedFeatLevelsBySlug = null } = {}) {
+  const autoSpells = [];
+  const choiceGroups = [];
+  let hasDeferredDomain = false;
+
+  if (!actor || actor.type !== "character") {
+    return { autoSpells, choiceGroups, hasDeferredDomain };
+  }
+
+  const feats = actor.itemTypes?.feat || [];
+  const primarySlug = actor.class ? getItemSlug(actor.class) : "";
+  const hasClassOrDual = (clsSlug) => primarySlug === clsSlug || dualInfo?.slug === clsSlug;
+  const classKind = (clsSlug) => (dualInfo?.slug === clsSlug && primarySlug !== clsSlug ? "dual" : "primary");
+
+  const featBySlug = new Map();
+  for (const f of feats) {
+    const slug = getItemSlug(f);
+    if (slug && !featBySlug.has(slug)) featBySlug.set(slug, f);
+  }
+
+  const getFeatUnlockLevel = (slugList) => {
+    for (const rawSlug of slugList) {
+      const s = normalizeSlug(rawSlug);
+      const liveFeat = featBySlug.get(s);
+      if (liveFeat) return { unlocked: true, level: inferFeatAcquiredLevel(liveFeat, 1), feat: liveFeat };
+      if (plannedFeatLevelsBySlug?.has(s)) {
+        return { unlocked: true, level: plannedFeatLevelsBySlug.get(s), feat: null, isPlanned: true };
+      }
+    }
+    return { unlocked: false, level: 99, feat: null };
+  };
+
+  const actorQualifiers = extractActorQualifiers(actor);
+  const autoKeySet = new Set();
+
+  const pushAutoSpell = (rec) => {
+    if (!rec || !rec.targetSourceKey) return;
+    const idPart = rec.uuid
+      ? rec.uuid.toLowerCase()
+      : (rec.domainSlug ? `domain:${rec.domainSlug}:${rec.domainTier}` : normalizeSlug(rec.name));
+    const key = `${rec.targetSourceKey}|${idPart}`;
+    if (autoKeySet.has(key)) return;
+    autoKeySet.add(key);
+    autoSpells.push(rec);
+  };
+
+  const pushTieredFocusRefs = (refs, { targetSourceKey, targetClassSlug, sourceLabel, tier, unlockLevel, isFocus = true, isCantrip = false, rank = null }) => {
+    if (!Array.isArray(refs) || refs.length === 0) return;
+    if (refs.length === 1) {
+      const r = refs[0];
+      pushAutoSpell({
+        uuid: r.uuid,
+        name: r.name,
+        img: r.img,
+        rank: isCantrip ? 0 : (rank ?? r.baseRank ?? null),
+        isCantrip: Boolean(isCantrip || r.isCantrip),
+        isFocus,
+        unlockLevel,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel,
+        tier,
+        countsTowardRepertoire: false
+      });
+      return;
+    }
+
+    const matched = refs.filter(r =>
+      qualifierMatchesActor(r.qualifier, actorQualifiers)
+      || actorQualifiers.has(normalizeSlug(r.name))
+    );
+    if (matched.length === 1) {
+      const r = matched[0];
+      pushAutoSpell({
+        uuid: r.uuid,
+        name: r.name,
+        img: r.img,
+        rank: isCantrip ? 0 : (rank ?? r.baseRank ?? null),
+        isCantrip: Boolean(isCantrip || r.isCantrip),
+        isFocus,
+        unlockLevel,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel,
+        tier,
+        countsTowardRepertoire: false
+      });
+    } else {
+      choiceGroups.push({
+        id: `${targetSourceKey}:tier:${tier}`,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel,
+        rank: isCantrip ? 0 : (rank ?? 1),
+        isCantrip,
+        isFocus,
+        isCurriculum: false,
+        unlockLevel,
+        pickCount: 1,
+        label: `${sourceLabel} (${capitalize(tier)}) — Choose Spell`,
+        options: (matched.length > 1 ? matched : refs).map(r => ({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: isCantrip ? 0 : (rank ?? r.baseRank ?? 1),
+          isCantrip: Boolean(isCantrip || r.isCantrip),
+          qualifier: r.qualifier || ""
+        }))
+      });
+    }
+  };
+
+  const pushDomainFeat = (feat, targetSourceKey, targetClassSlug) => {
+    const slug = getItemSlug(feat);
+    const tier = slug.includes("advanced") ? "advanced" : "initial";
+    const unlockLevel = inferFeatAcquiredLevel(feat, tier === "advanced" ? 8 : 1);
+
+    // First check if the feat already stores a direct spell UUID in rulesSelections / GrantItem
+    const direct = extractDirectRuleSpellUuids(feat);
+    if (direct.length > 0) {
+      for (const r of direct) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: r.baseRank ?? null,
+          isCantrip: Boolean(r.isCantrip),
+          isFocus: true,
+          unlockLevel,
+          targetSourceKey,
+          targetClassSlug,
+          sourceLabel: feat.name,
+          tier: `domain-${tier}`,
+          countsTowardRepertoire: false
+        });
+      }
+      return;
+    }
+
+    const domainSlug = extractSelectedDomainSlug(feat);
+    if (!domainSlug) return;
+
+    const cached = _domainSpellCache?.get(domainSlug);
+    const resolved = cached?.[tier] || null;
+    if (resolved?.uuid) {
+      pushAutoSpell({
+        uuid: resolved.uuid,
+        name: resolved.name,
+        img: resolved.img || "systems/pf2e/icons/default-icons/spell.svg",
+        rank: null,
+        isCantrip: false,
+        isFocus: true,
+        unlockLevel,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel: `${capitalize(domainSlug)} Domain (${capitalize(tier)})`,
+        tier: `domain-${tier}`,
+        countsTowardRepertoire: false,
+        domainSlug,
+        domainTier: tier
+      });
+    } else if (!_domainSpellCache) {
+      hasDeferredDomain = true;
+      pushAutoSpell({
+        uuid: null,
+        name: `${capitalize(domainSlug)} ${tier === "advanced" ? "Advanced " : ""}Domain Spell`,
+        img: "systems/pf2e/icons/default-icons/spell.svg",
+        rank: null,
+        isCantrip: false,
+        isFocus: true,
+        unlockLevel,
+        targetSourceKey,
+        targetClassSlug,
+        sourceLabel: feat.name,
+        tier: `domain-${tier}`,
+        countsTowardRepertoire: false,
+        domainSlug,
+        domainTier: tier,
+        isDeferredDomain: true
+      });
+    }
+  };
+
+  // --- 1. CLERIC: Deity Granted Spells (`actor.deity.system.spells`) & Divine Font ---
+  if (hasClassOrDual("cleric")) {
+    const kind = classKind("cleric");
+    const clericEntryKey = `class:cleric:${kind}`;
+    const fontEntryKey = `class:cleric:divine-font:${kind}`;
+    const deity = actor.deity;
+
+    if (deity?.system?.spells && typeof deity.system.spells === "object") {
+      for (const [rankKey, rawUuid] of Object.entries(deity.system.spells)) {
+        const rank = Number.parseInt(rankKey, 10);
+        if (!Number.isFinite(rank) || rank < 0 || rank > 10) continue;
+        if (typeof rawUuid !== "string" || !rawUuid.trim()) continue;
+        const meta = resolveSyncSpellMeta(rawUuid.trim());
+        pushAutoSpell({
+          uuid: meta.uuid,
+          name: meta.name,
+          img: meta.img,
+          rank,
+          isCantrip: rank === 0,
+          isFocus: false,
+          unlockLevel: rank === 0 ? 1 : Math.max(1, rank * 2 - 1),
+          targetSourceKey: clericEntryKey,
+          targetClassSlug: "cleric",
+          sourceLabel: deity.name || "Deity",
+          tier: "deity",
+          countsTowardRepertoire: false
+        });
+      }
+    }
+
+    // Divine Font spell (Heal / Harm) resolved dynamically from healing-font / harmful-font / divine-font feature
+    const isHarm = featBySlug.has("harmful-font");
+    const fontFeat = featBySlug.get(isHarm ? "harmful-font" : "healing-font")
+      || featBySlug.get("divine-font")
+      || null;
+    if (fontFeat) {
+      const refs = extractSpellRefsFromText(fontFeat.system?.description?.value || "");
+      const desiredName = isHarm ? "harm" : "heal";
+      const matchedFont = refs.find(r => normalizeSlug(r.name) === desiredName) || refs[0] || null;
+      if (matchedFont) {
+        pushAutoSpell({
+          uuid: matchedFont.uuid,
+          name: matchedFont.name,
+          img: matchedFont.img,
+          rank: 1,
+          isCantrip: false,
+          isFocus: false,
+          unlockLevel: 1,
+          targetSourceKey: fontEntryKey,
+          targetClassSlug: "cleric",
+          sourceLabel: fontFeat.name || "Divine Font",
+          tier: "font",
+          countsTowardRepertoire: false
+        });
+      }
+    }
+  }
+
+  // --- 2. SORCERER: Bloodline Sorcerous Gifts / Granted Spells + Bloodline Focus Spells ---
+  const isSorcClass = hasClassOrDual("sorcerer");
+  const isSorcArch = !isSorcClass && (featBySlug.has("sorcerer-dedication") || featBySlug.has("basic-bloodline-spell") || featBySlug.has("advanced-bloodline"));
+  if (isSorcClass || isSorcArch) {
+    const kind = isSorcClass ? classKind("sorcerer") : "archetype";
+    const sorcSpellKey = isSorcClass ? `class:sorcerer:${kind}` : "archetype:sorcerer";
+    const sorcFocusKey = isSorcClass ? `focus:sorcerer:${kind}` : "focus:archetype:sorcerer";
+
+    const bloodlineFeat = feats.find(f => {
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*(?:Sorcerous\s+Gifts?|Bloodline\s+Spells?)\s*[:<]/i.test(desc)
+        || (getItemSlug(f).includes("bloodline") && /Granted\s+Spells/i.test(desc));
+    });
+
+    if (bloodlineFeat) {
+      const desc = String(bloodlineFeat.system?.description?.value || "");
+      const bQuals = extractActorQualifiers(actor, bloodlineFeat);
+
+      if (isSorcClass) {
+        const giftsHtml = extractNamedSectionHtml(desc, [/^sorcerous\s+gifts?$/i, /^granted\s+spells?$/i]);
+        const parsed = parseRankedSpellSection(giftsHtml, bQuals, {
+          isCurriculum: false,
+          targetSourceKey: sorcSpellKey,
+          targetClassSlug: "sorcerer",
+          sourceLabel: bloodlineFeat.name,
+          tier: "gift",
+          countsTowardRepertoire: true
+        });
+        for (const sp of parsed.autoSpells) pushAutoSpell(sp);
+        choiceGroups.push(...parsed.choiceGroups);
+      }
+
+      const focusHtml = extractNamedSectionHtml(desc, [/^bloodline\s+spells?$/i]);
+      const tiers = parseTieredSpellSection(focusHtml);
+      const initUnlock = isSorcClass
+        ? { unlocked: true, level: 1 }
+        : getFeatUnlockLevel(["basic-bloodline-spell"]);
+      if (initUnlock.unlocked && tiers.initial) {
+        pushTieredFocusRefs(tiers.initial, {
+          targetSourceKey: sorcFocusKey,
+          targetClassSlug: "sorcerer",
+          sourceLabel: bloodlineFeat.name,
+          tier: "initial",
+          unlockLevel: initUnlock.level
+        });
+      }
+      const advUnlock = getFeatUnlockLevel(["advanced-bloodline"]);
+      if (advUnlock.unlocked && tiers.advanced) {
+        pushTieredFocusRefs(tiers.advanced, {
+          targetSourceKey: sorcFocusKey,
+          targetClassSlug: "sorcerer",
+          sourceLabel: bloodlineFeat.name,
+          tier: "advanced",
+          unlockLevel: advUnlock.level
+        });
+      }
+      const greaterUnlock = getFeatUnlockLevel(["greater-bloodline"]);
+      if (greaterUnlock.unlocked && tiers.greater) {
+        pushTieredFocusRefs(tiers.greater, {
+          targetSourceKey: sorcFocusKey,
+          targetClassSlug: "sorcerer",
+          sourceLabel: bloodlineFeat.name,
+          tier: "greater",
+          unlockLevel: greaterUnlock.level
+        });
+      }
+    }
+  }
+
+  // --- 3. WIZARD: Arcane School Curriculum + School Focus Spells + Hand of the Apprentice ---
+  const isWizClass = hasClassOrDual("wizard");
+  const isWizArch = !isWizClass && (featBySlug.has("wizard-dedication") || featBySlug.has("arcane-school-spell"));
+  if (isWizClass || isWizArch) {
+    const kind = isWizClass ? classKind("wizard") : "archetype";
+    const wizSpellKey = isWizClass ? `class:wizard:${kind}` : "archetype:wizard";
+    const wizFocusKey = isWizClass ? `focus:wizard:${kind}` : "focus:archetype:wizard";
+
+    const schoolFeat = feats.find(f => {
+      const slug = getItemSlug(f);
+      if (slug.includes("unified-magical-theory") || slug.includes("universalist")) return false;
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*(?:(?:Arcane\s+)?Curriculum|School\s+Spells?)\s*[:<]/i.test(desc);
+    });
+
+    if (schoolFeat) {
+      const desc = String(schoolFeat.system?.description?.value || "");
+      const sQuals = extractActorQualifiers(actor, schoolFeat);
+
+      if (isWizClass) {
+        const currHtml = extractNamedSectionHtml(desc, [/^(?:arcane\s+)?curriculum(?:\s+spells?)?$/i]);
+        const parsed = parseRankedSpellSection(currHtml, sQuals, {
+          isCurriculum: true,
+          targetSourceKey: wizSpellKey,
+          targetClassSlug: "wizard",
+          sourceLabel: schoolFeat.name,
+          tier: "curriculum",
+          countsTowardRepertoire: false
+        });
+        for (const sp of parsed.autoSpells) pushAutoSpell(sp);
+        choiceGroups.push(...parsed.choiceGroups);
+      }
+
+      const focusHtml = extractNamedSectionHtml(desc, [/^school\s+spells?$/i]);
+      const tiers = parseTieredSpellSection(focusHtml);
+      const initUnlock = isWizClass
+        ? { unlocked: true, level: 1 }
+        : getFeatUnlockLevel(["arcane-school-spell"]);
+      if (initUnlock.unlocked && tiers.initial) {
+        pushTieredFocusRefs(tiers.initial, {
+          targetSourceKey: wizFocusKey,
+          targetClassSlug: "wizard",
+          sourceLabel: schoolFeat.name,
+          tier: "initial",
+          unlockLevel: initUnlock.level
+        });
+      }
+      const advUnlock = getFeatUnlockLevel(["advanced-school-spell"]);
+      if (advUnlock.unlocked && tiers.advanced) {
+        pushTieredFocusRefs(tiers.advanced, {
+          targetSourceKey: wizFocusKey,
+          targetClassSlug: "wizard",
+          sourceLabel: schoolFeat.name,
+          tier: "advanced",
+          unlockLevel: advUnlock.level
+        });
+      }
+    }
+
+    const hota = featBySlug.get("hand-of-the-apprentice");
+    if (hota && isWizClass) {
+      const parsed = parseDirectFeatSpells(hota, actorQualifiers);
+      for (const r of parsed.auto) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: null,
+          isCantrip: false,
+          isFocus: true,
+          unlockLevel: inferFeatAcquiredLevel(hota, 1),
+          targetSourceKey: wizFocusKey,
+          targetClassSlug: "wizard",
+          sourceLabel: hota.name,
+          tier: "feat",
+          countsTowardRepertoire: false
+        });
+      }
+    }
+  }
+
+  // --- 4. ORACLE: Mystery Granted Spells + Revelation Focus Spells + Domain Acumen ---
+  const isOraClass = hasClassOrDual("oracle");
+  const isOraArch = !isOraClass && (featBySlug.has("oracle-dedication") || featBySlug.has("first-revelation") || featBySlug.has("advanced-revelation"));
+  if (isOraClass || isOraArch) {
+    const kind = isOraClass ? classKind("oracle") : "archetype";
+    const oraSpellKey = isOraClass ? `class:oracle:${kind}` : "archetype:oracle";
+    const oraFocusKey = isOraClass ? `focus:oracle:${kind}` : "focus:archetype:oracle";
+
+    const mysteryFeat = feats.find(f => {
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*Revelation\s+Spells?\s*[:<]/i.test(desc);
+    });
+
+    if (mysteryFeat) {
+      const desc = String(mysteryFeat.system?.description?.value || "");
+      const mQuals = extractActorQualifiers(actor, mysteryFeat);
+
+      if (isOraClass) {
+        const grantedHtml = extractNamedSectionHtml(desc, [/^granted\s+spells?$/i, /^mystery\s+spells?$/i]);
+        const parsed = parseRankedSpellSection(grantedHtml, mQuals, {
+          isCurriculum: false,
+          targetSourceKey: oraSpellKey,
+          targetClassSlug: "oracle",
+          sourceLabel: mysteryFeat.name,
+          tier: "gift",
+          countsTowardRepertoire: false
+        });
+        for (const sp of parsed.autoSpells) pushAutoSpell(sp);
+        choiceGroups.push(...parsed.choiceGroups);
+
+        // Some Legacy/Remaster Oracle mysteries list "Granted Cantrip" separately
+        const cantripHtml = extractNamedSectionHtml(desc, [/^granted\s+cantrip$/i, /^cantrip$/i]);
+        for (const r of extractSpellRefsFromText(cantripHtml)) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: 0,
+            isCantrip: true,
+            isFocus: false,
+            unlockLevel: 1,
+            targetSourceKey: oraSpellKey,
+            targetClassSlug: "oracle",
+            sourceLabel: mysteryFeat.name,
+            tier: "gift",
+            countsTowardRepertoire: false
+          });
+        }
+      }
+
+      const revHtml = extractNamedSectionHtml(desc, [/^revelation\s+spells?$/i]);
+      const tiers = parseTieredSpellSection(revHtml);
+      const initUnlock = isOraClass
+        ? { unlocked: true, level: 1 }
+        : getFeatUnlockLevel(["first-revelation"]);
+      if (initUnlock.unlocked && tiers.initial) {
+        pushTieredFocusRefs(tiers.initial, {
+          targetSourceKey: oraFocusKey,
+          targetClassSlug: "oracle",
+          sourceLabel: mysteryFeat.name,
+          tier: "initial",
+          unlockLevel: initUnlock.level
+        });
+      }
+      const advUnlock = getFeatUnlockLevel(["advanced-revelation"]);
+      if (advUnlock.unlocked && tiers.advanced) {
+        pushTieredFocusRefs(tiers.advanced, {
+          targetSourceKey: oraFocusKey,
+          targetClassSlug: "oracle",
+          sourceLabel: mysteryFeat.name,
+          tier: "advanced",
+          unlockLevel: advUnlock.level
+        });
+      }
+      const greaterUnlock = getFeatUnlockLevel(["greater-revelation"]);
+      if (greaterUnlock.unlocked && tiers.greater) {
+        pushTieredFocusRefs(tiers.greater, {
+          targetSourceKey: oraFocusKey,
+          targetClassSlug: "oracle",
+          sourceLabel: mysteryFeat.name,
+          tier: "greater",
+          unlockLevel: greaterUnlock.level
+        });
+      }
+    }
+
+    const domAcumen = featBySlug.get("domain-acumen");
+    if (domAcumen && isOraClass) {
+      pushDomainFeat(domAcumen, oraFocusKey, "oracle");
+    }
+  }
+
+  // --- 5. PSYCHIC: Conscious Mind Granted Spells + Standard & Unique Psi Cantrips ---
+  if (hasClassOrDual("psychic")) {
+    const kind = classKind("psychic");
+    const psySpellKey = `class:psychic:${kind}`;
+
+    const mindFeat = feats.find(f => {
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*(?:Standard\s+Psi\s+Cantrips?|Unique\s+Psi\s+Cantrips?)\s*[:<]/i.test(desc);
+    });
+
+    if (mindFeat) {
+      const desc = String(mindFeat.system?.description?.value || "");
+      const pQuals = extractActorQualifiers(actor, mindFeat);
+
+      const grantedHtml = extractNamedSectionHtml(desc, [/^granted\s+spells?$/i]);
+      const parsed = parseRankedSpellSection(grantedHtml, pQuals, {
+        isCurriculum: false,
+        targetSourceKey: psySpellKey,
+        targetClassSlug: "psychic",
+        sourceLabel: mindFeat.name,
+        tier: "gift",
+        countsTowardRepertoire: false
+      });
+      for (const sp of parsed.autoSpells) pushAutoSpell(sp);
+      choiceGroups.push(...parsed.choiceGroups);
+
+      const stdPsiHtml = extractNamedSectionHtml(desc, [/^standard\s+psi\s+cantrips?$/i]);
+      for (const r of extractSpellRefsFromText(stdPsiHtml)) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: 0,
+          isCantrip: true,
+          isFocus: false,
+          unlockLevel: 1,
+          targetSourceKey: psySpellKey,
+          targetClassSlug: "psychic",
+          sourceLabel: `${mindFeat.name} (Psi Cantrip)`,
+          tier: "psi",
+          countsTowardRepertoire: false
+        });
+      }
+
+      const uniquePsiHtml = extractNamedSectionHtml(desc, [/^unique\s+psi\s+cantrips?$/i]);
+      const psiTiers = parseTieredSpellSection(uniquePsiHtml);
+      if (psiTiers.surface) {
+        pushTieredFocusRefs(psiTiers.surface, {
+          targetSourceKey: psySpellKey,
+          targetClassSlug: "psychic",
+          sourceLabel: mindFeat.name,
+          tier: "surface",
+          unlockLevel: 1,
+          isFocus: false,
+          isCantrip: true,
+          rank: 0
+        });
+      }
+      if (psiTiers.deeper) {
+        pushTieredFocusRefs(psiTiers.deeper, {
+          targetSourceKey: psySpellKey,
+          targetClassSlug: "psychic",
+          sourceLabel: mindFeat.name,
+          tier: "deeper",
+          unlockLevel: 6,
+          isFocus: false,
+          isCantrip: true,
+          rank: 0
+        });
+      }
+      if (psiTiers.deepest) {
+        pushTieredFocusRefs(psiTiers.deepest, {
+          targetSourceKey: psySpellKey,
+          targetClassSlug: "psychic",
+          sourceLabel: mindFeat.name,
+          tier: "deepest",
+          unlockLevel: 10,
+          isFocus: false,
+          isCantrip: true,
+          rank: 0
+        });
+      }
+    }
+  } else if (featBySlug.has("psychic-dedication")) {
+    const psyDed = featBySlug.get("psychic-dedication");
+    const direct = extractDirectRuleSpellUuids(psyDed);
+    for (const r of direct) {
+      pushAutoSpell({
+        uuid: r.uuid,
+        name: r.name,
+        img: r.img,
+        rank: 0,
+        isCantrip: true,
+        isFocus: false,
+        unlockLevel: inferFeatAcquiredLevel(psyDed, 2),
+        targetSourceKey: "archetype:psychic",
+        targetClassSlug: "psychic",
+        sourceLabel: psyDed.name,
+        tier: "psi",
+        countsTowardRepertoire: false
+      });
+    }
+  }
+
+  // --- 6. WITCH: Patron Hex Cantrip + Granted Spell + Lesson Hexes & Familiar Spells ---
+  const isWitchClass = hasClassOrDual("witch");
+  const isWitchArch = !isWitchClass && (featBySlug.has("witch-dedication") || featBySlug.has("basic-lesson") || featBySlug.has("greater-lesson") || featBySlug.has("major-lesson"));
+  if (isWitchClass || isWitchArch) {
+    const kind = isWitchClass ? classKind("witch") : "archetype";
+    const witchSpellKey = isWitchClass ? `class:witch:${kind}` : "archetype:witch";
+    const witchFocusKey = isWitchClass ? `focus:witch:${kind}` : "focus:archetype:witch";
+
+    const patronFeat = feats.find(f => {
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*Hex\s+Cantrip\s*[:<]/i.test(desc);
+    });
+
+    if (patronFeat && isWitchClass) {
+      const desc = String(patronFeat.system?.description?.value || "");
+      const hexHtml = extractNamedSectionHtml(desc, [/^hex\s+cantrip$/i]);
+      for (const r of extractSpellRefsFromText(hexHtml)) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: 0,
+          isCantrip: true,
+          isFocus: true,
+          unlockLevel: 1,
+          targetSourceKey: witchFocusKey,
+          targetClassSlug: "witch",
+          sourceLabel: patronFeat.name,
+          tier: "hex",
+          countsTowardRepertoire: false
+        });
+      }
+
+      const grantedHtml = extractNamedSectionHtml(desc, [/^granted\s+spell$/i]);
+      for (const r of extractSpellRefsFromText(grantedHtml)) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: r.baseRank || 1,
+          isCantrip: Boolean(r.isCantrip),
+          isFocus: false,
+          unlockLevel: 1,
+          targetSourceKey: witchSpellKey,
+          targetClassSlug: "witch",
+          sourceLabel: patronFeat.name,
+          tier: "gift",
+          countsTowardRepertoire: false
+        });
+      }
+    }
+
+    // Witch Lesson sub-features (`lesson-of-*`) & Cackle
+    for (const f of feats) {
+      const slug = getItemSlug(f);
+      const desc = String(f.system?.description?.value || "");
+      const isLesson = slug.startsWith("lesson-of-") || slug === "cackle"
+        || (f.system?.traits?.value?.includes("witch") && /\bhex\b/i.test(desc) && /\bfamiliar\s+learns?\b/i.test(desc));
+      if (!isLesson) continue;
+
+      const uLvl = inferFeatAcquiredLevel(f, 1);
+      const refs = extractSpellRefsFromText(desc);
+      for (const r of refs) {
+        const isFamiliarSpell = /\bfamiliar\s+(?:learns?|gains?|adds?)\b/i.test(r.beforeCtx)
+          && !/\bhex\b/i.test(r.afterCtx)
+          && r.isFocus !== true;
+        const isHexSpell = r.isFocus === true
+          || /\bhex(?:\s+cantrip)?\b/i.test(r.afterCtx)
+          || (/\bhex\b/i.test(r.beforeCtx) && !isFamiliarSpell)
+          || slug === "cackle";
+        if (isHexSpell && !isFamiliarSpell) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: null,
+            isCantrip: Boolean(r.isCantrip),
+            isFocus: true,
+            unlockLevel: uLvl,
+            targetSourceKey: witchFocusKey,
+            targetClassSlug: "witch",
+            sourceLabel: f.name,
+            tier: "lesson",
+            countsTowardRepertoire: false
+          });
+        } else if (isFamiliarSpell) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: r.baseRank || 1,
+            isCantrip: Boolean(r.isCantrip),
+            isFocus: false,
+            unlockLevel: uLvl,
+            targetSourceKey: witchSpellKey,
+            targetClassSlug: "witch",
+            sourceLabel: `${f.name} (Familiar)`,
+            tier: "lesson",
+            countsTowardRepertoire: false
+          });
+        }
+      }
+    }
+  }
+
+  // --- 7. MAGUS: Hybrid Study Conflux Spell + Conflux Feats ---
+  const isMagusClass = hasClassOrDual("magus");
+  const isMagusArch = !isMagusClass && (featBySlug.has("magus-dedication") || featBySlug.has("conflux-spell"));
+  if (isMagusClass || isMagusArch) {
+    const kind = isMagusClass ? classKind("magus") : "archetype";
+    const magusFocusKey = isMagusClass ? `focus:magus:${kind}` : "focus:archetype:magus";
+    const magusSpellKey = isMagusClass ? `class:magus:${kind}` : "archetype:magus";
+
+    for (const f of feats) {
+      const slug = getItemSlug(f);
+      const desc = String(f.system?.description?.value || "");
+      const isHybridStudy = /<(?:strong|b|h[1-6])[^>]*>\s*Conflux\s+Spell\s*[:<]/i.test(desc);
+      if (isHybridStudy) {
+        const initUnlock = isMagusClass ? { unlocked: true, level: 1 } : getFeatUnlockLevel(["conflux-spell"]);
+        if (initUnlock.unlocked) {
+          const cfHtml = extractNamedSectionHtml(desc, [/^conflux\s+spell$/i]);
+          for (const r of extractSpellRefsFromText(cfHtml)) {
+            pushAutoSpell({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: null,
+              isCantrip: false,
+              isFocus: true,
+              unlockLevel: initUnlock.level,
+              targetSourceKey: magusFocusKey,
+              targetClassSlug: "magus",
+              sourceLabel: f.name,
+              tier: "conflux",
+              countsTowardRepertoire: false
+            });
+          }
+        }
+        // Studious Spells (Magus Lv 7/11/13)
+        if (isMagusClass) {
+          const studHtml = extractNamedSectionHtml(desc, [/^studious\s+spells?$/i]);
+          if (studHtml) {
+            const plain = htmlToPlainLines(studHtml);
+            const lvlRe = /(?:^|[\n;•])\s*(7th|11th|13th)\s*[:—–-]?\s*/gi;
+            const lm = [];
+            let mm;
+            while ((mm = lvlRe.exec(plain)) !== null) {
+              lm.push({ level: Number.parseInt(mm[1], 10), start: mm.index, contentStart: mm.index + mm[0].length });
+            }
+            for (let i = 0; i < lm.length; i++) {
+              const seg = plain.slice(lm[i].contentStart, i + 1 < lm.length ? lm[i + 1].start : plain.length);
+              for (const r of extractSpellRefsFromText(seg)) {
+                pushAutoSpell({
+                  uuid: r.uuid,
+                  name: r.name,
+                  img: r.img,
+                  rank: r.baseRank || (lm[i].level === 7 ? 2 : (lm[i].level === 11 ? 3 : 4)),
+                  isCantrip: false,
+                  isFocus: false,
+                  unlockLevel: lm[i].level,
+                  targetSourceKey: magusSpellKey,
+                  targetClassSlug: "magus",
+                  sourceLabel: `${f.name} (Studious Spell)`,
+                  tier: "studious",
+                  countsTowardRepertoire: false
+                });
+              }
+            }
+          }
+        }
+        continue;
+      }
+
+      if (["force-fang", "runic-impression", "arcane-shroud"].includes(slug)) {
+        const parsed = parseDirectFeatSpells(f, actorQualifiers);
+        for (const r of parsed.auto) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: null,
+            isCantrip: false,
+            isFocus: true,
+            unlockLevel: inferFeatAcquiredLevel(f, 2),
+            targetSourceKey: magusFocusKey,
+            targetClassSlug: "magus",
+            sourceLabel: f.name,
+            tier: "conflux",
+            countsTowardRepertoire: false
+          });
+        }
+      }
+    }
+  }
+
+  // --- 8. ANIMIST: Embedded Apparitions (Vessel Focus Spells + Apparition Spontaneous Spells) ---
+  if (hasClassOrDual("animist")) {
+    const kind = classKind("animist");
+    const animFocusKey = `focus:animist:${kind}`;
+    const animAppKey = `class:animist:apparition:${kind}`;
+
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      const hasVessel = /<(?:strong|b|h[1-6])[^>]*>\s*Vessel\s+Spell\s*[:<]/i.test(desc);
+      const hasAppSpells = /<(?:strong|b|h[1-6])[^>]*>\s*Apparition\s+Spells?\s*[:<]/i.test(desc);
+      if (!hasVessel && !hasAppSpells) continue;
+
+      if (hasVessel) {
+        const vHtml = extractNamedSectionHtml(desc, [/^vessel\s+spell$/i]);
+        for (const r of extractSpellRefsFromText(vHtml)) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: null,
+            isCantrip: false,
+            isFocus: true,
+            unlockLevel: 1,
+            targetSourceKey: animFocusKey,
+            targetClassSlug: "animist",
+            sourceLabel: f.name,
+            tier: "vessel",
+            countsTowardRepertoire: false
+          });
+        }
+      }
+
+      if (hasAppSpells) {
+        const aHtml = extractNamedSectionHtml(desc, [/^apparition\s+spells?$/i]);
+        const parsed = parseRankedSpellSection(aHtml, actorQualifiers, {
+          isCurriculum: false,
+          targetSourceKey: animAppKey,
+          targetClassSlug: "animist",
+          sourceLabel: f.name,
+          tier: "apparition",
+          countsTowardRepertoire: false
+        });
+        for (const sp of parsed.autoSpells) pushAutoSpell(sp);
+        choiceGroups.push(...parsed.choiceGroups);
+      }
+    }
+  }
+
+  // --- 9. DIRECT FOCUS-GRANTING FEATS & FEATURES (Champion, Bard, Cleric Domains, Druid, Summoner, Necromancer, Monk, Ranger, Archetypes & Generic) ---
+  const addDirectFocusFeats = (slugSet, targetSourceKey, targetClassSlug, { sectionPatterns = null } = {}) => {
+    const matched = feats.filter(f => slugSet.has(getItemSlug(f)));
+    const resolvedFromSpecific = new Set();
+
+    // Process specific feats first (e.g. `lay-on-hands` before generic `devotion-spells`!)
+    const ordered = [...matched].sort((a, b) => {
+      const aGen = /^(?:devotion-spells|composition-spells|order-spells|link-spells|grave-spells|qi-spells|warden-spells|initiate-warden|advanced-warden|masterful-warden)$/.test(getItemSlug(a)) ? 1 : 0;
+      const bGen = /^(?:devotion-spells|composition-spells|order-spells|link-spells|grave-spells|qi-spells|warden-spells|initiate-warden|advanced-warden|masterful-warden)$/.test(getItemSlug(b)) ? 1 : 0;
+      return aGen - bGen;
+    });
+
+    for (const f of ordered) {
+      const slug = getItemSlug(f);
+      const uLvl = inferFeatAcquiredLevel(f, 1);
+      const fQuals = extractActorQualifiers(actor, f);
+      const parsed = parseDirectFeatSpells(f, fQuals, { sectionPatterns });
+
+      if (parsed.auto.length > 0) {
+        for (const r of parsed.auto) {
+          resolvedFromSpecific.add(r.uuid.toLowerCase());
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: r.isCantrip ? 0 : null,
+            isCantrip: Boolean(r.isCantrip),
+            isFocus: true,
+            unlockLevel: uLvl,
+            targetSourceKey,
+            targetClassSlug,
+            sourceLabel: f.name,
+            tier: "feat",
+            countsTowardRepertoire: false
+          });
+        }
+      } else if (parsed.choice && parsed.choice.length > 0) {
+        // Skip redundant generic choice if a specific sub-feat already resolved one of its options!
+        const alreadySatisfied = parsed.choice.some(opt => resolvedFromSpecific.has(opt.uuid.toLowerCase()));
+        if (!alreadySatisfied) {
+          choiceGroups.push({
+            id: `${targetSourceKey}:feat:${slug}`,
+            targetSourceKey,
+            targetClassSlug,
+            sourceLabel: f.name,
+            rank: 1,
+            isCantrip: false,
+            isFocus: true,
+            isCurriculum: false,
+            unlockLevel: uLvl,
+            pickCount: 1,
+            label: `${f.name} — Choose Focus Spell`,
+            options: parsed.choice.map(r => ({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: r.isCantrip ? 0 : (r.baseRank || 1),
+              isCantrip: Boolean(r.isCantrip),
+              qualifier: r.qualifier || ""
+            }))
+          });
+        }
+      }
+    }
+  };
+
+  // Champion Devotion & Domains
+  if (hasClassOrDual("champion") || featBySlug.has("devotion-spells")) {
+    const key = `focus:champion:${classKind("champion")}`;
+    addDirectFocusFeats(new Set([
+      "devotion-spells", "lay-on-hands", "touch-of-corruption", "touch-of-the-void", "touch-of-void",
+      "shields-of-the-spirit", "litany-against-wrath", "litany-against-sloth", "litany-of-depravity",
+      "litany-of-righteousness", "litany-of-self-interest", "litany-of-warding", "unimpeded-step"
+    ]), key, "champion");
+    for (const f of feats) {
+      if (["deitys-domain", "deity-s-domain", "advanced-deitys-domain", "advanced-deity-s-domain", "domain-initiate", "expanded-domain-initiate", "advanced-domain"].includes(getItemSlug(f))) {
+        pushDomainFeat(f, key, "champion");
+      }
+    }
+  } else if (featBySlug.has("healing-touch") || featBySlug.has("devotion-spell")) {
+    addDirectFocusFeats(new Set(["healing-touch", "devotion-spell"]), "focus:archetype:champion", "champion");
+  }
+
+  // Cleric Domains
+  if (hasClassOrDual("cleric")) {
+    const key = `focus:cleric:${classKind("cleric")}`;
+    for (const f of feats) {
+      if (["domain-initiate", "expanded-domain-initiate", "advanced-domain"].includes(getItemSlug(f))) {
+        pushDomainFeat(f, key, "cleric");
+      }
+    }
+  } else if (!hasClassOrDual("champion")) {
+    for (const f of feats) {
+      if (["domain-initiate", "expanded-domain-initiate", "advanced-domain"].includes(getItemSlug(f))) {
+        pushDomainFeat(f, "focus:archetype:cleric", "cleric");
+      }
+    }
+  }
+
+  // Bard Composition Spells & Feats + Muse Granted Spell
+  if (hasClassOrDual("bard") || featBySlug.has("composition-spells")) {
+    const kind = classKind("bard");
+    const key = `focus:bard:${kind}`;
+    const bardSpellKey = `class:bard:${kind}`;
+    const bardCompSlugs = new Set([
+      "composition-spells", "counter-performance", "courageous-anthem", "inspire-courage",
+      "lingering-composition", "hymn-of-healing", "uplifting-overture", "dirge-of-doom",
+      "house-of-imaginary-walls", "soothing-ballad", "ode-to-ouroboros", "allegro",
+      "fatal-aria", "symphony-of-the-unfettered-heart", "rallying-anthem", "song-of-strength",
+      "fortissimo-composition", "triple-time", "song-of-marching", "soothing-mists",
+      "martial-performance", "inspire-defense", "inspire-heroics"
+    ]);
+    // Also capture any Bard feat whose description grants a composition spell/cantrip dynamically,
+    // plus any Bard Muse feature that grants a 1st-rank repertoire spell (e.g. Maestro -> Soothe, Enigma -> Sure Strike)
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      const hasBardTrait = Array.isArray(f.system?.traits?.value) && f.system.traits.value.includes("bard");
+      if (hasBardTrait && /(?:composition\s+(?:spell|cantrip)|focus\s+spell)/i.test(desc)) {
+        bardCompSlugs.add(getItemSlug(f));
+      }
+      if (hasClassOrDual("bard") && (hasBardTrait || /muse/i.test(String(f.name || "")))) {
+        const grantedMuseHtml = extractNamedSectionHtml(desc, [/^granted\s+spell$/i, /^muse\s+spell$/i]);
+        if (grantedMuseHtml) {
+          for (const r of extractSpellRefsFromText(grantedMuseHtml)) {
+            pushAutoSpell({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: r.baseRank || 1,
+              isCantrip: Boolean(r.isCantrip),
+              isFocus: false,
+              unlockLevel: 1,
+              targetSourceKey: bardSpellKey,
+              targetClassSlug: "bard",
+              sourceLabel: f.name,
+              tier: "gift",
+              countsTowardRepertoire: false
+            });
+          }
+        }
+      }
+    }
+    addDirectFocusFeats(bardCompSlugs, key, "bard");
+  }
+
+  // Druid Order Spells
+  if (hasClassOrDual("druid") || featBySlug.has("order-spells")) {
+    const key = `focus:druid:${classKind("druid")}`;
+    const druidSlugs = new Set([
+      "order-spells", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape",
+      "tempest-surge", "goodberry", "cornucopia", "heal-animal", "wildfire", "crushing-ground",
+      "rising-surf", "pulmonary-steed", "storm-born"
+    ]);
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      if (/<(?:strong|b|h[1-6])[^>]*>\s*Order\s+Spell\s*[:<]/i.test(desc)
+        || (f.system?.traits?.value?.includes("druid") && /\border\s+spell\b/i.test(desc))) {
+        druidSlugs.add(getItemSlug(f));
+      }
+    }
+    addDirectFocusFeats(druidSlugs, key, "druid", { sectionPatterns: [/^order\s+spell$/i] });
+  } else if (featBySlug.has("order-spell") || plannedFeatLevelsBySlug?.has("order-spell")) {
+    const orderSpellUnlock = getFeatUnlockLevel(["order-spell"]);
+    const archDruidSlugs = new Set(["order-spell"]);
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      if (/<(?:strong|b|h[1-6])[^>]*>\s*Order\s+Spell\s*[:<]/i.test(desc)) {
+        const orderSec = extractNamedSectionHtml(desc, [/^order\s+spell$/i]);
+        for (const r of extractSpellRefsFromText(orderSec)) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: null,
+            isCantrip: Boolean(r.isCantrip),
+            isFocus: true,
+            unlockLevel: orderSpellUnlock.level,
+            targetSourceKey: "focus:archetype:druid",
+            targetClassSlug: "druid",
+            sourceLabel: f.name,
+            tier: "order",
+            countsTowardRepertoire: false
+          });
+        }
+      }
+    }
+    addDirectFocusFeats(archDruidSlugs, "focus:archetype:druid", "druid", { sectionPatterns: [/^order\s+spell$/i] });
+  }
+
+  // Summoner Link Spells
+  if (hasClassOrDual("summoner") || featBySlug.has("link-spells")) {
+    const key = `focus:summoner:${classKind("summoner")}`;
+    const sumSlugs = new Set(["link-spells", "evolution-surge", "boost-eidolon", "lifelink-surge", "extend-boost", "reinforce-eidolon", "protect-companion"]);
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      if (f.system?.traits?.value?.includes("summoner") && /\blink\s+(?:spell|cantrip)\b/i.test(desc)) {
+        sumSlugs.add(getItemSlug(f));
+      }
+    }
+    addDirectFocusFeats(sumSlugs, key, "summoner");
+  }
+
+  // Necromancer Grave Spells
+  if (hasClassOrDual("necromancer") || featBySlug.has("grave-spells")) {
+    const key = `focus:necromancer:${classKind("necromancer")}`;
+    const necroSlugs = new Set(["grave-spells", "create-thrall"]);
+    for (const f of feats) {
+      const desc = String(f.system?.description?.value || "");
+      if (f.system?.traits?.value?.includes("necromancer") && /\bgrave\s+(?:spell|cantrip)\b/i.test(desc)) {
+        necroSlugs.add(getItemSlug(f));
+      }
+    }
+    addDirectFocusFeats(necroSlugs, key, "necromancer");
+  }
+
+  // Monk Qi Spells
+  const monkQiSlugs = new Set([
+    "qi-spells", "ki-strike", "inner-upheaval", "ki-rush", "qi-rush", "wholeness-of-body",
+    "harmonize-self", "abundant-step", "wind-jump", "quivering-palm", "ki-blast", "qi-blast",
+    "ki-form", "qi-form", "wronged-monks-wrath", "medusas-wrath", "ki-cutting-sight", "golden-body"
+  ]);
+  for (const f of feats) {
+    const desc = String(f.system?.description?.value || "");
+    if (f.system?.traits?.value?.includes("monk") && /\b(?:qi|ki)\s+spell\b/i.test(desc)) {
+      monkQiSlugs.add(getItemSlug(f));
+    }
+  }
+  if (feats.some(f => monkQiSlugs.has(getItemSlug(f)))) {
+    const key = hasClassOrDual("monk") ? `focus:monk:${classKind("monk")}` : "focus:archetype:monk";
+    addDirectFocusFeats(monkQiSlugs, key, "monk");
+  }
+
+  // Ranger Warden Spells
+  const rangerWardenSlugs = new Set([
+    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden",
+    "gravity-weapon", "heal-companion", "magic-hide", "snare-hopping", "animal-feature",
+    "soothing-mist", "terrain-transposition", "ephemeral-tracking", "enlarge-companion",
+    "hunters-vision", "hunter-s-vision"
+  ]);
+  for (const f of feats) {
+    const desc = String(f.system?.description?.value || "");
+    if (f.system?.traits?.value?.includes("ranger") && /\bwarden\s+spell\b/i.test(desc)) {
+      rangerWardenSlugs.add(getItemSlug(f));
+    }
+  }
+  if (feats.some(f => rangerWardenSlugs.has(getItemSlug(f)))) {
+    const key = hasClassOrDual("ranger") ? `focus:ranger:${classKind("ranger")}` : "focus:archetype:ranger";
+    addDirectFocusFeats(rangerWardenSlugs, key, "ranger");
+  }
+
+  // Blessed One Dedication
+  if (featBySlug.has("blessed-one-dedication")) {
+    addDirectFocusFeats(new Set(["blessed-one-dedication"]), "focus:archetype:blessed-one", "blessed-one");
+  }
+
+  // Generic Focus-Granting Feats (matches `focus:feat:<slug>` or folded focus feats)
+  const genericExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant)(?:$|-)/;
+  const genericGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you|you\s+can\s+cast)\s+(?:the\s+)?[^.<]{0,80}\b(?:focus\s+spell|focus\s+pool)\b/i;
+  for (const f of feats) {
+    const slug = getItemSlug(f);
+    if (genericExclusions.test(slug)) continue;
+    const desc = String(f.system?.description?.value || "");
+    if (!genericGrantRe.test(desc)) continue;
+    // Skip if already captured under a specific class/archetype focus source
+    const fRefs = parseDirectFeatSpells(f, extractActorQualifiers(actor, f));
+    if (fRefs.auto.length === 0 && !fRefs.choice) continue;
+    const alreadyCovered = fRefs.auto.some(r => Array.from(autoKeySet).some(k => k.endsWith(`|${r.uuid.toLowerCase()}`)));
+    if (alreadyCovered) continue;
+
+    // Route to matching generic key `focus:feat:<slug>` (and analyzeSpellcasting also matches by tradition fallback!)
+    const targetKey = `focus:feat:${slug}`;
+    const uLvl = inferFeatAcquiredLevel(f, 1);
+    if (fRefs.auto.length > 0) {
+      for (const r of fRefs.auto) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: r.isCantrip ? 0 : null,
+          isCantrip: Boolean(r.isCantrip),
+          isFocus: true,
+          unlockLevel: uLvl,
+          targetSourceKey: targetKey,
+          targetClassSlug: slug,
+          sourceLabel: f.name,
+          tier: "feat",
+          countsTowardRepertoire: false,
+          fallbackTradition: (desc.match(/\b(arcane|divine|occult|primal)\b/i)?.[1] || "").toLowerCase()
+        });
+      }
+    }
+  }
+
+  // Sort deterministically by unlockLevel -> rank -> name
+  autoSpells.sort((a, b) =>
+    (a.unlockLevel - b.unlockLevel)
+    || ((a.rank ?? 0) - (b.rank ?? 0))
+    || a.name.localeCompare(b.name)
+  );
+  choiceGroups.sort((a, b) =>
+    (a.unlockLevel - b.unlockLevel)
+    || ((a.rank ?? 0) - (b.rank ?? 0))
+    || a.label.localeCompare(b.label)
+  );
+
+  return { autoSpells, choiceGroups, hasDeferredDomain };
+}
+
+/**
+ * Checks if a discovered auto/choice spell is already present inside a spellcasting entry.
+ */
+function isSpellAlreadyInEntry(spellMeta, existingUuids, existingNames) {
+  if (!spellMeta) return false;
+  if (spellMeta.uuid && existingUuids.has(spellMeta.uuid.toLowerCase())) return true;
+  if (spellMeta.name && !spellMeta.isDeferredDomain && existingNames.has(String(spellMeta.name).trim().toLowerCase())) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Resolves a Foundry spell document cleanly from either an ID-based or name-based UUID.
+ */
+export async function resolveSpellDocumentByUuid(uuid) {
+  if (!uuid || typeof uuid !== "string") return null;
+  const clean = uuid.trim();
+  try {
+    const doc = await fromUuid(clean);
+    if (doc?.type === "spell") return doc;
+  } catch { /* fallback below */ }
+
+  let idxHit = lookupCompendiumIndexEntrySync(clean);
+  if (!idxHit && clean.startsWith("Compendium.")) {
+    const parts = clean.split(".");
+    if (parts.length >= 4) {
+      const packKey = `${parts[1]}.${parts[2]}`;
+      const pack = game.packs?.get?.(packKey);
+      if (pack && (!pack.index || pack.index.size === 0)) {
+        try {
+          await pack.getIndex();
+          _packNameIndexCache.delete(packKey);
+          idxHit = lookupCompendiumIndexEntrySync(clean);
+        } catch { /* ignore */ }
+      }
+    }
+  }
+  if (idxHit?.canonicalUuid && idxHit.canonicalUuid !== clean) {
+    try {
+      const doc = await fromUuid(idxHit.canonicalUuid);
+      if (doc?.type === "spell") return doc;
+    } catch { /* ignore */ }
+  }
+  return null;
+}
+
 /**
  * Matches expected spellcasting sources 1-to-1 against existing `spellcastingEntry` items on the actor,
- * compares slots & spell counts, and identifies missing or outdated entries.
+ * compares slots & spell counts, and identifies missing entries, outdated slots, and missing auto-granted / focus spells.
  */
 function analyzeSpellcasting(actor, level, dualInfo) {
   const expectedSources = detectExpectedSpellcastingSources(actor, level, dualInfo);
@@ -2338,6 +4286,21 @@ function analyzeSpellcasting(actor, level, dualInfo) {
   });
   const focusEntries = existingEntries.filter(e => e.system?.prepared?.value === "focus");
   const allSpells = actor.itemTypes?.spell || [];
+
+  // Dynamically discover all auto-granted subclass, deity, font & focus spells from live PF2e items
+  const grantedProg = collectActorGrantedSpellsProgression(actor, dualInfo);
+  if (grantedProg.hasDeferredDomain && !_domainSpellCache && !_domainSpellCachePromise) {
+    warmDomainSpellCache().catch(() => {});
+  }
+
+  // Re-map any generic `focus:feat:*` spells folded into an existing same-tradition focus source
+  const sourceKeysSet = new Set(expectedSources.map(s => s.key));
+  for (const sp of grantedProg.autoSpells) {
+    if (!sourceKeysSet.has(sp.targetSourceKey) && sp.isFocus && sp.fallbackTradition) {
+      const folded = expectedSources.find(s => s.isFocus && s.tradition === sp.fallbackTradition);
+      if (folded) sp.targetSourceKey = folded.key;
+    }
+  }
 
   // Score how strongly an existing entry matches an expected source
   const usedEntryIds = new Set();
@@ -2422,6 +4385,8 @@ function analyzeSpellcasting(actor, level, dualInfo) {
   const issues = [];
   let missingEntryCount = 0;
   let outdatedSlotCount = 0;
+  let entriesNeedingAutoSpellsCount = 0;
+  let totalMissingAutoSpells = 0;
   let totalExpectedCantrips = 0;
   let totalCurrentCantrips = 0;
   let totalExpectedSlots = 0;
@@ -2432,10 +4397,28 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     totalExpectedCantrips += src.cantrips;
     totalExpectedSlots += src.totalLeveledSlots;
 
+    const unlockedAutoSpells = grantedProg.autoSpells.filter(sp =>
+      sp.targetSourceKey === src.key && sp.unlockLevel <= level
+    );
+    const unlockedChoiceGroups = grantedProg.choiceGroups.filter(g =>
+      g.targetSourceKey === src.key && g.unlockLevel <= level
+    );
+
     if (!entry) {
       missingEntryCount++;
+      totalMissingAutoSpells += unlockedAutoSpells.length;
+      const pendingChoiceGroups = unlockedChoiceGroups.map(g => ({
+        ...g,
+        pickedCount: 0,
+        remainingCount: g.pickCount,
+        options: g.options.map(o => ({ ...o, alreadyKnown: false }))
+      }));
+      const autoHint = unlockedAutoSpells.length > 0
+        ? ` — will auto-add ${unlockedAutoSpells.length} spell${unlockedAutoSpells.length === 1 ? "" : "s"} (${unlockedAutoSpells.slice(0, 3).map(s => s.name).join(", ")}${unlockedAutoSpells.length > 3 ? ` +${unlockedAutoSpells.length - 3}` : ""})`
+        : "";
       items.push({
         ...src,
+        expectedFocusSpells: src.isFocus ? Math.max(src.expectedFocusSpells || 1, unlockedAutoSpells.length) : src.expectedFocusSpells,
         entryId: null,
         entryExists: false,
         status: "missing",
@@ -2446,30 +4429,65 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         currentLeveledSpells: 0,
         currentFocusSpells: 0,
         currentSlotsSummary: "None",
-        spellsMissingNote: src.isFocus
+        unlockedAutoSpells,
+        missingAutoSpells: unlockedAutoSpells,
+        missingAutoSpellsCount: unlockedAutoSpells.length,
+        hasMissingAutoSpells: unlockedAutoSpells.length > 0,
+        missingAutoSpellsText: unlockedAutoSpells.map(s => s.name).join(", "),
+        pendingChoiceGroups,
+        hasPendingChoices: pendingChoiceGroups.length > 0,
+        spellsMissingNote: (src.isFocus
           ? "Create this Focus spellcasting entry and add your focus spell(s)"
-          : "Create this spellcasting entry to add slots & spells"
+          : "Create this spellcasting entry to add slots & spells") + autoHint
       });
       issues.push({
         severity: "critical",
         category: "Spellcasting",
         title: `Missing Spellcasting Entry: ${src.title}`,
-        detail: `${src.sourceBadge} · ${CASTING_TYPE_LABELS[src.castingType] || src.castingType} ${TRADITION_LABELS[src.tradition] || "(choose tradition)"} · ${src.isFocus ? src.slotsSummary : `Expected ${src.cantrips > 0 ? `${src.cantrips} cantrips & ` : ""}${src.slotsSummary}`}.`
+        detail: `${src.sourceBadge} · ${CASTING_TYPE_LABELS[src.castingType] || src.castingType} ${TRADITION_LABELS[src.tradition] || "(choose tradition)"} · ${src.isFocus ? src.slotsSummary : `Expected ${src.cantrips > 0 ? `${src.cantrips} cantrips & ` : ""}${src.slotsSummary}`}.${autoHint}`
       });
       continue;
     }
 
-    // Entry exists! Count its current spells
+    // Entry exists! Count its current spells & compare against dynamically discovered auto-granted spells
     const entrySpells = allSpells.filter(s => s.system?.location?.value === entry.id);
+    const existingUuids = new Set();
+    const existingNames = new Set();
+    for (const sp of entrySpells) {
+      const cSrc = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
+      if (typeof cSrc === "string" && cSrc.trim()) existingUuids.add(cSrc.trim().toLowerCase());
+      if (sp.name) existingNames.add(String(sp.name).trim().toLowerCase());
+    }
+
+    const missingAutoSpells = unlockedAutoSpells.filter(sp => !isSpellAlreadyInEntry(sp, existingUuids, existingNames));
+    if (missingAutoSpells.length > 0) {
+      entriesNeedingAutoSpellsCount++;
+      totalMissingAutoSpells += missingAutoSpells.length;
+    }
+
+    const pendingChoiceGroups = unlockedChoiceGroups
+      .map(g => {
+        const options = g.options.map(o => ({
+          ...o,
+          alreadyKnown: isSpellAlreadyInEntry(o, existingUuids, existingNames)
+        }));
+        const pickedCount = options.filter(o => o.alreadyKnown).length;
+        const remainingCount = Math.max(0, g.pickCount - pickedCount);
+        return { ...g, options, pickedCount, remainingCount };
+      })
+      .filter(g => g.remainingCount > 0);
 
     // Special evaluation path for Focus Spellcasting entries (no daily slots — tracks Focus Spells)
     if (src.isFocus || src.castingType === "focus") {
       const currentFocusSpells = entrySpells.length;
-      const expectedFocusSpells = Math.max(1, Number(src.expectedFocusSpells || 1));
+      const expectedFocusSpells = Math.max(1, Number(src.expectedFocusSpells || 1), unlockedAutoSpells.length);
       const missingFocus = Math.max(0, expectedFocusSpells - currentFocusSpells);
 
-      const status = missingFocus > 0 ? "incomplete" : "complete";
-      const statusLabel = missingFocus > 0 ? "Needs Spells" : "Ready";
+      const hasMissing = missingFocus > 0 || missingAutoSpells.length > 0;
+      const status = hasMissing ? "incomplete" : "complete";
+      const statusLabel = missingAutoSpells.length > 0
+        ? `Add ${missingAutoSpells.length} Focus Spell${missingAutoSpells.length === 1 ? "" : "s"}`
+        : (missingFocus > 0 ? "Needs Spells" : "Ready");
 
       items.push({
         ...src,
@@ -2488,17 +4506,30 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         currentFocusSpells,
         expectedFocusSpells,
         currentSlotsSummary: src.slotsSummary,
-        spellsMissingNote: missingFocus > 0
-          ? `Add ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} to "${entry.name}"`
-          : `${currentFocusSpells} focus spell(s) configured`
+        unlockedAutoSpells,
+        missingAutoSpells,
+        missingAutoSpellsCount: missingAutoSpells.length,
+        hasMissingAutoSpells: missingAutoSpells.length > 0,
+        missingAutoSpellsText: missingAutoSpells.map(s => s.name).join(", "),
+        pendingChoiceGroups,
+        hasPendingChoices: pendingChoiceGroups.length > 0,
+        spellsMissingNote: missingAutoSpells.length > 0
+          ? `Auto-add available: ${missingAutoSpells.map(s => s.name).join(", ")}`
+          : (missingFocus > 0
+            ? `Add ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} to "${entry.name}"`
+            : `${currentFocusSpells} focus spell(s) configured`)
       });
 
-      if (missingFocus > 0) {
+      if (hasMissing) {
         issues.push({
           severity: "info",
           category: "Spellcasting",
-          title: `${entry.name}: ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} missing`,
-          detail: `Focus spells in entry: ${currentFocusSpells}/${expectedFocusSpells} · ${src.expectedSpellsNote}`
+          title: missingAutoSpells.length > 0
+            ? `${entry.name}: ${missingAutoSpells.length} focus spell${missingAutoSpells.length === 1 ? "" : "s"} ready to auto-add`
+            : `${entry.name}: ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} missing`,
+          detail: missingAutoSpells.length > 0
+            ? `Detected from PF2e features: ${missingAutoSpells.map(s => s.name).join(", ")} (${currentFocusSpells}/${expectedFocusSpells} in entry).`
+            : `Focus spells in entry: ${currentFocusSpells}/${expectedFocusSpells} · ${src.expectedSpellsNote}`
         });
       }
       continue;
@@ -2552,17 +4583,27 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     if (slotsOutdated) {
       status = "outdated";
       statusLabel = "Slots Outdated";
-    } else if (missingCantrips > 0 || missingRepertoire > 0) {
+    } else if (missingAutoSpells.length > 0) {
+      status = "incomplete";
+      statusLabel = `${missingAutoSpells.length} Auto Spell${missingAutoSpells.length === 1 ? "" : "s"}`;
+    } else if (missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       status = "incomplete";
       statusLabel = "Needs Spells";
     }
 
     const missingParts = [];
+    if (missingAutoSpells.length > 0) {
+      missingParts.push(`${missingAutoSpells.length} auto-granted (${missingAutoSpells.slice(0, 2).map(s => s.name).join(", ")}${missingAutoSpells.length > 2 ? ` +${missingAutoSpells.length - 2}` : ""})`);
+    }
     if (missingCantrips > 0) missingParts.push(`${missingCantrips} cantrip${missingCantrips === 1 ? "" : "s"}`);
     if (src.repertoireExpected != null && missingRepertoire > 0) {
       missingParts.push(`${missingRepertoire} repertoire spell${missingRepertoire === 1 ? "" : "s"}`);
-    } else if (src.totalLeveledSlots > 0 && currentLeveledSpells === 0) {
+    } else if (src.totalLeveledSlots > 0 && currentLeveledSpells === 0 && missingAutoSpells.length === 0) {
       missingParts.push(`no leveled spells added yet`);
+    }
+    if (pendingChoiceGroups.length > 0) {
+      const totalChoicePicks = pendingChoiceGroups.reduce((sum, g) => sum + g.remainingCount, 0);
+      missingParts.push(`${totalChoicePicks} curriculum/subclass pick${totalChoicePicks === 1 ? "" : "s"}`);
     }
 
     items.push({
@@ -2581,7 +4622,14 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       currentLeveledSpells,
       currentFocusSpells: 0,
       currentSlotsSummary: formatSlotsSummary(curSlotsObj),
-      spellsMissingNote: missingParts.length > 0 ? `Missing ${missingParts.join(" & ")}` : "Spells & slots look good"
+      unlockedAutoSpells,
+      missingAutoSpells,
+      missingAutoSpellsCount: missingAutoSpells.length,
+      hasMissingAutoSpells: missingAutoSpells.length > 0,
+      missingAutoSpellsText: missingAutoSpells.map(s => s.name).join(", "),
+      pendingChoiceGroups,
+      hasPendingChoices: pendingChoiceGroups.length > 0,
+      spellsMissingNote: missingParts.length > 0 ? `Missing ${missingParts.join(" · ")}` : "Spells & slots look good"
     });
 
     if (slotsOutdated) {
@@ -2589,14 +4637,14 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         severity: "warning",
         category: "Spellcasting",
         title: `Spell Slots Outdated: ${entry.name}`,
-        detail: `Level ${level} expects ${src.slotsSummary} (diffs: ${slotDiffs.map(d => `${d.label} ${d.current}→${d.expected}`).join(", ")}).`
+        detail: `Level ${level} expects ${src.slotsSummary} (diffs: ${slotDiffs.map(d => `${d.label} ${d.current}→${d.expected}`).join(", ")}).${missingAutoSpells.length > 0 ? ` Also ${missingAutoSpells.length} auto-granted spell(s) ready to add.` : ""}`
       });
-    } else if (missingCantrips > 0 || missingRepertoire > 0) {
+    } else if (missingAutoSpells.length > 0 || missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       issues.push({
         severity: "info",
         category: "Spellcasting",
-        title: `${entry.name}: ${missingParts.join(" & ")} missing`,
-        detail: `Cantrips: ${currentCantrips}/${src.cantrips} · Leveled spells added: ${currentLeveledSpells}${src.repertoireExpected != null ? `/${src.repertoireExpected}` : ""}.`
+        title: `${entry.name}: ${missingParts.join(" · ")}`,
+        detail: `Cantrips: ${currentCantrips}/${src.cantrips} · Leveled spells added: ${currentLeveledSpells}${src.repertoireExpected != null ? `/${src.repertoireExpected}` : ""}${missingAutoSpells.length > 0 ? ` · Ready to auto-add: ${missingAutoSpells.map(s => s.name).join(", ")}` : ""}.`
       });
     }
   }
@@ -2609,7 +4657,9 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     focusCount: focusEntries.length,
     missingEntryCount,
     outdatedSlotCount,
-    needsActionCount: missingEntryCount + outdatedSlotCount,
+    entriesNeedingAutoSpellsCount,
+    totalMissingAutoSpells,
+    needsActionCount: missingEntryCount + outdatedSlotCount + entriesNeedingAutoSpellsCount,
     totalExpectedCantrips,
     totalCurrentCantrips,
     totalExpectedSlots,
@@ -2619,16 +4669,163 @@ function analyzeSpellcasting(actor, level, dualInfo) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* 7. CREATE / SYNC SPELLCASTING ENTRIES ON ACTOR                            */
+/* 7. CREATE / SYNC SPELLCASTING ENTRIES & AUTO-GRANTED SPELLS ON ACTOR      */
 /* ------------------------------------------------------------------------- */
 
 /**
+ * Resolves and embeds any missing dynamically-discovered auto-granted or focus spells
+ * into the target `spellcastingEntry` on the actor (skipping duplicates safely).
+ *
+ * @param {Actor} actor
+ * @param {string} entryId
+ * @param {object} spec
+ * @returns {Promise<{ addedNames: string[], addedCount: number }>}
+ */
+export async function syncAutoGrantedSpellsForEntry(actor, entryId, spec) {
+  if (!actor || !entryId || !spec) return { addedNames: [], addedCount: 0 };
+  const entry = actor.items?.get(entryId);
+  if (!entry || entry.type !== "spellcastingEntry") return { addedNames: [], addedCount: 0 };
+
+  const level = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
+  const candidates = Array.isArray(spec.unlockedAutoSpells)
+    ? spec.unlockedAutoSpells
+    : collectActorGrantedSpellsProgression(actor, getActorDualClassInfo(actor, getActiveVariantRules()))
+      .autoSpells.filter(sp => sp.targetSourceKey === spec.key && sp.unlockLevel <= level);
+
+  if (candidates.length === 0) return { addedNames: [], addedCount: 0 };
+
+  // Ensure dynamic PF2e domain journal lookup is warm if any candidate is a deferred Domain spell
+  if (candidates.some(c => c.domainSlug && !c.uuid)) {
+    await warmDomainSpellCache();
+  }
+
+  const isFocusEntry = entry.system?.prepared?.value === "focus" || Boolean(spec.isFocus);
+  const existingSpells = (actor.itemTypes?.spell || []).filter(s => s.system?.location?.value === entryId);
+  const existingUuids = new Set();
+  const existingNames = new Set();
+  for (const sp of existingSpells) {
+    const cSrc = sp._stats?.compendiumSource || sp.flags?.core?.sourceId;
+    if (typeof cSrc === "string" && cSrc.trim()) existingUuids.add(cSrc.trim().toLowerCase());
+    if (sp.name) existingNames.add(String(sp.name).trim().toLowerCase());
+  }
+
+  const toCreate = [];
+  const addedNames = [];
+
+  for (const cand of candidates) {
+    let targetUuid = cand.uuid;
+    if (!targetUuid && cand.domainSlug) {
+      const domainRec = _domainSpellCache?.get(cand.domainSlug);
+      targetUuid = domainRec?.[cand.domainTier || "initial"]?.uuid || null;
+    }
+    if (!targetUuid) continue;
+    if (existingUuids.has(targetUuid.toLowerCase())) continue;
+
+    try {
+      const doc = await resolveSpellDocumentByUuid(targetUuid);
+      if (!doc || doc.type !== "spell") continue;
+
+      const resolvedUuid = doc.uuid || targetUuid;
+      const docNameLower = String(doc.name || "").trim().toLowerCase();
+      if (existingUuids.has(resolvedUuid.toLowerCase()) || existingNames.has(docNameLower)) continue;
+
+      // Verify Focus vs Daily-slot compatibility against live PF2e spell traits
+      const traits = Array.isArray(doc.system?.traits?.value) ? doc.system.traits.value : [];
+      const docTraditions = Array.from(doc.system?.traits?.traditions || doc.system?.traditions?.value || []);
+      const docIsCantrip = Boolean(doc.isCantrip || traits.includes("cantrip"));
+      const docIsPureFocus = Boolean(doc.isFocusSpell || doc.isFocus || traits.includes("focus")) && !docIsCantrip;
+      const docIsFocusCompatible = Boolean(
+        doc.isFocusSpell || doc.isFocus || traits.includes("focus")
+        || traits.includes("composition") || traits.includes("hex")
+        || traits.includes("eidolon") || (docIsCantrip && docTraditions.length === 0)
+      );
+
+      if (isFocusEntry && !docIsFocusCompatible) continue;
+      if (!isFocusEntry && docIsPureFocus) continue;
+
+      const obj = doc.toObject();
+      delete obj._id;
+      obj._stats = obj._stats || {};
+      obj._stats.compendiumSource = resolvedUuid;
+      obj.system = obj.system || {};
+      obj.system.location = { ...(obj.system.location || {}), value: entryId };
+
+      // Heighten if subclass/deity explicitly grants a lower-rank spell at a higher rank
+      const baseRank = Number(obj.system?.level?.value ?? 1);
+      if (!isFocusEntry && !spec.isDivineFont && !docIsCantrip && Number(cand.rank) > baseRank) {
+        obj.system.location.heightenedLevel = Number(cand.rank);
+      }
+
+      toCreate.push(obj);
+      addedNames.push(doc.name);
+      existingUuids.add(resolvedUuid.toLowerCase());
+      existingNames.add(docNameLower);
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed resolving auto-granted spell "${cand.name}" (${targetUuid}):`, err);
+    }
+  }
+
+  if (toCreate.length > 0) {
+    await actor.createEmbeddedDocuments("Item", toCreate);
+  }
+
+  return { addedNames, addedCount: addedNames.length };
+}
+
+/**
+ * Embeds a single spell (e.g. a 1-click Wizard Curriculum or Subclass choice) into a spellcasting entry.
+ *
+ * @param {Actor} actor
+ * @param {string} entryId
+ * @param {string} uuid
+ * @param {{ rank?: number|null }} [options]
+ * @returns {Promise<Item|null>}
+ */
+export async function addSingleSpellToEntry(actor, entryId, uuid, { rank = null } = {}) {
+  if (!actor || !entryId || !uuid) return null;
+  const entry = actor.items?.get(entryId);
+  if (!entry || entry.type !== "spellcastingEntry") return null;
+
+  const doc = await resolveSpellDocumentByUuid(uuid);
+  if (!doc || doc.type !== "spell") return null;
+
+  const resolvedUuid = doc.uuid || uuid;
+  const docNameLower = String(doc.name || "").trim().toLowerCase();
+  const duplicate = (actor.itemTypes?.spell || []).some(existing =>
+    existing.system?.location?.value === entryId
+    && (
+      String(existing._stats?.compendiumSource || existing.flags?.core?.sourceId || "").toLowerCase() === resolvedUuid.toLowerCase()
+      || String(existing.name || "").trim().toLowerCase() === docNameLower
+    )
+  );
+  if (duplicate) return null;
+
+  const obj = doc.toObject();
+  delete obj._id;
+  obj._stats = obj._stats || {};
+  obj._stats.compendiumSource = resolvedUuid;
+  obj.system = obj.system || {};
+  obj.system.location = { ...(obj.system.location || {}), value: entryId };
+
+  const traits = Array.isArray(doc.system?.traits?.value) ? doc.system.traits.value : [];
+  const docIsCantrip = Boolean(doc.isCantrip || traits.includes("cantrip"));
+  const baseRank = Number(obj.system?.level?.value ?? 1);
+  if (entry.system?.prepared?.value !== "focus" && !docIsCantrip && Number(rank) > baseRank) {
+    obj.system.location.heightenedLevel = Number(rank);
+  }
+
+  const created = await actor.createEmbeddedDocuments("Item", [obj]);
+  return created?.[0] || null;
+}
+
+/**
  * Create a new PF2e `spellcastingEntry` embedded item on the actor with exact
- * casting type, tradition, key ability, and level-appropriate spell slots.
+ * casting type, tradition, key ability, level-appropriate spell slots, and any
+ * dynamically discovered auto-granted / focus spells.
  *
  * @param {Actor} actor
  * @param {object} spec - Source spec from `analyzeCharacter(actor).spellcasting.sources`
- * @param {{ tradition?: string, ability?: string, name?: string }} [overrides]
+ * @param {{ tradition?: string, ability?: string, name?: string, autoAddSpells?: boolean, resultOut?: object }} [overrides]
  * @returns {Promise<Item|null>}
  */
 export async function createSpellcastingEntry(actor, spec, overrides = {}) {
@@ -2679,19 +4876,33 @@ export async function createSpellcastingEntry(actor, spec, overrides = {}) {
   };
 
   const created = await actor.createEmbeddedDocuments("Item", [entryData]);
-  return created?.[0] || null;
+  const createdEntry = created?.[0] || null;
+
+  if (createdEntry && overrides.autoAddSpells !== false) {
+    try {
+      const spellRes = await syncAutoGrantedSpellsForEntry(actor, createdEntry.id, spec);
+      if (overrides.resultOut && typeof overrides.resultOut === "object") {
+        overrides.resultOut.addedSpells = spellRes.addedNames;
+      }
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed auto-adding spells to "${createdEntry.name}":`, err);
+    }
+  }
+
+  return createdEntry;
 }
 
 /**
  * Updates an existing PF2e `spellcastingEntry`'s slot maximums to match the character's current level
- * without wiping any prepared spells or overriding currently spent daily slots unfairly.
+ * without wiping any prepared spells, and optionally auto-adds missing focus / subclass / deity spells.
  *
  * @param {Actor} actor
  * @param {string} entryId
  * @param {object} spec
+ * @param {{ includeAutoSpells?: boolean, resultOut?: object }} [options]
  * @returns {Promise<boolean>}
  */
-export async function syncSpellcastingEntrySlots(actor, entryId, spec) {
+export async function syncSpellcastingEntrySlots(actor, entryId, spec, { includeAutoSpells = true, resultOut = null } = {}) {
   if (!actor || !entryId || !spec) return false;
   const entry = actor.items?.get(entryId);
   if (!entry || entry.type !== "spellcastingEntry") return false;
@@ -2699,46 +4910,72 @@ export async function syncSpellcastingEntrySlots(actor, entryId, spec) {
   const castingType = entry.system?.prepared?.value || spec.castingType || "prepared";
   const updates = {};
 
-  for (let r = 0; r <= 10; r++) {
-    if (r === 0 && castingType !== "prepared") continue;
-    const targetMax = Number(spec.slots?.[r] || 0);
-    const curSlot = entry.system?.slots?.[`slot${r}`];
-    const curMax = Number(curSlot?.max ?? 0);
-    const curVal = Number(curSlot?.value ?? 0);
+  if (castingType !== "focus" && !spec.isFocus) {
+    for (let r = 0; r <= 10; r++) {
+      if (r === 0 && castingType !== "prepared") continue;
+      const targetMax = Number(spec.slots?.[r] || 0);
+      const curSlot = entry.system?.slots?.[`slot${r}`];
+      const curMax = Number(curSlot?.max ?? 0);
+      const curVal = Number(curSlot?.value ?? 0);
 
-    if (curMax !== targetMax) {
-      updates[`system.slots.slot${r}.max`] = targetMax;
-      const delta = targetMax - curMax;
-      const nextVal = delta > 0 ? Math.min(targetMax, curVal + delta) : Math.min(targetMax, curVal);
-      updates[`system.slots.slot${r}.value`] = Math.max(0, nextVal);
+      if (curMax !== targetMax) {
+        updates[`system.slots.slot${r}.max`] = targetMax;
+        const delta = targetMax - curMax;
+        const nextVal = delta > 0 ? Math.min(targetMax, curVal + delta) : Math.min(targetMax, curVal);
+        updates[`system.slots.slot${r}.value`] = Math.max(0, nextVal);
+      }
+    }
+
+    if (spec.flexible && castingType === "prepared" && !entry.system?.prepared?.flexible) {
+      updates["system.prepared.flexible"] = true;
     }
   }
 
-  if (spec.flexible && castingType === "prepared" && !entry.system?.prepared?.flexible) {
-    updates["system.prepared.flexible"] = true;
-  }
+  const hasSlotUpdates = Object.keys(updates).length > 0;
 
   if (!entry.flags?.[MODULE_ID]?.spellSourceKey && spec.key) {
     updates[`flags.${MODULE_ID}.spellSourceKey`] = spec.key;
   }
 
-  if (Object.keys(updates).length === 0) return false;
-  await entry.update(updates);
-  return true;
+  let slotsChanged = false;
+  if (Object.keys(updates).length > 0) {
+    await entry.update(updates);
+    slotsChanged = hasSlotUpdates;
+  }
+
+  let addedSpells = [];
+  if (includeAutoSpells) {
+    try {
+      const spellRes = await syncAutoGrantedSpellsForEntry(actor, entryId, spec);
+      addedSpells = spellRes.addedNames;
+    } catch (err) {
+      console.warn(`PF2e Awesome GM Utilities | Failed syncing auto-granted spells for "${entry.name}":`, err);
+    }
+  }
+
+  if (resultOut && typeof resultOut === "object") {
+    resultOut.slotsChanged = slotsChanged;
+    resultOut.addedSpells = addedSpells;
+  }
+
+  return slotsChanged || addedSpells.length > 0;
 }
 
 /**
- * Creates all missing spellcasting entries AND syncs all outdated spellcasting entries on an actor.
+ * Creates all missing spellcasting entries, syncs outdated spell slots, AND auto-adds
+ * dynamically discovered focus / subclass / deity spells on an actor.
+ *
  * @param {Actor} actor
- * @returns {Promise<{ created: string[], synced: string[], skippedNeedsTradition: string[] }>}
+ * @returns {Promise<{ created: string[], synced: string[], addedSpells: string[], skippedNeedsTradition: string[] }>}
  */
 export async function createOrSyncAllSpellcastingEntries(actor) {
   const analysis = analyzeCharacter(actor);
   const created = [];
   const synced = [];
+  const addedSpells = [];
   const skippedNeedsTradition = [];
 
-  if (!analysis) return { created, synced, skippedNeedsTradition };
+  if (!analysis) return { created, synced, addedSpells, skippedNeedsTradition };
 
   for (const src of analysis.spellcasting.sources) {
     if (!src.entryExists) {
@@ -2746,15 +4983,23 @@ export async function createOrSyncAllSpellcastingEntries(actor) {
         skippedNeedsTradition.push(src.title);
         continue;
       }
-      const doc = await createSpellcastingEntry(actor, src);
+      const resOut = {};
+      const doc = await createSpellcastingEntry(actor, src, { resultOut: resOut });
       if (doc) created.push(doc.name);
-    } else if (src.slotsOutdated && src.entryId) {
-      const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src);
-      if (ok) synced.push(src.matchedEntryName || src.title);
+      if (Array.isArray(resOut.addedSpells) && resOut.addedSpells.length > 0) {
+        addedSpells.push(...resOut.addedSpells);
+      }
+    } else if ((src.slotsOutdated || src.hasMissingAutoSpells) && src.entryId) {
+      const resOut = {};
+      const ok = await syncSpellcastingEntrySlots(actor, src.entryId, src, { includeAutoSpells: true, resultOut: resOut });
+      if (ok && resOut.slotsChanged) synced.push(src.matchedEntryName || src.title);
+      if (Array.isArray(resOut.addedSpells) && resOut.addedSpells.length > 0) {
+        addedSpells.push(...resOut.addedSpells);
+      }
     }
   }
 
-  return { created, synced, skippedNeedsTradition };
+  return { created, synced, addedSpells, skippedNeedsTradition };
 }
 
 /* ------------------------------------------------------------------------- */
