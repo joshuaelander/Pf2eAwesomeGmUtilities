@@ -1,0 +1,690 @@
+<div class="pf2e-gs-root">
+
+  <!-- Top Utility Bar: Live Search, Party Level Sync, Pop-Out / Re-Dock -->
+  <header class="pf2e-gs-topbar">
+    <div class="pf2e-gs-search-wrap">
+      <i class="fa-solid fa-magnifying-glass pf2e-gs-search-icon"></i>
+      <input
+        type="text"
+        class="pf2e-gs-search"
+        value="{{searchQuery}}"
+        placeholder="Filter all tables & rules (e.g. counteract, earn, dying, grab, sickened, cover)..."
+        autocomplete="off"
+      />
+      <button type="button" class="pf2e-gs-search-clear" title="Clear filter" style="{{#unless searchQuery}}display:none;{{/unless}}">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div class="pf2e-gs-level-bar" title="Highlight rows and calculate DCs for this level (click Party to snap back to Party Level {{partyLevel}})">
+      <span class="pf2e-gs-level-label">Focus Lv</span>
+      <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="level-step" data-delta="-1" title="Decrease Focus Level">
+        <i class="fa-solid fa-minus"></i>
+      </button>
+      <span class="pf2e-gs-level-val">Lv {{focusLevel}}</span>
+      <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="level-step" data-delta="1" title="Increase Focus Level">
+        <i class="fa-solid fa-plus"></i>
+      </button>
+      {{#unless isAtPartyLevel}}
+        <button type="button" class="pf2e-gs-btn pf2e-gs-btn-xs" data-gs-action="reset-party-level" title="Reset to Party Level {{partyLevel}}">
+          Party ({{partyLevel}})
+        </button>
+      {{/unless}}
+    </div>
+  </header>
+
+  <!-- Category Tab Strip -->
+  <nav class="pf2e-gs-tabs">
+    {{#each tabs}}
+      <button type="button" class="pf2e-gs-tab {{#if this.isActive}}is-active{{/if}}" data-gs-action="select-tab" data-tab="{{this.id}}">
+        <i class="{{this.icon}}"></i>
+        <span>{{this.label}}</span>
+      </button>
+    {{/each}}
+    <span class="pf2e-gs-search-banner" style="display:none;"></span>
+  </nav>
+
+  <!-- Scrollable Reference Body -->
+  <div class="pf2e-gs-body">
+
+    <!-- =================================================================== -->
+    <!-- TAB 1: DCs, ADJUSTMENTS, DEGREES & COUNTERACT                       -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="dcs">
+
+      <!-- Quick DC Live Bar -->
+      <div class="pf2e-gs-card" data-gs-keywords="dc calculator simple level adjustment difficulty check prompt chat">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-bullseye"></i> Quick DC Calculator &amp; Simple DCs</h4>
+          <span class="pf2e-gs-subhint">Click any Adjustment chip, Simple DC, or Level row to update live</span>
+        </div>
+
+        <div class="pf2e-gs-dc-hero">
+          <div class="pf2e-gs-dc-readout">
+            <span class="pf2e-gs-dc-big">DC {{finalDc}}</span>
+            <div class="pf2e-gs-dc-meta">
+              <span>
+                {{#if simpleDcOverride}}
+                  <strong>{{simpleDcOverride.rank}} Simple DC</strong> (Base {{baseDc}})
+                {{else}}
+                  <strong>Level {{focusLevel}} DC</strong> (Base {{baseDc}}) · Spell Rank {{spellRank}} DC: <strong>{{spellRankDc}}</strong>
+                {{/if}}
+              </span>
+              <span>Adjustment: <strong>{{dcAdjustmentLabel}} ({{dcAdjustmentSigned}})</strong></span>
+            </div>
+          </div>
+
+          <div class="pf2e-gs-check-sender">
+            <select class="pf2e-gs-select pf2e-gs-check-skill" title="Check type to post to Chat">
+              {{#each quickCheckSkills}}
+                <option value="{{this.slug}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+              {{/each}}
+            </select>
+            <label class="pf2e-gs-subhint" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
+              <input type="checkbox" class="pf2e-gs-check-secret" {{#if secretCheck}}checked{{/if}} />
+              Secret
+            </label>
+            <button type="button" class="pf2e-gs-btn pf2e-gs-btn-gold" data-gs-action="send-check-chat" title="Post a clickable PF2e @Check prompt for DC {{finalDc}} to Foundry Chat">
+              <i class="fa-solid fa-dice-d20"></i> Chat @Check
+            </button>
+          </div>
+        </div>
+
+        <div class="pf2e-gs-adj-chips">
+          {{#each dcAdjustments}}
+            <button type="button" class="pf2e-gs-chip {{#if this.isActive}}is-active{{/if}}" data-gs-action="set-dc-adj" data-delta="{{this.delta}}" title="{{this.label}}{{#if this.rarity}} ({{this.rarity}} Recall Knowledge){{/if}}">
+              {{this.shortLabel}} ({{this.deltaSigned}}){{#if this.rarity}} · {{this.rarity}}{{/if}}
+            </button>
+          {{/each}}
+        </div>
+
+        <div class="pf2e-gs-simple-strip">
+          {{#each simpleDcs}}
+            <div class="pf2e-gs-simple-box {{#if this.isActive}}is-active{{/if}}" data-gs-action="set-simple-dc" data-rank="{{this.rank}}" data-dc="{{this.dc}}" title="Click to toggle {{this.rank}} Simple DC ({{this.dc}})">
+              <div class="pf2e-gs-simple-rank">{{this.rank}}</div>
+              <div class="pf2e-gs-simple-dc">{{this.dc}}</div>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+
+      <div class="pf2e-gs-grid-2">
+        <!-- DC by Level (Compact 2-Column Split for Lv 0–25) -->
+        <div class="pf2e-gs-card" data-gs-keywords="dc by level table standard level-based difficulty 0 25">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-table-list"></i> DC by Level (0–25)</h4>
+            <span class="pf2e-gs-subhint">Click any level to focus</span>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th class="is-num">Lv</th>
+                <th class="is-num">DC</th>
+                <th class="is-num" style="border-left:1px solid var(--pf2e-gm-border-subtle);">Lv</th>
+                <th class="is-num">DC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each dcByLevelPaired}}
+                <tr data-gs-row="1">
+                  <td class="is-num is-clickable-lvl {{#if this.left.isActive}}is-dc{{/if}}" data-gs-action="set-level" data-level="{{this.left.level}}" style="{{#if this.left.isActive}}background:rgba(var(--pf2e-gm-yellow-rgb),0.2);{{/if}}">
+                    Lv {{this.left.level}}
+                  </td>
+                  <td class="is-num is-dc is-clickable-lvl" data-gs-action="set-level" data-level="{{this.left.level}}" style="{{#if this.left.isActive}}background:rgba(var(--pf2e-gm-yellow-rgb),0.2);{{/if}}">
+                    {{this.left.dc}}
+                  </td>
+                  <td class="is-num is-clickable-lvl {{#if this.right.isActive}}is-dc{{/if}}" data-gs-action="set-level" data-level="{{this.right.level}}" style="border-left:1px solid var(--pf2e-gm-border-subtle);{{#if this.right.isActive}}background:rgba(var(--pf2e-gm-yellow-rgb),0.2);{{/if}}">
+                    Lv {{this.right.level}}
+                  </td>
+                  <td class="is-num is-dc is-clickable-lvl" data-gs-action="set-level" data-level="{{this.right.level}}" style="{{#if this.right.isActive}}background:rgba(var(--pf2e-gm-yellow-rgb),0.2);{{/if}}">
+                    {{this.right.dc}}
+                  </td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Right Stack: Interactive Counteract + Spell Rank DCs + Degrees -->
+        <div class="pf2e-gs-stack">
+          <div class="pf2e-gs-card" data-gs-keywords="counteract dispel magic cleanse affliction rank check">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-wand-sparkles"></i> Counteract Calculator &amp; Rules</h4>
+              <span class="pf2e-gs-subhint">Non-spell Rank = ⌈Level / 2⌉</span>
+            </div>
+
+            <div class="pf2e-gs-counteract-controls">
+              <div class="pf2e-gs-stepper-group">
+                <span>Your Rank</span>
+                <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="counteract-step" data-which="your" data-delta="-1"><i class="fa-solid fa-minus"></i></button>
+                <span class="pf2e-gs-stepper-val">{{counteract.yourRank}}</span>
+                <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="counteract-step" data-which="your" data-delta="1"><i class="fa-solid fa-plus"></i></button>
+              </div>
+              <div class="pf2e-gs-stepper-group">
+                <span>Target Rank</span>
+                <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="counteract-step" data-which="target" data-delta="-1"><i class="fa-solid fa-minus"></i></button>
+                <span class="pf2e-gs-stepper-val">{{counteract.targetRank}}</span>
+                <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="counteract-step" data-which="target" data-delta="1"><i class="fa-solid fa-plus"></i></button>
+              </div>
+            </div>
+
+            <div class="pf2e-gs-verdict {{counteract.verdictClass}}">
+              Rank {{counteract.yourRank}} vs Rank {{counteract.targetRank}}: {{counteract.minDegreeNeeded}}
+            </div>
+
+            <table class="pf2e-gs-table">
+              <thead>
+                <tr>
+                  <th>Degree</th>
+                  <th>Counteracts Target If...</th>
+                  <th class="is-num">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each counteract.outcomes}}
+                  <tr data-gs-row="1">
+                    <td><span class="pf2e-gs-pill {{this.cls}}">{{this.degree}}</span></td>
+                    <td>{{this.rule}}</td>
+                    <td class="is-num">
+                      {{#if this.passes}}
+                        <span class="pf2e-gs-pill is-pass">YES</span>
+                      {{else}}
+                        <span class="pf2e-gs-pill is-miss">NO</span>
+                      {{/if}}
+                    </td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pf2e-gs-card" data-gs-keywords="degrees of success critical failure nat 20 nat 1 hero point">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-scale-balanced"></i> Degrees of Success &amp; Hero Points</h4>
+            </div>
+            <table class="pf2e-gs-table">
+              <tbody>
+                {{#each degreesOfSuccess}}
+                  <tr data-gs-row="1">
+                    <td><span class="pf2e-gs-pill {{this.cls}}">{{this.degree}}</span></td>
+                    <td>{{this.rule}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <div class="pf2e-gs-subhint">
+              <strong>Hero Point:</strong> Spend 1 to reroll a check (Fortune; must use 2nd result), or spend ALL remaining to stabilize at 0 HP without gaining Wounded.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 2: COMBAT, COVER, DETECTION, ACTIONS, DYING & FALLING           -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="combat" style="display:none;">
+
+      <div class="pf2e-gs-grid-2">
+        <!-- Cover & Detection -->
+        <div class="pf2e-gs-card" data-gs-keywords="cover lesser standard greater take cover ac reflex stealth">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-shield-halved"></i> Cover</h4>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>Cover</th>
+                <th>Circumstance Bonus</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each coverRules}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.type}}</strong></td>
+                  <td class="is-dc">{{this.bonus}}</td>
+                  <td>{{this.notes}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pf2e-gs-card" data-gs-keywords="detection concealed hidden undetected unnoticed flat check stealth seek">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-eye-slash"></i> Concealment &amp; Detection States</h4>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>State</th>
+                <th class="is-num">Flat DC</th>
+                <th>Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each detectionStates}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.state}}</strong></td>
+                  <td class="is-num is-dc">{{this.flatDc}}</td>
+                  <td>{{this.notes}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Combat Skill Actions & Persistent Damage -->
+      <div class="pf2e-gs-card" data-gs-keywords="combat actions trip grapple shove disarm reposition demoralize feint diversion tumble escape aid persistent damage">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-swords"></i> Common Combat Actions (Remaster)</h4>
+          <span class="pf2e-gs-subhint">Actions with the Attack trait incur Multiple Attack Penalty (MAP)</span>
+        </div>
+        <table class="pf2e-gs-table">
+          <thead>
+            <tr>
+              <th>Action</th>
+              <th class="is-num">Cost</th>
+              <th>Check vs DC</th>
+              <th>Outcomes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each combatActions}}
+              <tr data-gs-row="1">
+                <td><strong>{{this.name}}</strong></td>
+                <td class="is-num"><span class="pf2e-gs-cost-badge">{{this.cost}}</span></td>
+                <td>{{this.check}}</td>
+                <td>{{this.summary}}</td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Dying, Falling & Movement -->
+      <div class="pf2e-gs-grid-3">
+        {{#each dyingFallingRules}}
+          <div class="pf2e-gs-card" data-gs-keywords="{{this.title}} dying wounded recovery stabilize falling grab an edge water flanking difficult terrain suffocate breath">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-heart-pulse"></i> {{this.title}}</h4>
+            </div>
+            <ul class="pf2e-gs-bullets">
+              {{#each this.bullets}}
+                <li data-gs-row="1">{{this}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        {{/each}}
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 3: SKILLS, TREAT WOUNDS, EARN INCOME, RECALL KNOWLEDGE, MAGIC   -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="skills" style="display:none;">
+
+      <div class="pf2e-gs-grid-2">
+        <!-- Earn Income (Full 0–20 + Crit Table) -->
+        <div class="pf2e-gs-card" data-gs-keywords="earn income downtime money gp sp cp gold per day table">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-coins"></i> Earn Income (Per Day)</h4>
+            <span class="pf2e-gs-subhint">Highlighting Lv {{focusLevel}} · Crit Succ = Task Lv +1</span>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th class="is-num">Lv</th>
+                <th class="is-num">DC</th>
+                <th>Fail</th>
+                <th>Trained</th>
+                <th>Expert</th>
+                <th>Master</th>
+                <th>Legend.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each earnIncomeRows}}
+                <tr data-gs-row="1" class="{{#if this.isActive}}is-active-level{{else}}{{#if this.isNearby}}is-nearby-level{{/if}}{{/if}}">
+                  <td class="is-num is-clickable-lvl" data-gs-action="set-level" data-level="{{this.clickLevel}}">{{this.label}}</td>
+                  <td class="is-num is-dc">{{this.dc}}</td>
+                  <td>{{this.failed}}</td>
+                  <td>{{this.trained}}</td>
+                  <td>{{this.expert}}</td>
+                  <td>{{this.master}}</td>
+                  <td>{{this.legendary}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Right Stack: Treat Wounds + Recall Knowledge + Learn a Spell / Repair + Exploration -->
+        <div class="pf2e-gs-stack">
+          <div class="pf2e-gs-card" data-gs-keywords="treat wounds medicine healing dc 15 20 30 40 wounded battle medicine">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-kit-medical"></i> Treat Wounds (Medicine)</h4>
+              <span class="pf2e-gs-subhint">10 min · 1 hr immunity · 1 hr = 2× HP</span>
+            </div>
+            <table class="pf2e-gs-table">
+              <thead>
+                <tr>
+                  <th>Proficiency</th>
+                  <th class="is-num">DC</th>
+                  <th>Success</th>
+                  <th>Crit Success</th>
+                  <th>Crit Fail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each treatWoundsRows}}
+                  <tr data-gs-row="1">
+                    <td><strong>{{this.rank}}</strong></td>
+                    <td class="is-num is-dc">{{this.dc}}</td>
+                    <td>{{this.success}}</td>
+                    <td class="is-dc">{{this.critSuccess}}</td>
+                    <td>{{this.critFail}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <div class="pf2e-gs-subhint">
+              <strong>Repair (Crafting, 10 min):</strong> Restores 5 + (5 × rank) HP; Crit Success restores 10 + (10 × rank) HP. Crit Fail deals 2d6 dmg (minus Hardness).
+            </div>
+          </div>
+
+          <div class="pf2e-gs-card" data-gs-keywords="recall knowledge creature identification arcana nature occultism religion society lore rarity">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-brain"></i> Recall Knowledge (Remaster)</h4>
+              <span class="pf2e-gs-subhint">Uncommon +2 · Rare +5 · Unique +10</span>
+            </div>
+            <table class="pf2e-gs-table">
+              <thead>
+                <tr>
+                  <th>Skill</th>
+                  <th>Creature Traits / Subjects</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each recallKnowledgeSkills}}
+                  <tr data-gs-row="1">
+                    <td><strong>{{this.skill}}</strong></td>
+                    <td>{{this.creatures}}</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <div class="pf2e-gs-subhint">
+              <strong>Remaster:</strong> Player asks 1 specific question (weakest save, resistance, special ability). Crit Success gives 2 answers/extra context. Follow-up checks on the same topic increase difficulty (Hard +2 → Very Hard +5 → Incredibly Hard +10).
+            </div>
+          </div>
+
+          <div class="pf2e-gs-card" data-gs-keywords="learn a spell identify magic spell rank dc cost gp">
+            <div class="pf2e-gs-card-head">
+              <h4><i class="fa-solid fa-hat-wizard"></i> Spell Rank DCs &amp; Learn a Spell</h4>
+              <span class="pf2e-gs-subhint">1 hr/rank · Crit = ½ cost · Crit Fail = lose ½ cost</span>
+            </div>
+            <table class="pf2e-gs-table">
+              <thead>
+                <tr>
+                  <th class="is-num">Rank</th>
+                  <th class="is-num">DC</th>
+                  <th class="is-num">Learn Cost</th>
+                  <th class="is-num">Caster Lv</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each spellRankRows}}
+                  <tr data-gs-row="1" class="{{#if this.isActive}}is-active-level{{/if}}">
+                    <td class="is-num">Rank {{this.rank}}</td>
+                    <td class="is-num is-dc">{{this.dc}}</td>
+                    <td class="is-num">{{this.learnCost}}</td>
+                    <td class="is-num">Lv {{this.minLevel}}+</td>
+                  </tr>
+                {{/each}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exploration Activities -->
+      <div class="pf2e-gs-card" data-gs-keywords="exploration activities avoid notice defend detect magic follow the expert hustle investigate repeat a spell scout search">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-compass"></i> Exploration Activities</h4>
+        </div>
+        <table class="pf2e-gs-table">
+          <thead>
+            <tr>
+              <th>Activity</th>
+              <th class="is-num">Speed</th>
+              <th>Effect</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each explorationActivities}}
+              <tr data-gs-row="1">
+                <td><strong>{{this.name}}</strong></td>
+                <td class="is-num">{{this.speed}}</td>
+                <td>{{this.summary}}</td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 4: CONDITIONS CHEAT-SHEET (WITH LIVE PF2E COMPENDIUM LINKS)     -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="conditions" style="display:none;">
+      <div class="pf2e-gs-card" data-gs-keywords="conditions status effects penalty flat-footed off-guard frightened sickened stunned slowed">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-biohazard"></i> PF2e Remaster Conditions</h4>
+          <span class="pf2e-gs-subhint">Click any condition name to open its full official PF2e sheet</span>
+        </div>
+
+        <div class="pf2e-gs-cond-grid">
+          {{#each conditions}}
+            <div class="pf2e-gs-cond-item" data-gs-row="1" data-gs-keywords="{{this.slug}} {{this.name}} {{#if this.valued}}valued{{/if}}">
+              <div class="pf2e-gs-cond-head">
+                <button type="button" class="pf2e-gs-cond-link" data-gs-action="open-condition" data-slug="{{this.slug}}" data-name="{{this.name}}" title="Open official PF2e Condition sheet for {{this.name}}">
+                  {{this.name}}
+                </button>
+              </div>
+              <div class="pf2e-gs-cond-desc">{{this.summary}}</div>
+            </div>
+          {{/each}}
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 5: ENCOUNTER BUILDER, XP BUDGETS, TREASURE & TRAVEL             -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="encounters" style="display:none;">
+
+      <!-- Interactive Encounter XP Builder -->
+      <div class="pf2e-gs-card" data-gs-keywords="encounter builder xp budget threat severity trivial low moderate severe extreme creature hazard">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-dragon"></i> Quick Encounter XP Calculator (Party Lv {{focusLevel}})</h4>
+          <div class="pf2e-gs-stepper-group">
+            <span>Party Size</span>
+            <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="party-size-step" data-delta="-1"><i class="fa-solid fa-minus"></i></button>
+            <span class="pf2e-gs-stepper-val">{{encounterEval.partySize}}</span>
+            <button type="button" class="pf2e-gs-btn pf2e-gs-btn-icon" data-gs-action="party-size-step" data-delta="1"><i class="fa-solid fa-plus"></i></button>
+          </div>
+        </div>
+
+        <div class="pf2e-gs-enc-bar">
+          <div class="pf2e-gs-enc-summary">
+            <span class="pf2e-gs-enc-xp">{{encounterEval.totalXp}} XP</span>
+            <span class="pf2e-gs-sev-badge {{encounterEval.severity.cls}}">{{encounterEval.severity.label}}</span>
+            <span class="pf2e-gs-subhint">for {{encounterEval.partySize}} PC(s)</span>
+          </div>
+          {{#if hasEncounterEntries}}
+            <button type="button" class="pf2e-gs-btn pf2e-gs-btn-xs" data-gs-action="enc-clear">
+              <i class="fa-solid fa-trash"></i> Clear
+            </button>
+          {{/if}}
+        </div>
+
+        <div class="pf2e-gs-enc-chips">
+          {{#each creatureXpRows}}
+            <button type="button" class="pf2e-gs-chip" data-gs-action="enc-add" data-offset="{{this.offset}}" data-kind="creature" title="Add {{this.effectiveLevelLabel}} Creature ({{this.creatureXp}} XP)">
+              + {{this.effectiveLevelLabel}} ({{this.creatureXp}})
+            </button>
+          {{/each}}
+        </div>
+
+        {{#if hasEncounterEntries}}
+          <div class="pf2e-gs-enc-list">
+            {{#each encounterEntries}}
+              <span class="pf2e-gs-enc-tag">
+                <span>{{this.label}} · <strong>{{this.xp}} XP</strong></span>
+                <button type="button" data-gs-action="enc-remove" data-id="{{this.id}}" title="Remove">×</button>
+              </span>
+            {{/each}}
+          </div>
+        {{/if}}
+
+        <div class="pf2e-gs-grid-2">
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>Threat</th>
+                <th class="is-num">Budget ({{encounterEval.partySize}} PCs)</th>
+                <th class="is-num">Base (4 PCs)</th>
+                <th class="is-num">± Per PC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each encounterEval.budgets}}
+                <tr data-gs-row="1">
+                  <td><span class="pf2e-gs-sev-badge {{this.cls}}">{{this.label}}</span></td>
+                  <td class="is-num is-dc">{{this.adjustedXp}} XP</td>
+                  <td class="is-num">{{this.baseXp}} XP</td>
+                  <td class="is-num">±{{this.perPc}} XP</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>Relative Lv</th>
+                <th class="is-num">Lv</th>
+                <th class="is-num">Creature</th>
+                <th class="is-num">Simple Haz.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each creatureXpRows}}
+                <tr data-gs-row="1">
+                  <td>{{this.label}}</td>
+                  <td class="is-num">{{this.effectiveLevelLabel}}</td>
+                  <td class="is-num is-dc is-clickable-lvl" data-gs-action="enc-add" data-offset="{{this.offset}}" data-kind="creature" title="Click to add {{this.effectiveLevelLabel}} Creature ({{this.creatureXp}} XP)">{{this.creatureXp}} XP</td>
+                  <td class="is-num is-clickable-lvl" data-gs-action="enc-add" data-offset="{{this.offset}}" data-kind="hazard" title="Click to add {{this.effectiveLevelLabel}} Simple Hazard ({{this.simpleHazardXp}} XP)">{{this.simpleHazardXp}} XP</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Party Treasure by Level -->
+      <div class="pf2e-gs-card" data-gs-keywords="treasure loot wealth gold gp permanent consumables party by level">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-gem"></i> Party Treasure by Level (4 PCs, Remaster)</h4>
+          <span class="pf2e-gs-subhint">Highlighting Lv {{focusLevel}}</span>
+        </div>
+        <table class="pf2e-gs-table">
+          <thead>
+            <tr>
+              <th class="is-num">Lv</th>
+              <th class="is-num">Total</th>
+              <th>Permanent Items</th>
+              <th>Consumables</th>
+              <th class="is-num">Currency</th>
+              <th>+1 Extra PC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each treasureRows}}
+              <tr data-gs-row="1" class="{{#if this.isActive}}is-active-level{{else}}{{#if this.isNearby}}is-nearby-level{{/if}}{{/if}}">
+                <td class="is-num is-clickable-lvl" data-gs-action="set-level" data-level="{{this.level}}">{{this.level}}</td>
+                <td class="is-num is-dc">{{this.total}}</td>
+                <td>{{this.permanent}}</td>
+                <td>{{this.consumables}}</td>
+                <td class="is-num">{{this.currency}}</td>
+                <td>{{this.perExtraPc}}</td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Travel Speed & Accomplishment XP -->
+      <div class="pf2e-gs-grid-2">
+        <div class="pf2e-gs-card" data-gs-keywords="travel speed miles per hour day overland movement">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-route"></i> Overland Travel Speed</h4>
+            <span class="pf2e-gs-subhint">8 hrs/day normal pace (½ in difficult terrain)</span>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>Speed</th>
+                <th class="is-num">Per Min</th>
+                <th class="is-num">Per Hour</th>
+                <th class="is-num">Per Day (8h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each travelSpeedRows}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.speed}}</strong></td>
+                  <td class="is-num">{{this.perMin}}</td>
+                  <td class="is-num">{{this.perHour}}</td>
+                  <td class="is-num is-dc">{{this.perDay}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pf2e-gs-card" data-gs-keywords="accomplishment xp award minor moderate major story milestone">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-award"></i> Accomplishment XP Awards</h4>
+          </div>
+          <table class="pf2e-gs-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th class="is-num">XP</th>
+                <th>Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each accomplishmentXp}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.type}}</strong></td>
+                  <td class="is-num is-dc">{{this.xp}}</td>
+                  <td>{{this.note}}</td>
+                </tr>
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div class="pf2e-gs-empty-search">
+      <i class="fa-solid fa-magnifying-glass"></i> No matching GM Screen tables or rules found. Try a shorter keyword or clear the filter.
+    </div>
+
+  </div>
+</div>

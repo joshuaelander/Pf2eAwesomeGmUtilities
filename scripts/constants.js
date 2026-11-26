@@ -29,6 +29,9 @@ export const PLACE_SCENE_LINK_MACRO_ICON = "icons/svg/direction.svg";
 export const CHARACTER_CHECKER_MACRO_NAME = "PF2e Character Completeness Checker";
 export const CHARACTER_CHECKER_MACRO_ICON = "icons/svg/book.svg";
 
+export const GM_SCREEN_MACRO_NAME = "PF2e GM Screen";
+export const GM_SCREEN_MACRO_ICON = "icons/svg/aura.svg";
+
 export const MACRO_FOLDER_NAME = "PF2e Awesome GM Utilities";
 export const MACRO_FOLDER_COLOR = "#7a0b0b";
 

@@ -21,6 +21,8 @@ import {
   PLACE_SCENE_LINK_MACRO_ICON,
   CHARACTER_CHECKER_MACRO_NAME,
   CHARACTER_CHECKER_MACRO_ICON,
+  GM_SCREEN_MACRO_NAME,
+  GM_SCREEN_MACRO_ICON,
   MACRO_FOLDER_NAME,
   MACRO_FOLDER_COLOR,
   GM_UTILITIES_MENU_ICON,
@@ -47,6 +49,7 @@ import {
   isLevelPlannerEnabled,
   revertActorToLevel
 } from "./level-planner-engine.js";
+import { GmScreenApp } from "./gm-screen-app.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;
@@ -56,6 +59,7 @@ let performanceMonitorInstance = null;
 let performanceHudInstance = null;
 let characterCheckerInstance = null;
 let levelPlannerInstance = null;
+let gmScreenInstance = null;
 
 function getSoundPad() {
   if (!soundPadInstance) {
@@ -165,6 +169,13 @@ function getLevelPlanner() {
     });
   }
   return levelPlannerInstance;
+}
+
+function getGmScreen() {
+  if (!gmScreenInstance) {
+    gmScreenInstance = new GmScreenApp();
+  }
+  return gmScreenInstance;
 }
 
 function rerenderOpenCharacterSheets() {
@@ -664,6 +675,21 @@ function registerKeybindings() {
     restricted: true,
     precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
+
+  game.keybindings.register(MODULE_ID, "toggleGmScreen", {
+    name: "Toggle PF2e GM Screen (GM Only)",
+    hint: "Quickly open, focus, or close the Instant-Access PF2e Quick-Reference GM Screen.",
+    editable: [
+      { key: "KeyG", modifiers: ["Shift"] }
+    ],
+    onDown: () => {
+      if (!game.user?.isGM) return false;
+      getGmScreen().toggle();
+      return true;
+    },
+    restricted: true,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
 }
 
 /**
@@ -853,6 +879,17 @@ function registerSceneControls(controls) {
     }
   };
 
+  const openGmScreenTool = {
+    name: "pf2e-gm-screen",
+    title: "PF2e Quick-Reference GM Screen",
+    icon: "fa-solid fa-book-open-reader",
+    visible: true,
+    button: true,
+    onClick: () => {
+      getGmScreen().toggle();
+    }
+  };
+
   // Native Token Select tool (Foundry v14 requires `interaction: true` and `control: true`
   // on the select tool so Token._canControl allows clicking & drag-selecting tokens)
   const nativeSelectTool = Array.isArray(tokenControl?.tools)
@@ -883,7 +920,7 @@ function registerSceneControls(controls) {
   const perfEnabled = isGM && performanceMonitor.isEnabled();
   const plannerEnabled = isLevelPlannerEnabled();
   const activeTools = (isGM
-    ? [selectTokensTool, openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(plannerEnabled ? [openLevelPlannerTool] : []), ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
+    ? [selectTokensTool, openGmScreenTool, openSoundPadTool, openSceneSwitcherTool, placePartyTool, placeSceneLinkTool, openJournalStylerTool, openResourceTrackerTool, openResourceWidgetTool, openCharacterCheckerTool, ...(plannerEnabled ? [openLevelPlannerTool] : []), ...(perfEnabled ? [openPerformanceMonitorTool] : []), panicToolData]
     : [selectTokensTool, openResourceWidgetTool, ...(plannerEnabled ? [openLevelPlannerTool] : [])]
   ).map((tool, index) => ({ ...tool, order: index }));
 
@@ -1003,6 +1040,11 @@ const DESIRED_MACROS = [
     name: CHARACTER_CHECKER_MACRO_NAME,
     icon: CHARACTER_CHECKER_MACRO_ICON,
     command: `game.pf2eAwesomeGmUtilities.characterChecker.toggle();`
+  },
+  {
+    name: GM_SCREEN_MACRO_NAME,
+    icon: GM_SCREEN_MACRO_ICON,
+    command: `game.pf2eAwesomeGmUtilities.gmScreen.toggle();`
   }
 ];
 
@@ -1234,9 +1276,15 @@ Hooks.once("ready", async () => {
     revertToLevel: (actor, targetLevel, options) => revertActorToLevel(actor, targetLevel, options)
   };
 
-  // Performance Checker & Module Profiler API (Strictly GM-Only; zero execution for players)
+  // Performance Checker & Module Profiler API + Quick-Reference GM Screen API (Strictly GM-Only)
   performanceMonitor.onReady();
   if (game.user.isGM) {
+    game.pf2eAwesomeGmUtilities.gmScreen = {
+      get app() { return getGmScreen(); },
+      toggle: () => getGmScreen().toggle(),
+      render: (options = { force: true }) => getGmScreen().render(options)
+    };
+
     game.pf2eAwesomeGmUtilities.performanceMonitor = {
       engine: performanceMonitor,
       get app() { return getPerformanceMonitor(); },

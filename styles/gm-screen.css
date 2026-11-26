@@ -1,0 +1,852 @@
+/**
+ * PF2e Awesome GM Utilities - Instant-Access PF2e GM Screen Styles
+ *
+ * Scoped cleanly under `.pf2e-gs-window` / `.pf2e-gs-root`.
+ * All colors reference shared palette variables in `styles/theme.css`.
+ */
+
+.pf2e-gs-window {
+  background: var(--pf2e-gm-bg-window) !important;
+  color: var(--pf2e-gm-text-primary) !important;
+  border: 1px solid var(--pf2e-gm-border-window) !important;
+  box-shadow: var(--pf2e-gm-shadow-window) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.pf2e-gs-window .window-header {
+  background: var(--pf2e-gm-header-bg) !important;
+  border-bottom: 1px solid var(--pf2e-gm-border-window) !important;
+  color: var(--pf2e-gm-text-header) !important;
+  font-weight: 700;
+}
+
+.pf2e-gs-window .window-content {
+  padding: 0 !important;
+  background: var(--pf2e-gm-bg-window) !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.pf2e-gs-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--font-primary, "Signika", "Segoe UI", sans-serif);
+  color: var(--pf2e-gm-text-primary);
+  background: var(--pf2e-gm-bg-main);
+  box-sizing: border-box;
+}
+
+.pf2e-gs-root *,
+.pf2e-gs-root *::before,
+.pf2e-gs-root *::after {
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------------------- */
+/* TOP TOOLBAR & TABS                                                        */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-gs-root .pf2e-gs-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--pf2e-gm-hero-bg);
+  border-bottom: 1px solid var(--pf2e-gm-border-red-strong);
+  flex: 0 0 auto;
+}
+
+.pf2e-gs-root .pf2e-gs-search-wrap {
+  position: relative;
+  flex: 1 1 230px;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+}
+
+.pf2e-gs-root .pf2e-gs-search-icon {
+  position: absolute;
+  left: 9px;
+  color: var(--pf2e-gm-text-dim);
+  font-size: 0.85em;
+  pointer-events: none;
+}
+
+.pf2e-gs-root .pf2e-gs-search {
+  width: 100%;
+  height: 30px;
+  padding: 4px 28px 4px 28px;
+  background: var(--pf2e-gm-bg-input);
+  color: var(--pf2e-gm-text-white);
+  border: 1px solid var(--pf2e-gm-border-input);
+  border-radius: 5px;
+  font-size: 0.86em;
+  outline: none;
+}
+
+.pf2e-gs-root .pf2e-gs-search:focus {
+  border-color: var(--pf2e-gm-yellow);
+  box-shadow: 0 0 0 1px rgba(var(--pf2e-gm-yellow-rgb), 0.35);
+}
+
+.pf2e-gs-root .pf2e-gs-search-clear {
+  position: absolute;
+  right: 5px;
+  background: transparent;
+  border: none;
+  color: var(--pf2e-gm-text-muted);
+  cursor: pointer;
+  padding: 2px 5px;
+  width: auto !important;
+  height: auto !important;
+  line-height: 1;
+}
+
+.pf2e-gs-root .pf2e-gs-search-clear:hover {
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-gs-root .pf2e-gs-level-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-gs-root .pf2e-gs-level-label {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--pf2e-gm-text-cream);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.pf2e-gs-root .pf2e-gs-level-val {
+  min-width: 44px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.92em;
+  color: var(--pf2e-gm-yellow-bright);
+  font-family: monospace;
+}
+
+/* Shared Buttons */
+.pf2e-gs-root .pf2e-gs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-btn);
+  color: var(--pf2e-gm-text-btn);
+  border: 1px solid var(--pf2e-gm-border-btn);
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+  width: auto !important;
+  height: auto !important;
+  flex: 0 0 auto;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pf2e-gs-root .pf2e-gs-btn:hover {
+  background: var(--pf2e-gm-bg-btn-hover);
+  border-color: var(--pf2e-gm-border-bright);
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-gs-root .pf2e-gs-btn-gold {
+  background: var(--pf2e-gm-cta-bg);
+  border-color: var(--pf2e-gm-cta-border);
+  color: var(--pf2e-gm-text-white);
+  box-shadow: var(--pf2e-gm-cta-shadow);
+}
+
+.pf2e-gs-root .pf2e-gs-btn-gold:hover {
+  background: var(--pf2e-gm-cta-bg-hover);
+  border-color: var(--pf2e-gm-yellow-bright);
+  box-shadow: var(--pf2e-gm-cta-shadow-hover);
+}
+
+.pf2e-gs-root .pf2e-gs-btn-xs {
+  padding: 2px 7px;
+  font-size: 0.78em;
+}
+
+.pf2e-gs-root .pf2e-gs-btn-icon {
+  padding: 2px 6px;
+  min-width: 24px;
+}
+
+/* Category Tab Strip */
+.pf2e-gs-root .pf2e-gs-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--pf2e-gm-bg-sidebar);
+  border-bottom: 1px solid var(--pf2e-gm-border-subtle);
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+}
+
+.pf2e-gs-root .pf2e-gs-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-btn);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  color: var(--pf2e-gm-text-subtle);
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto !important;
+  height: auto !important;
+  transition: all 0.14s ease;
+}
+
+.pf2e-gs-root .pf2e-gs-tab:hover {
+  background: var(--pf2e-gm-bg-btn-hover);
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-gs-root .pf2e-gs-tab.is-active {
+  background: var(--pf2e-gm-selected-row-bg);
+  border-color: var(--pf2e-gm-yellow);
+  color: var(--pf2e-gm-text-white);
+  box-shadow: 0 0 8px rgba(var(--pf2e-gm-red-rgb), 0.35);
+}
+
+.pf2e-gs-root .pf2e-gs-tab.is-active i {
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-search-banner {
+  margin-left: auto;
+  font-size: 0.78em;
+  color: var(--pf2e-gm-yellow-bright);
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.14);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.45);
+}
+
+/* ------------------------------------------------------------------------- */
+/* SCROLLABLE CONTENT & GRID LAYOUT                                          */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-gs-root .pf2e-gs-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 10px 12px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pf2e-gs-root .pf2e-gs-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.pf2e-gs-root .pf2e-gs-body::-webkit-scrollbar-track {
+  background: var(--pf2e-gm-scroll-track);
+}
+
+.pf2e-gs-root .pf2e-gs-body::-webkit-scrollbar-thumb {
+  background: var(--pf2e-gm-scroll-thumb);
+  border-radius: 4px;
+}
+
+.pf2e-gs-root .pf2e-gs-body::-webkit-scrollbar-thumb:hover {
+  background: var(--pf2e-gm-scroll-thumb-hover);
+}
+
+.pf2e-gs-root .pf2e-gs-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.pf2e-gs-root .pf2e-gs-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.pf2e-gs-root .pf2e-gs-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .pf2e-gs-root .pf2e-gs-grid-2,
+  .pf2e-gs-root .pf2e-gs-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Panels / Reference Cards */
+.pf2e-gs-root .pf2e-gs-card {
+  background: var(--pf2e-gm-bg-card);
+  border: 1px solid var(--pf2e-gm-border-card);
+  border-radius: 7px;
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pf2e-gs-root .pf2e-gs-card.is-hidden {
+  display: none !important;
+}
+
+.pf2e-gs-root .pf2e-gs-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--pf2e-gm-border-red);
+}
+
+.pf2e-gs-root .pf2e-gs-card-head h4 {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--pf2e-gm-text-cream);
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-gs-root .pf2e-gs-card-head h4 i {
+  color: var(--pf2e-gm-yellow);
+}
+
+.pf2e-gs-root .pf2e-gs-subhint {
+  font-size: 0.75em;
+  color: var(--pf2e-gm-text-muted);
+}
+
+/* ------------------------------------------------------------------------- */
+/* LIVE QUICK DC & COUNTERACT WIDGETS                                        */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-gs-root .pf2e-gs-dc-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--pf2e-gm-strip-bg);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.45);
+}
+
+.pf2e-gs-root .pf2e-gs-dc-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.pf2e-gs-root .pf2e-gs-dc-big {
+  font-size: 1.85em;
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--pf2e-gm-yellow-bright);
+  line-height: 1;
+}
+
+.pf2e-gs-root .pf2e-gs-dc-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.79em;
+  color: var(--pf2e-gm-text-secondary);
+}
+
+.pf2e-gs-root .pf2e-gs-dc-meta strong {
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-gs-root .pf2e-gs-check-sender {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.pf2e-gs-root .pf2e-gs-select {
+  height: 27px;
+  padding: 2px 6px;
+  background: var(--pf2e-gm-bg-input);
+  color: var(--pf2e-gm-text-white);
+  border: 1px solid var(--pf2e-gm-border-input);
+  border-radius: 4px;
+  font-size: 0.8em;
+}
+
+.pf2e-gs-root .pf2e-gs-adj-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pf2e-gs-root .pf2e-gs-chip {
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  color: var(--pf2e-gm-text-secondary);
+  font-size: 0.77em;
+  font-weight: 600;
+  cursor: pointer;
+  width: auto !important;
+  height: auto !important;
+  transition: all 0.12s ease;
+}
+
+.pf2e-gs-root .pf2e-gs-chip:hover {
+  background: var(--pf2e-gm-bg-btn-hover);
+  color: var(--pf2e-gm-text-white);
+  border-color: var(--pf2e-gm-border-btn);
+}
+
+.pf2e-gs-root .pf2e-gs-chip.is-active {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.22);
+  border-color: var(--pf2e-gm-yellow);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-simple-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.pf2e-gs-root .pf2e-gs-simple-box {
+  padding: 5px 6px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.pf2e-gs-root .pf2e-gs-simple-box:hover {
+  border-color: var(--pf2e-gm-cyan);
+  background: var(--pf2e-gm-bg-elevated);
+}
+
+.pf2e-gs-root .pf2e-gs-simple-box.is-active {
+  border-color: var(--pf2e-gm-yellow);
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.18);
+  box-shadow: 0 0 8px rgba(var(--pf2e-gm-yellow-rgb), 0.25);
+}
+
+.pf2e-gs-root .pf2e-gs-simple-box.is-active .pf2e-gs-simple-dc {
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-simple-rank {
+  font-size: 0.72em;
+  color: var(--pf2e-gm-text-muted);
+  text-transform: uppercase;
+}
+
+.pf2e-gs-root .pf2e-gs-simple-dc {
+  font-size: 1.15em;
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+/* Counteract Calculator */
+.pf2e-gs-root .pf2e-gs-counteract-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pf2e-gs-root .pf2e-gs-stepper-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  font-size: 0.8em;
+}
+
+.pf2e-gs-root .pf2e-gs-stepper-val {
+  min-width: 24px;
+  text-align: center;
+  font-family: monospace;
+  font-weight: 800;
+  font-size: 1.05em;
+  color: var(--pf2e-gm-purple-soft);
+}
+
+.pf2e-gs-root .pf2e-gs-verdict {
+  padding: 5px 9px;
+  border-radius: 5px;
+  font-size: 0.81em;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.pf2e-gs-root .pf2e-gs-verdict.is-crit-succ,
+.pf2e-gs-root .pf2e-gs-verdict.is-succ {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.16);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.55);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-verdict.is-warn {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.16);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.55);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-verdict.is-fail {
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.18);
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.55);
+  color: var(--pf2e-gm-rose-soft);
+}
+
+/* ------------------------------------------------------------------------- */
+/* COMPACT HIGH-DENSITY TABLES                                               */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-gs-root .pf2e-gs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8em;
+  line-height: 1.3;
+}
+
+.pf2e-gs-root .pf2e-gs-table th {
+  text-align: left;
+  padding: 4px 6px;
+  background: var(--pf2e-gm-table-head-bg);
+  color: var(--pf2e-gm-text-cream);
+  font-weight: 700;
+  font-size: 0.88em;
+  border-bottom: 1px solid var(--pf2e-gm-border-red);
+  white-space: nowrap;
+}
+
+.pf2e-gs-root .pf2e-gs-table td {
+  padding: 3.5px 6px;
+  border-bottom: 1px solid rgba(var(--pf2e-gm-cream-rgb), 0.08);
+  color: var(--pf2e-gm-text-secondary);
+  vertical-align: top;
+}
+
+.pf2e-gs-root .pf2e-gs-table tbody tr:hover {
+  background: rgba(var(--pf2e-gm-cream-rgb), 0.04);
+}
+
+.pf2e-gs-root .pf2e-gs-table tr.is-active-level {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.18) !important;
+}
+
+.pf2e-gs-root .pf2e-gs-table tr.is-active-level td {
+  color: var(--pf2e-gm-text-white);
+  font-weight: 700;
+  border-bottom-color: rgba(var(--pf2e-gm-yellow-rgb), 0.45);
+}
+
+.pf2e-gs-root .pf2e-gs-table tr.is-nearby-level {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.06);
+}
+
+.pf2e-gs-root .pf2e-gs-table tr.is-hidden {
+  display: none !important;
+}
+
+.pf2e-gs-root .pf2e-gs-table td.is-num,
+.pf2e-gs-root .pf2e-gs-table th.is-num {
+  text-align: center;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.pf2e-gs-root .pf2e-gs-table td.is-dc {
+  font-weight: 700;
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-table td.is-clickable-lvl {
+  cursor: pointer;
+}
+
+.pf2e-gs-root .pf2e-gs-table td.is-clickable-lvl:hover {
+  color: var(--pf2e-gm-yellow-bright);
+  text-decoration: underline;
+}
+
+/* Badges & Pills */
+.pf2e-gs-root .pf2e-gs-pill {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.78em;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-crit-succ {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.22);
+  color: var(--pf2e-gm-cyan-bright);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.55);
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-succ {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.2);
+  color: var(--pf2e-gm-purple-soft);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.5);
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-fail {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.16);
+  color: var(--pf2e-gm-yellow);
+  border: 1px solid rgba(var(--pf2e-gm-yellow-rgb), 0.45);
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-crit-fail {
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.22);
+  color: var(--pf2e-gm-rose-soft);
+  border: 1px solid rgba(var(--pf2e-gm-pink-rgb), 0.55);
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-pass {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-pill.is-miss {
+  background: rgba(var(--pf2e-gm-cream-rgb), 0.08);
+  color: var(--pf2e-gm-text-dim);
+}
+
+.pf2e-gs-root .pf2e-gs-cost-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: 700;
+  font-family: monospace;
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.22);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.48);
+  color: var(--pf2e-gm-purple-soft);
+  white-space: nowrap;
+}
+
+/* Rules Bullets */
+.pf2e-gs-root .pf2e-gs-bullets {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8em;
+  color: var(--pf2e-gm-text-secondary);
+  line-height: 1.38;
+}
+
+.pf2e-gs-root .pf2e-gs-bullets li strong {
+  color: var(--pf2e-gm-text-cream);
+}
+
+/* Conditions Grid */
+.pf2e-gs-root .pf2e-gs-cond-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 800px) {
+  .pf2e-gs-root .pf2e-gs-cond-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pf2e-gs-root .pf2e-gs-cond-item {
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pf2e-gs-root .pf2e-gs-cond-item.is-hidden {
+  display: none !important;
+}
+
+.pf2e-gs-root .pf2e-gs-cond-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.pf2e-gs-root .pf2e-gs-cond-link {
+  font-weight: 700;
+  font-size: 0.85em;
+  color: var(--pf2e-gm-yellow-bright);
+  cursor: pointer;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: auto !important;
+  height: auto !important;
+  text-align: left;
+}
+
+.pf2e-gs-root .pf2e-gs-cond-link:hover {
+  color: var(--pf2e-gm-text-white);
+  text-decoration: underline;
+}
+
+.pf2e-gs-root .pf2e-gs-cond-desc {
+  font-size: 0.78em;
+  color: var(--pf2e-gm-text-secondary);
+  line-height: 1.32;
+}
+
+/* Encounter Builder Widget */
+.pf2e-gs-root .pf2e-gs-enc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--pf2e-gm-strip-bg);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+}
+
+.pf2e-gs-root .pf2e-gs-enc-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+}
+
+.pf2e-gs-root .pf2e-gs-enc-xp {
+  font-size: 1.25em;
+  font-weight: 800;
+  font-family: monospace;
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-none {
+  background: rgba(var(--pf2e-gm-cream-rgb), 0.1);
+  color: var(--pf2e-gm-text-muted);
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-trivial,
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-low {
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.2);
+  border-color: rgba(var(--pf2e-gm-cyan-rgb), 0.55);
+  color: var(--pf2e-gm-cyan-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-moderate {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.22);
+  border-color: rgba(var(--pf2e-gm-purple-rgb), 0.55);
+  color: var(--pf2e-gm-purple-soft);
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-severe {
+  background: rgba(var(--pf2e-gm-yellow-rgb), 0.2);
+  border-color: rgba(var(--pf2e-gm-yellow-rgb), 0.6);
+  color: var(--pf2e-gm-yellow-bright);
+}
+
+.pf2e-gs-root .pf2e-gs-sev-badge.sev-extreme {
+  background: rgba(var(--pf2e-gm-pink-rgb), 0.22);
+  border-color: rgba(var(--pf2e-gm-pink-rgb), 0.65);
+  color: var(--pf2e-gm-rose-soft);
+}
+
+.pf2e-gs-root .pf2e-gs-enc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pf2e-gs-root .pf2e-gs-enc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 0.78em;
+}
+
+.pf2e-gs-root .pf2e-gs-enc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--pf2e-gm-bg-inset);
+  border: 1px solid var(--pf2e-gm-border-subtle);
+  color: var(--pf2e-gm-text-primary);
+}
+
+.pf2e-gs-root .pf2e-gs-enc-tag button {
+  background: transparent;
+  border: none;
+  color: var(--pf2e-gm-rose-soft);
+  cursor: pointer;
+  padding: 0 2px;
+  font-weight: 700;
+  width: auto !important;
+  height: auto !important;
+}
+
+.pf2e-gs-root .pf2e-gs-empty-search {
+  display: none;
+  text-align: center;
+  padding: 28px 16px;
+  color: var(--pf2e-gm-text-muted);
+  font-size: 0.9em;
+}
+
+.pf2e-gs-root .pf2e-gs-empty-search.is-visible {
+  display: block;
+}

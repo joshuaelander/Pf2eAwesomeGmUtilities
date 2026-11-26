@@ -222,6 +222,9 @@
     "LevelPlanner": {
       "Title": "PF2e Level 1-20 Build Planner"
     },
+    "GmScreen": {
+      "Title": "PF2e Quick-Reference GM Screen"
+    },
     "Settings": {
       "AutoStopOtherMusic": {
         "Name": "Auto-Stop Other Music Tracks",
