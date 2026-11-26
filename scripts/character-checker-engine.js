@@ -1325,6 +1325,11 @@ function findActorFeat(actor, predicate) {
   return (actor.itemTypes?.feat || []).find(predicate) || null;
 }
 
+function getClericDivineFontCount(level) {
+  const lvl = Math.max(1, Number(level || 1));
+  return lvl >= 15 ? 6 : (lvl >= 5 ? 5 : 4);
+}
+
 /**
  * Formats a slots object `{ 1: 3, 2: 2, ... }` into a compact display summary.
  */
@@ -1523,10 +1528,10 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       signatureExpected
     });
 
-    // Cleric Divine Font (Remaster: 4 slots at L1-14, 5 at L15-18, 6 at L19-20 at highest spell rank)
+    // Cleric Divine Font (Remaster Player Core: 4 slots at Lv 1-4, 5 at Lv 5-14, 6 at Lv 15-20 at highest spell rank)
     if (def.hasDivineFont) {
       const fontRank = Math.min(10, Math.ceil(level / 2));
-      const fontCount = level >= 19 ? 6 : (level >= 15 ? 5 : 4);
+      const fontCount = getClericDivineFontCount(level);
       const fontSlots = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
       fontSlots[fontRank] = fontCount;
       const fontChoice = detectClericDivineFontChoice(actor, feats, featSlugs);
@@ -5062,7 +5067,7 @@ async function prepareDivineFontSlots(actor, entryId, spec) {
 
   const level = Math.max(1, Number(actor.level ?? actor.system?.details?.level?.value ?? 1));
   const fontRank = Math.max(1, Math.min(10, Number(spec.divineFontRank || Math.ceil(level / 2))));
-  const fontCount = Math.max(1, Number(spec.divineFontCount || spec.slots?.[fontRank] || (level >= 19 ? 6 : (level >= 15 ? 5 : 4))));
+  const fontCount = Math.max(1, Number(spec.divineFontCount || spec.slots?.[fontRank] || getClericDivineFontCount(level)));
   const desiredLower = fontChoice === "harm" ? "harm" : "heal";
   const fontSpellTitle = fontChoice === "harm" ? "Harm" : "Heal";
   const hasVersatileFont = actorHasFeatSlug(actor, ["versatile-font"]);
