@@ -15,6 +15,11 @@
 
 import { MODULE_ID } from "./constants.js";
 import {
+  SPELLBOOK_ARCHETYPE_SLUGS,
+  SPELLBOOK_CLASS_SLUGS,
+  computeExpectedSlotsForSourceAtLevel
+} from "./spellcasting-rules.js";
+import {
   ABILITY_LABELS,
   CORE_SKILL_SLUGS,
   TRADITION_LABELS,
@@ -756,9 +761,6 @@ function checkPlannedFeatPrereqs(plannedFeat, slotLevel, prereqState) {
   return warnings;
 }
 
-const SPELLBOOK_CLASS_SLUGS = new Set(["wizard", "witch", "magus"]);
-const SPELLBOOK_ARCHETYPE_SLUGS = new Set(["wizard", "witch", "magus", "hedge-mage"]);
-
 /**
  * Formats a concise human-readable prompt for how many spells remain to be picked for a milestone.
  * e.g. "Choose 2 Rank 2 spells", "Choose 1 more Rank 2 spell", "Choose 1 more spell (up to Rank 3)", "2/2 planned ✓".
@@ -905,87 +907,15 @@ function computeSpellMilestonesByLevel(baseReport) {
   const sources = baseReport?.spellcasting?.sources || [];
   if (sources.length === 0) return byLevel;
 
-  // Determine highest rank & slot table for each non-focus, non-font casting source at level L
-  const getSlotsAtLevel = (src, lvl) => {
-    const slots = {};
-    if (src.sourceKind === "archetype") {
-      if (lvl >= 4) slots[1] = 1;
-      if (lvl >= 6) slots[2] = 1;
-      if (lvl >= 8) slots[3] = 1;
-      if (lvl >= 12) slots[4] = 1;
-      if (lvl >= 14) slots[5] = 1;
-      if (lvl >= 16) slots[6] = 1;
-      if (lvl >= 18) slots[7] = 1;
-      if (lvl >= 20) slots[8] = 1;
-      // Breadth feat (Lv 8+): +1 slot for every rank except the top two
-      const hasBreadth = Boolean(src.hasBreadth || /\bbreadth\b/i.test(String(src.expectedSpellsNote || "")));
-      let maxRank = 0;
-      for (let r = 8; r >= 1; r--) {
-        if (slots[r] > 0) { maxRank = r; break; }
-      }
-      if (hasBreadth && lvl >= 8 && maxRank >= 3) {
-        for (let r = 1; r <= maxRank - 2; r++) {
-          if (slots[r] > 0) slots[r] += 1;
-        }
-      }
-      return { slots, maxRank };
-    }
-
-    // Class full caster (2, 3, or 4 slots per rank; Magus/Summoner cap at 9th; Animist Apparition gets 10th at Lv 19)
-    const slug = src.classSlug || "";
-    const noteLower = String(src.expectedSpellsNote || "").toLowerCase();
-    const isBattleHarbinger = slug === "cleric" && noteLower.includes("battle harbinger");
-    if (isBattleHarbinger) {
-      if (lvl <= 1) { slots[1] = 1; return { slots, maxRank: 1 }; }
-      if (lvl === 2) { slots[1] = 2; return { slots, maxRank: 1 }; }
-      if (lvl === 3) { slots[1] = 2; slots[2] = 1; return { slots, maxRank: 2 }; }
-      if (lvl === 4) { slots[1] = 2; slots[2] = 2; return { slots, maxRank: 2 }; }
-      if (lvl >= 20) { slots[9] = 2; slots[10] = 2; return { slots, maxRank: 10 }; }
-      const topRank = Math.min(9, Math.ceil(lvl / 2));
-      slots[topRank - 1] = 2;
-      slots[topRank] = 2;
-      return { slots, maxRank: topRank };
-    }
-
-    const isAnimistApparition = slug === "animist" && src.castingType === "spontaneous";
-    const isAnimistPrepared = slug === "animist" && src.castingType === "prepared";
-    const hasWizardSchool = slug === "wizard" && noteLower.includes("arcane school");
-    const isFlexible = Boolean(src.flexible || noteLower.includes("flexible spellcaster"));
-    const isWellspring = src.castingType === "spontaneous" && noteLower.includes("wellspring mage");
-
-    const maxPerRank = (slug === "sorcerer" || slug === "oracle")
-      ? 4
-      : ((slug === "psychic" || slug === "magus" || slug === "summoner" || slug === "necromancer" || isAnimistPrepared)
-        ? 2
-        : (isAnimistApparition ? 1 : 3));
-    const includeTenth = slug !== "magus" && slug !== "summoner" && !isAnimistPrepared;
-    const bonusPerRank = hasWizardSchool ? 1 : 0;
-    let maxRank = 0;
-    for (let r = 1; r <= 9; r++) {
-      const unlock = r * 2 - 1;
-      if (lvl < unlock) slots[r] = 0;
-      else if (maxPerRank === 1) slots[r] = 1;
-      else if (isFlexible && maxPerRank >= 3) slots[r] = 2 + bonusPerRank;
-      else slots[r] = (lvl === unlock ? Math.max(1, maxPerRank - 1) : maxPerRank) + bonusPerRank;
-
-      if (slots[r] > 1 && isFlexible && maxPerRank < 3) slots[r] = Math.max(1, slots[r] - 1);
-      if (slots[r] > 1 && isWellspring) slots[r] = Math.max(1, slots[r] - 1);
-      if (slots[r] > 0) maxRank = r;
-    }
-    if (includeTenth && lvl >= 19) {
-      slots[10] = 1;
-      maxRank = 10;
-    }
-    return { slots, maxRank };
-  };
-
   for (let lvl = 1; lvl <= 20; lvl++) {
     const notes = [];
     for (const src of sources) {
       if (src.isDivineFont) continue;
       if (src.isFocus) continue; // Focus spells auto-heighten every odd level automatically
-      const cur = getSlotsAtLevel(src, lvl);
-      const prev = lvl > 1 ? getSlotsAtLevel(src, lvl - 1) : { slots: {}, maxRank: 0 };
+      const cur = computeExpectedSlotsForSourceAtLevel(src, lvl, { projectAllArchetypeTiers: true });
+      const prev = lvl > 1
+        ? computeExpectedSlotsForSourceAtLevel(src, lvl - 1, { projectAllArchetypeTiers: true })
+        : { slots: {}, maxRank: 0 };
 
       const gained = [];
       const requiredByRank = {};
@@ -1034,7 +964,9 @@ function computeSpellMilestonesByLevel(baseReport) {
           classSlug: slug,
           sourceKind: src.sourceKind || "class",
           tradition: src.tradition || "",
-          traditionLabel: TRADITION_LABELS[src.tradition] || "Any",
+          traditionLabel: src.isElementalist
+            ? `Elemental (${TRADITION_LABELS[src.tradition] || "Any"})`
+            : (TRADITION_LABELS[src.tradition] || "Any"),
           castingType: src.castingType,
           maxRank: cur.maxRank || 1,
           unlockedNewRank,
@@ -1701,18 +1633,18 @@ export function buildLevelRoadmap(actor, options = {}) {
       const pickState = isFuture
         ? formatSpellPickPrompt(adjustedMilestone, matchedPlanned, claimedCurriculumSpells)
         : {
-            pickedCount: 0,
-            requiredCount: adjustedMilestone.requiredTotal || 0,
-            remainingCount: 0,
-            remainingByRank: {},
-            complete: true,
-            isMandatory: false,
-            promptText: adjustedMilestone.learnMode === "upto-rank"
-              ? `Learned +${adjustedMilestone.requiredTotal || 2} spells (up to Rank ${adjustedMilestone.maxRank})`
-              : (adjustedMilestone.learnMode === "by-rank" && adjustedMilestone.requiredTotal > 0
-                ? `Learned ${adjustedMilestone.requiredTotal} new spell${adjustedMilestone.requiredTotal === 1 ? "" : "s"}`
-                : `Slots: ${adjustedMilestone.fullSlotsText}`)
-          };
+          pickedCount: 0,
+          requiredCount: adjustedMilestone.requiredTotal || 0,
+          remainingCount: 0,
+          remainingByRank: {},
+          complete: true,
+          isMandatory: false,
+          promptText: adjustedMilestone.learnMode === "upto-rank"
+            ? `Learned +${adjustedMilestone.requiredTotal || 2} spells (up to Rank ${adjustedMilestone.maxRank})`
+            : (adjustedMilestone.learnMode === "by-rank" && adjustedMilestone.requiredTotal > 0
+              ? `Learned ${adjustedMilestone.requiredTotal} new spell${adjustedMilestone.requiredTotal === 1 ? "" : "s"}`
+              : `Slots: ${adjustedMilestone.fullSlotsText}`)
+        };
       return {
         ...adjustedMilestone,
         ...pickState
@@ -1762,19 +1694,19 @@ export function buildLevelRoadmap(actor, options = {}) {
     const formulaMilestone = isAlchemist
       ? (lvl === 1
         ? {
-            gain: 8,
-            expectedTotal: 8,
-            maxItemLevel: 1,
-            isStarting: true,
-            text: "8 Starting Common Alchemical Formulas (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)"
-          }
+          gain: 8,
+          expectedTotal: 8,
+          maxItemLevel: 1,
+          isStarting: true,
+          text: "8 Starting Common Alchemical Formulas (4 Alchemical Crafting + 2 Formula Book + 2 Research Field)"
+        }
         : {
-            gain: 2,
-            expectedTotal: 8 + (lvl - 1) * 2,
-            maxItemLevel: lvl,
-            isStarting: false,
-            text: `+2 Free Common Alchemical Formulas (Item Lv ≤ ${lvl} · Total by Lv ${lvl}: ${8 + (lvl - 1) * 2})`
-          })
+          gain: 2,
+          expectedTotal: 8 + (lvl - 1) * 2,
+          maxItemLevel: lvl,
+          isStarting: false,
+          text: `+2 Free Common Alchemical Formulas (Item Lv ≤ ${lvl} · Total by Lv ${lvl}: ${8 + (lvl - 1) * 2})`
+        })
       : null;
     const hasFormulaMilestone = Boolean(formulaMilestone);
     const isAlchemistFutureGain = Boolean(isAlchemist && isFuture && lvl >= 2);
@@ -3665,31 +3597,28 @@ function getStoredSourceSkillRank(actor, slug) {
  */
 function estimateMaxSpellRankAtLevel(src, level, deletedFeatSlugs = new Set()) {
   if (!src || src.isFocus || src.castingType === "focus") return 10;
-  if (src.isDivineFont) return Math.min(10, Math.ceil(level / 2));
+  if (src.isDivineFont) {
+    return src.isBattleFont
+      ? (level >= 20 ? 10 : Math.min(9, Math.ceil(level / 2)))
+      : Math.min(10, Math.ceil(level / 2));
+  }
 
   if (src.sourceKind === "archetype") {
     const slugLower = String(src.classSlug || "").toLowerCase();
     const deletedHas = (tier) => Array.from(deletedFeatSlugs).some(s =>
       s.includes(tier) && s.includes("spellcasting") && (!slugLower || s.includes(slugLower))
     );
-    const hasBasic = level >= 4 && !deletedHas("basic");
-    const hasExpert = level >= 12 && !deletedHas("expert");
-    const hasMaster = level >= 18 && !deletedHas("master");
-
-    if (hasMaster && level >= 20) return 8;
-    if (hasMaster && level >= 18) return 7;
-    if (hasExpert && level >= 16) return 6;
-    if (hasExpert && level >= 14) return 5;
-    if (hasExpert && level >= 12) return 4;
-    if (hasBasic && level >= 8) return 3;
-    if (hasBasic && level >= 6) return 2;
-    if (hasBasic && level >= 4) return 1;
-    return 0;
+    const hasBasic = (src.hasBasic !== undefined ? Boolean(src.hasBasic) : true) && !deletedHas("basic");
+    const hasExpert = (src.hasExpert !== undefined ? Boolean(src.hasExpert) : true) && !deletedHas("expert");
+    const hasMaster = (src.hasMaster !== undefined ? Boolean(src.hasMaster) : true) && !deletedHas("master");
+    return computeExpectedSlotsForSourceAtLevel(
+      { ...src, hasBasic, hasExpert, hasMaster },
+      level,
+      { projectAllArchetypeTiers: false }
+    ).maxRank;
   }
 
-  const slug = String(src.classSlug || "").toLowerCase();
-  const cap = (slug === "magus" || slug === "summoner" || (slug === "animist" && src.castingType === "prepared")) ? 9 : 10;
-  return Math.min(cap, Math.ceil(level / 2));
+  return computeExpectedSlotsForSourceAtLevel(src, level).maxRank;
 }
 
 /**
@@ -4926,8 +4855,8 @@ async function postDeLevelReminderToChat(actor, revertResult, { whisper = true }
       <div class="pf2e-lp-chat-section">
         <div class="pf2e-lp-chat-sec-title ${manualActions.length > 0 ? "is-alert" : "is-ok"}">
           ${manualActions.length > 0
-            ? `Manual Cleanup Checklist (${manualActions.length} item${manualActions.length === 1 ? "" : "s"})`
-            : "Manual Cleanup Checklist"}
+      ? `Manual Cleanup Checklist (${manualActions.length} item${manualActions.length === 1 ? "" : "s"})`
+      : "Manual Cleanup Checklist"}
         </div>
         <ul class="pf2e-lp-chat-list">${manualRowsHtml}</ul>
       </div>
