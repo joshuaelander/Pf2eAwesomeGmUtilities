@@ -15,14 +15,20 @@ import {
   ABILITY_LABELS,
   CASTING_TYPE_LABELS,
   TRADITION_LABELS,
+  acknowledgeCheckerIssue,
   addSingleSpellToEntry,
   analyzeCharacter,
   capitalize,
+  clearCheckerOverrides,
   collectCandidateActors,
   createOrSyncAllSpellcastingEntries,
   createSpellcastingEntry,
+  getCheckerOverrides,
   normalizeSlug,
   postChecklistToChat,
+  restoreCheckerIssue,
+  sanitizeIssueId,
+  saveCheckerOverrides,
   syncSpellcastingEntrySlots
 } from "./character-checker-engine.js";
 import {
@@ -235,14 +241,30 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         };
       });
 
-      selectedReport.skills.isTrainedMissing = selectedReport.skills.trainedStatus === "missing";
-      selectedReport.skills.isIncreasesMissing = selectedReport.skills.increasesStatus === "missing";
-      selectedReport.skills.isLoreMissing = selectedReport.skills.missingLoreCount > 0;
+      const ackMap = selectedReport.overrides?.acknowledgedIssues || {};
+      const isAck = (id) => Boolean(id && ackMap[sanitizeIssueId(id)]);
+
+      const activeLoreAckId = selectedReport.skills.hasMissingBgLore ? "skills:missing-bg-lore" : "skills:missing-lore";
+      selectedReport.skills.isTrainedMissing = selectedReport.skills.trainedStatus === "missing" && !isAck("skills:missing-trained");
+      selectedReport.skills.isIncreasesMissing = selectedReport.skills.increasesStatus === "missing" && !isAck("skills:missing-increases");
+      selectedReport.skills.isLoreMissing = selectedReport.skills.missingLoreCount > 0 && !isAck(activeLoreAckId);
+      const hasUnackedOverCap = (selectedReport.skills.overCapSkills || []).some(s => !isAck(s.issueId));
+      const hasUnackedExcessInc = selectedReport.skills.excessIncreases > 0 && !isAck("skills:excess-increases");
+      selectedReport.skills.isTrainedWarn = Boolean(selectedReport.skills.isTrainedMissing || selectedReport.skills.isLoreMissing);
+      selectedReport.skills.isIncreasesWarn = Boolean(selectedReport.skills.isIncreasesMissing || hasUnackedExcessInc || hasUnackedOverCap);
       selectedReport.skills.knownLoresText = selectedReport.skills.knownLoreNames.join(", ");
       selectedReport.skills.missingBgLoresText = selectedReport.skills.missingBgLores.join(", ");
       selectedReport.skills.intModSigned = selectedReport.skills.intMod >= 0
         ? `+${selectedReport.skills.intMod}`
         : String(selectedReport.skills.intMod);
+
+      const ov = selectedReport.overrides || {};
+      let overrideBadgeCount = selectedReport.acknowledgedCount || 0;
+      if (ov.bonusTrainedSkills) overrideBadgeCount++;
+      if (ov.bonusSkillIncreases) overrideBadgeCount++;
+      if (ov.bonusLores) overrideBadgeCount++;
+      if (ov.bonusLanguages) overrideBadgeCount++;
+      selectedReport.overrideBadgeCount = overrideBadgeCount;
 
       // Enrich Core Build items, Feat slots, Boosts, Languages & Formulas with lightweight action flags
       selectedReport.canEditActor = canEditActor;
@@ -250,6 +272,8 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         selectedReport.skills.isTrainedMissing
         || selectedReport.skills.isLoreMissing
         || selectedReport.skills.isIncreasesMissing
+        || hasUnackedExcessInc
+        || hasUnackedOverCap
       );
       selectedReport.hasIncompleteBoosts = Boolean(
         !selectedReport.attributes.manual
@@ -366,7 +390,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
     if (!this._onKeyDownBound) {
       this._onKeyDownBound = (e) => {
         if (e.key === "Escape" && this.rendered) {
-          if (document.querySelector(".pf2e-lp-picker-dialog")) return;
+          if (document.querySelector(".pf2e-lp-picker-dialog, .pf2e-cc-gm-adj-dialog")) return;
           e.preventDefault();
           this.close();
         }
@@ -559,6 +583,35 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         ui.notifications?.info(`Posted character completeness checklist for ${actor.name} to chat.`);
         break;
 
+      case "gm-adjustments":
+        if (!actor || !game.user?.isGM) return;
+        await this._openGmAdjustmentsDialog(actor);
+        break;
+
+      case "acknowledge-issue": {
+        if (!actor || !game.user?.isGM) return;
+        const issueId = btn.dataset.issueId;
+        if (!issueId) return;
+        const ok = await acknowledgeCheckerIssue(actor, issueId);
+        if (ok) {
+          ui.notifications?.info(`Accepted item for ${actor.name}.`);
+          this.render({ force: false });
+        }
+        break;
+      }
+
+      case "restore-issue": {
+        if (!actor || !game.user?.isGM) return;
+        const issueId = btn.dataset.issueId;
+        if (!issueId) return;
+        const ok = await restoreCheckerIssue(actor, issueId);
+        if (ok) {
+          ui.notifications?.info(`Restored item to ${actor.name}'s checklist.`);
+          this.render({ force: false });
+        }
+        break;
+      }
+
       case "sync-dual-class": {
         if (!actor || typeof game.pf2eAwesomeVariantRules?.syncSecondaryClassFeatures !== "function") return;
         await game.pf2eAwesomeVariantRules.syncSecondaryClassFeatures(actor, { refreshSource: true, notify: true });
@@ -656,6 +709,125 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         this.render({ force: false });
         break;
       }
+    }
+  }
+
+  async _openGmAdjustmentsDialog(actor) {
+    if (!actor || !game.user?.isGM) return;
+    const esc = foundry.utils.escapeHTML;
+    const ov = getCheckerOverrides(actor);
+    const ackCount = Object.keys(ov.acknowledgedIssues || {}).length;
+    const hasAnySaved = Boolean(
+      ov.bonusTrainedSkills
+      || ov.bonusSkillIncreases
+      || ov.bonusLores
+      || ov.bonusLanguages
+      || ov.note
+      || ackCount > 0
+    );
+
+    const content = `
+      <div class="pf2e-cc-gm-adj-form">
+        <p class="pf2e-cc-gm-adj-intro">
+          Adjust expected totals for <strong>${esc(actor.name)}</strong> when granting GM rewards, campaign boons, or homebrew bonuses.
+        </p>
+
+        <div class="pf2e-cc-gm-adj-grid">
+          <label class="pf2e-cc-gm-adj-field">
+            <span>Bonus Trained Skills</span>
+            <input type="number" name="bonusTrainedSkills" min="-10" max="20" step="1" value="${ov.bonusTrainedSkills}" />
+            <small>Adds to expected trained skills (e.g. +1 quest reward).</small>
+          </label>
+
+          <label class="pf2e-cc-gm-adj-field">
+            <span>Bonus Skill Increases (E/M/L)</span>
+            <input type="number" name="bonusSkillIncreases" min="-10" max="20" step="1" value="${ov.bonusSkillIncreases}" />
+            <small>Adds extra E/M/L skill increases beyond class/archetype.</small>
+          </label>
+
+          <label class="pf2e-cc-gm-adj-field">
+            <span>Bonus Lore Skills</span>
+            <input type="number" name="bonusLores" min="0" max="20" step="1" value="${ov.bonusLores}" />
+            <small>Extra GM-gifted Lores so they don't eat into core trained picks.</small>
+          </label>
+
+          <label class="pf2e-cc-gm-adj-field">
+            <span>Bonus Languages</span>
+            <input type="number" name="bonusLanguages" min="-10" max="20" step="1" value="${ov.bonusLanguages}" />
+            <small>Extra languages granted by campaign or GM reward.</small>
+          </label>
+        </div>
+
+        <label class="pf2e-cc-gm-adj-field pf2e-cc-gm-adj-full">
+          <span>GM Note (Optional)</span>
+          <input type="text" name="note" maxlength="240" value="${esc(ov.note)}" placeholder="e.g., Awarded Otari Lore &amp; +1 Diplomacy increase in Ch. 2" />
+        </label>
+
+        ${ackCount > 0 ? `
+          <div class="pf2e-cc-gm-adj-hint">
+            <i class="fa-solid fa-check-double"></i>
+            <span>${ackCount} checklist item${ackCount === 1 ? "" : "s"} currently accepted on this character. Click <strong>Reset All</strong> below to clear both bonuses and accepted items.</span>
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    const buttons = [
+      {
+        action: "save",
+        label: "Save Adjustments",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (event, button, dialog) => {
+          const root = button?.form || dialog?.element || event?.target?.closest?.(".application");
+          const getVal = (name) => root?.querySelector?.(`[name="${name}"]`)?.value ?? "";
+          return {
+            action: "save",
+            patch: {
+              bonusTrainedSkills: Number(getVal("bonusTrainedSkills") || 0),
+              bonusSkillIncreases: Number(getVal("bonusSkillIncreases") || 0),
+              bonusLores: Number(getVal("bonusLores") || 0),
+              bonusLanguages: Number(getVal("bonusLanguages") || 0),
+              note: String(getVal("note") || "").trim()
+            }
+          };
+        }
+      },
+      ...(hasAnySaved ? [{
+        action: "reset",
+        label: "Reset All",
+        icon: "fa-solid fa-rotate-left",
+        callback: () => ({ action: "reset" })
+      }] : []),
+      {
+        action: "cancel",
+        label: "Cancel",
+        icon: "fa-solid fa-xmark",
+        callback: () => null
+      }
+    ];
+
+    const res = await foundry.applications.api.DialogV2.wait({
+      window: {
+        title: `GM Adjustments — ${actor.name}`,
+        icon: "fa-solid fa-scale-balanced"
+      },
+      classes: ["pf2e-gm-utility", "pf2e-gm-utility-dialog", "pf2e-cc-gm-adj-dialog"],
+      position: { width: 470 },
+      content,
+      buttons,
+      rejectClose: false
+    });
+
+    if (!res || typeof res !== "object") return;
+    if (res.action === "reset") {
+      await clearCheckerOverrides(actor);
+      ui.notifications?.info(`Cleared all GM adjustments & accepted items for ${actor.name}.`);
+      this.render({ force: false });
+    } else if (res.action === "save") {
+      await saveCheckerOverrides(actor, res.patch);
+      ui.notifications?.info(`Saved GM adjustments for ${actor.name}.`);
+      this.render({ force: false });
     }
   }
 
@@ -760,6 +932,8 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
 
     const esc = foundry.utils.escapeHTML;
     const isEditable = (sheet.isEditable ?? actor.isOwner) && canAutoModifySpellcasting(actor);
+    const ackMap = report.overrides?.acknowledgedIssues || {};
+    const isAck = (id) => Boolean(id && ackMap[sanitizeIssueId(id)]);
 
     // ---------------------------------------------------------------------
     // A. Character Tab: Compact Build Completeness Strip
@@ -778,7 +952,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
 
       const summaryHtml = report.actionableMissingCount > 0
         ? `<strong>Build Check (${report.completenessPct}%):</strong> <span class="pf2e-cc-sheet-missing-list">${esc(topMissing)}${report.actionableMissingCount > 3 ? ` (+${report.actionableMissingCount - 3} more)` : ""}</span>`
-        : `<strong>Build Check (100%):</strong> <span class="pf2e-cc-sheet-ok-text">Complete for Lv ${report.level}</span>`;
+        : `<strong>Build Check (${report.completenessPct}%):</strong> <span class="pf2e-cc-sheet-ok-text">Complete for Lv ${report.level}${report.acknowledgedCount > 0 ? ` (${report.acknowledgedCount} accepted)` : ""}</span>`;
 
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-banner-main">
@@ -824,8 +998,16 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       const lang = report.languages;
       const isExpanded = expandedSkillsGuideActors.has(actor.id);
 
-      const hasMissing = sk.missingTrained > 0 || sk.missingIncreases > 0 || sk.missingLoreCount > 0 || sk.hasMissingBgLore || lang.missing > 0;
-      const hasSoftWarn = sk.overCapSkills.length > 0 || sk.excessIncreases > 0;
+      const unackedMissingTrained = sk.missingTrained > 0 && !isAck("skills:missing-trained");
+      const unackedMissingInc = sk.missingIncreases > 0 && !isAck("skills:missing-increases");
+      const unackedMissingBgLore = sk.hasMissingBgLore && !isAck("skills:missing-bg-lore");
+      const unackedMissingLore = !sk.hasMissingBgLore && sk.missingLoreCount > 0 && !isAck("skills:missing-lore");
+      const unackedMissingLang = lang.expected > 0 && lang.missing > 0 && !isAck("languages:missing");
+      const unackedOverCap = (sk.overCapSkills || []).filter(s => !isAck(s.issueId));
+      const unackedExcessInc = sk.excessIncreases > 0 && !isAck("skills:excess-increases");
+
+      const hasMissing = unackedMissingTrained || unackedMissingInc || unackedMissingBgLore || unackedMissingLore || unackedMissingLang;
+      const hasSoftWarn = unackedOverCap.length > 0 || unackedExcessInc;
       const statusCls = hasMissing ? "critical" : (hasSoftWarn ? "warning" : "complete");
 
       const bar = document.createElement("div");
@@ -834,30 +1016,32 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       const missingParts = [];
       const okParts = [];
 
-      if (sk.missingTrained > 0) {
+      if (unackedMissingTrained) {
         missingParts.push(`Missing ${sk.missingTrained} Trained (${sk.currentTrained}/${sk.expectedTrained})`);
       } else {
         okParts.push(`Trained ${sk.currentTrained}/${sk.expectedTrained}`);
       }
 
-      if (sk.missingIncreases > 0) {
+      if (unackedMissingInc) {
         missingParts.push(`Missing ${sk.missingIncreases} Increase${sk.missingIncreases === 1 ? "" : "s"} (${sk.spentIncreases}/${sk.expectedIncreases})`);
       } else {
         okParts.push(`Increases ${sk.spentIncreases}/${sk.expectedIncreases}`);
       }
 
-      if (sk.missingBgLores.length > 0) {
-        missingParts.push(`Missing BG Lore: ${sk.missingBgLores.join(", ")}`);
-      } else if (sk.hasMissingBgLore) {
-        missingParts.push(`Missing BG Lore (${sk.loreCount}/${sk.bgLoreCount})`);
-      } else if (sk.missingLoreCount > 0) {
+      if (unackedMissingBgLore) {
+        if (sk.missingBgLores.length > 0) {
+          missingParts.push(`Missing BG Lore: ${sk.missingBgLores.join(", ")}`);
+        } else {
+          missingParts.push(`Missing BG Lore (${sk.loreCount}/${sk.bgLoreCount})`);
+        }
+      } else if (unackedMissingLore) {
         missingParts.push(`Missing ${sk.missingLoreCount} Lore (${sk.loreCount}/${sk.expectedMinLores})`);
       } else if (sk.expectedMinLores > 0 || sk.loreCount > 0) {
         okParts.push(`Lore ${sk.loreCount}${sk.expectedMinLores > 0 ? `/${sk.expectedMinLores}` : ""}`);
       }
 
       if (lang.expected > 0) {
-        if (lang.missing > 0) {
+        if (unackedMissingLang) {
           missingParts.push(`Missing ${lang.missing} Language${lang.missing === 1 ? "" : "s"} (${lang.current}/${lang.expected})`);
         } else {
           okParts.push(`Languages ${lang.current}/${lang.expected}`);
@@ -865,10 +1049,10 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       }
 
       const warnParts = [];
-      if (sk.overCapSkills.length > 0) {
-        warnParts.push(`Above Lv cap: ${sk.overCapSkills.map(s => `${s.label} (${s.rankLabel} Lv ${s.requiredLevel}+)`).join(", ")}`);
+      if (unackedOverCap.length > 0) {
+        warnParts.push(`Above Lv cap: ${unackedOverCap.map(s => `${s.label} (${s.rankLabel} Lv ${s.requiredLevel}+)`).join(", ")}`);
       }
-      if (sk.excessIncreases > 0) {
+      if (unackedExcessInc) {
         warnParts.push(`${sk.excessIncreases} extra increase${sk.excessIncreases === 1 ? "" : "s"} spent`);
       }
 
@@ -890,6 +1074,19 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       if (okParts.length > 0) detailSegments.push(`<span class="pf2e-cc-sheet-ok-text">${esc(okParts.join(" · "))}</span>`);
 
       const compactIncLevels = formatCompactLevels(sk.unlockedIncreaseLevels, sk.increaseLevelsText);
+      const incSuffix = [
+        sk.isFastProgression ? "(Fast Progression)" : "",
+        sk.increaseBonusText ? `[${sk.increaseBonusText}]` : ""
+      ].filter(Boolean).join(" ");
+
+      const extraSublines = [];
+      if (sk.hasAutoSkillUpgrades) {
+        extraSublines.push(`<div class="pf2e-cc-sheet-subline is-muted"><strong>Auto-Upgraded:</strong> ${esc(sk.autoSkillUpgradesText)}</div>`);
+      }
+      if (report.hasGmBonuses) {
+        const gmTxt = [report.gmBonusesSummary, report.overrides?.note ? `"${report.overrides.note}"` : ""].filter(Boolean).join(" — ");
+        extraSublines.push(`<div class="pf2e-cc-sheet-subline pf2e-cc-sheet-auto-line"><strong>GM Bonuses:</strong> ${esc(gmTxt)}</div>`);
+      }
 
       bar.innerHTML = `
         <div class="pf2e-cc-sheet-collapsible-head">
@@ -908,8 +1105,9 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
           <div class="pf2e-cc-sheet-detail-card">
             <div class="pf2e-cc-sheet-subline">${detailSegments.join(' <span class="pf2e-cc-sheet-sep">·</span> ')}</div>
             <div class="pf2e-cc-sheet-subline is-muted">
-              ${esc(sk.formulaText)} · Increases at Lv ${esc(compactIncLevels)}${sk.isFastProgression ? " (Fast Progression)" : ""}
+              ${esc(sk.formulaText)} · Increases at Lv ${esc(compactIncLevels)}${incSuffix ? ` ${esc(incSuffix)}` : ""}
             </div>
+            ${extraSublines.join("")}
           </div>
         </div>
       `;
@@ -934,28 +1132,34 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       const sp = report.spellcasting;
       const isExpanded = expandedSpellGuideActors.has(actor.id);
       const totalSources = sp.sources.length;
-      const readyCount = sp.sources.filter(s => s.status === "complete").length;
-      const incompleteSources = sp.sources.filter(s => s.status === "incomplete");
+      const unackedMissingSources = sp.sources.filter(s => !s.entryExists && !isAck(`spells:missing-entry:${s.key}`));
+      const unackedOutdatedSources = sp.sources.filter(s => s.entryExists && s.slotsOutdated && !isAck(`spells:slots-outdated:${s.key}`));
+      const incompleteSources = sp.sources.filter(s =>
+        s.entryExists
+        && s.status === "incomplete"
+        && !isAck(s.isFocus ? `spells:focus-missing:${s.key}` : `spells:incomplete:${s.key}`)
+      );
+      const readyCount = totalSources - unackedMissingSources.length - unackedOutdatedSources.length - incompleteSources.length;
 
-      const hasCritical = sp.missingEntryCount > 0 || incompleteSources.length > 0;
-      const statusCls = hasCritical ? "critical" : (sp.outdatedSlotCount > 0 ? "warning" : "complete");
+      const hasCritical = unackedMissingSources.length > 0 || incompleteSources.length > 0;
+      const statusCls = hasCritical ? "critical" : (unackedOutdatedSources.length > 0 ? "warning" : "complete");
 
       const panel = document.createElement("div");
       panel.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-collapsible pf2e-cc-sheet-spells-bar status-${statusCls} ${isExpanded ? "" : "is-collapsed"}`;
 
       const headerSegments = [];
-      if (sp.missingEntryCount > 0) {
-        headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${sp.missingEntryCount} Missing ${sp.missingEntryCount === 1 ? "Entry" : "Entries"}</span>`);
+      if (unackedMissingSources.length > 0) {
+        headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${unackedMissingSources.length} Missing ${unackedMissingSources.length === 1 ? "Entry" : "Entries"}</span>`);
       }
-      if (sp.outdatedSlotCount > 0) {
-        headerSegments.push(`<span class="pf2e-cc-sheet-warn-text">${sp.outdatedSlotCount} Outdated Slots</span>`);
+      if (unackedOutdatedSources.length > 0) {
+        headerSegments.push(`<span class="pf2e-cc-sheet-warn-text">${unackedOutdatedSources.length} Outdated Slots</span>`);
       }
       if (incompleteSources.length > 0) {
         const incompleteSummary = incompleteSources
           .map(s => `${s.title} (${s.spellsMissingNote || "Needs Spells"})`)
           .join(" · ");
         headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${readyCount}/${totalSources} Ready — ${esc(incompleteSummary)}</span>`);
-      } else if (sp.missingEntryCount === 0 && sp.outdatedSlotCount === 0) {
+      } else if (unackedMissingSources.length === 0 && unackedOutdatedSources.length === 0) {
         headerSegments.push(`<span class="pf2e-cc-sheet-ok-text">${readyCount}/${totalSources} Ready</span>`);
       }
 
@@ -1174,24 +1378,26 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     // ---------------------------------------------------------------------
     const featsTab = root.querySelector('.tab[data-tab="feats"]');
     if (featsTab && (report.feats.totalSlots > 0 || report.feats.hasMissingDualFeatures) && !featsTab.querySelector(".pf2e-cc-sheet-feats-bar")) {
-      const hasIssues = report.feats.emptySlotsTotal > 0 || report.feats.hasMissingDualFeatures;
+      const unackedEmptyGroups = report.feats.groups.filter(g => g.empty > 0 && !isAck(`feats:empty-${g.id}`));
+      const unackedEmptyTotal = unackedEmptyGroups.reduce((sum, g) => sum + g.empty, 0);
+      const unackedMissingDual = report.feats.hasMissingDualFeatures && !isAck("feats:missing-dual-features");
+      const hasIssues = unackedEmptyTotal > 0 || unackedMissingDual;
       const bar = document.createElement("div");
       bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-feats-bar status-${hasIssues ? "critical" : "complete"}`;
 
-      const emptySummaries = report.feats.groups
-        .filter(g => g.empty > 0)
+      const emptySummaries = unackedEmptyGroups
         .map(g => {
           const compactLvls = formatCompactLevels(g.emptyLevels, g.emptyLevelsText);
           return `${g.label} (Lv ${compactLvls})`;
         })
         .join(" · ");
 
-      const dualNote = report.feats.hasMissingDualFeatures
+      const dualNote = unackedMissingDual
         ? `<div class="pf2e-cc-sheet-subline is-missing">${report.feats.missingDualFeatures.length} Dual Class (${esc(report.dualClassName)}) class feature(s) missing for Level ${report.level}.</div>`
         : "";
 
       const canSyncDual = Boolean(
-        report.feats.hasMissingDualFeatures
+        unackedMissingDual
         && (sheet.isEditable ?? actor.isOwner)
         && typeof game.pf2eAwesomeVariantRules?.syncSecondaryClassFeatures === "function"
       );
@@ -1200,7 +1406,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
       if (!hasIssues) {
         mainLineHtml = `<strong>Feats Check:</strong> <span class="pf2e-cc-sheet-ok-text">Complete (${report.feats.filledSlots}/${report.feats.totalSlots} slots)</span>`;
       } else if (emptySummaries) {
-        mainLineHtml = `<strong>Feats Check (${report.feats.emptySlotsTotal} Empty):</strong> <span class="pf2e-cc-sheet-missing-list">${esc(emptySummaries)}</span>`;
+        mainLineHtml = `<strong>Feats Check (${unackedEmptyTotal} Empty):</strong> <span class="pf2e-cc-sheet-missing-list">${esc(emptySummaries)}</span>`;
       } else {
         mainLineHtml = `<strong>Feats Check:</strong> <span class="pf2e-cc-sheet-missing-list">Dual Class Features Out of Sync</span>`;
       }
@@ -1241,11 +1447,12 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
     if (craftingTab && report.formulas?.expected > 0 && !craftingTab.querySelector(".pf2e-cc-sheet-crafting-bar")) {
       const fm = report.formulas;
       const isExpanded = expandedFormulaGuideActors.has(actor.id);
+      const unackedMissingFormulas = fm.missing > 0 && !isAck("formulas:missing");
       const bar = document.createElement("div");
-      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-collapsible pf2e-cc-sheet-crafting-bar status-${fm.missing > 0 ? "critical" : "complete"} ${isExpanded ? "" : "is-collapsed"}`;
+      bar.className = `pf2e-cc-sheet-banner pf2e-cc-sheet-collapsible pf2e-cc-sheet-crafting-bar status-${unackedMissingFormulas ? "critical" : "complete"} ${isExpanded ? "" : "is-collapsed"}`;
 
       const labelTitle = fm.isAlchemist ? "Alchemist Formulas" : "Free Formulas";
-      const summaryHtml = fm.missing > 0
+      const summaryHtml = unackedMissingFormulas
         ? `<strong>${labelTitle}:</strong> <span class="pf2e-cc-sheet-missing-list">Missing ${fm.missing} (${fm.current}/${fm.expected})</span>`
         : `<strong>${labelTitle}:</strong> <span class="pf2e-cc-sheet-ok-text">${fm.current}/${fm.expected} known</span>`;
 

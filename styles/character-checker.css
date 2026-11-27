@@ -293,6 +293,18 @@
   box-shadow: var(--pf2e-gm-cta-shadow-hover);
 }
 
+.pf2e-cc-container .pf2e-cc-btn-accent {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.25);
+  border-color: rgba(var(--pf2e-gm-purple-rgb), 0.65);
+  color: var(--pf2e-gm-purple-soft);
+}
+
+.pf2e-cc-container .pf2e-cc-btn-accent:hover {
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.42);
+  border-color: var(--pf2e-gm-purple-soft);
+  color: var(--pf2e-gm-text-white);
+}
+
 .pf2e-cc-container .pf2e-cc-btn-sm {
   padding: 4px 8px;
   font-size: 0.78em;
@@ -450,11 +462,90 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .pf2e-cc-container .pf2e-cc-issue-body span {
   color: var(--pf2e-gm-text-secondary);
   font-size: 0.92em;
+}
+
+.pf2e-cc-container .pf2e-cc-issue-action {
+  align-self: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.pf2e-cc-container .pf2e-cc-issue-action:hover {
+  opacity: 1;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-block {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px dashed rgba(var(--pf2e-gm-cream-rgb), 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-head {
+  font-size: 0.78em;
+  font-weight: 700;
+  color: var(--pf2e-gm-cyan-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.06);
+  border-left: 3px solid rgba(var(--pf2e-gm-cyan-rgb), 0.45);
+  font-size: 0.8em;
+  opacity: 0.82;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-row:hover {
+  opacity: 1;
+}
+
+.pf2e-cc-container .pf2e-cc-acked-row .pf2e-cc-issue-body strong {
+  text-decoration: line-through;
+  color: var(--pf2e-gm-text-subtle);
+}
+
+.pf2e-cc-container .pf2e-cc-gm-bonus-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  margin-bottom: 8px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-purple-rgb), 0.16);
+  border: 1px solid rgba(var(--pf2e-gm-purple-rgb), 0.48);
+  color: var(--pf2e-gm-purple-soft);
+  font-size: 0.8em;
+}
+
+.pf2e-cc-container .pf2e-cc-gm-bonus-strip strong {
+  color: var(--pf2e-gm-text-white);
+}
+
+.pf2e-cc-container .pf2e-cc-stat-sub.pf2e-cc-stat-auto {
+  margin-top: 3px;
+  color: var(--pf2e-gm-cyan-soft);
 }
 
 .pf2e-cc-container .pf2e-cc-all-clear {
@@ -1278,4 +1369,70 @@
 .pf2e-cc-chat-detail {
   color: var(--pf2e-gm-text-subtle);
   font-size: 0.92em;
+}
+
+/* ------------------------------------------------------------------------- */
+/* 4. GM ADJUSTMENTS DIALOG (DialogV2)                                       */
+/* ------------------------------------------------------------------------- */
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 6px 2px;
+  color: var(--pf2e-gm-text-primary);
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-intro {
+  margin: 0;
+  font-size: 0.88em;
+  color: var(--pf2e-gm-text-secondary);
+  line-height: 1.35;
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-field span {
+  font-size: 0.82em;
+  font-weight: 700;
+  color: var(--pf2e-gm-text-cream);
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-field input {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--pf2e-gm-bg-input);
+  color: var(--pf2e-gm-text-white);
+  border: 1px solid var(--pf2e-gm-border-input);
+  box-sizing: border-box;
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-field small {
+  font-size: 0.74em;
+  color: var(--pf2e-gm-text-muted);
+  line-height: 1.25;
+}
+
+.pf2e-cc-gm-adj-dialog .pf2e-cc-gm-adj-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: rgba(var(--pf2e-gm-cyan-rgb), 0.1);
+  border: 1px solid rgba(var(--pf2e-gm-cyan-rgb), 0.35);
+  color: var(--pf2e-gm-cyan-soft);
+  font-size: 0.8em;
+  line-height: 1.3;
 }

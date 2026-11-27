@@ -171,6 +171,158 @@ export function getActorDualClassInfo(actor, variants = null) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* 1.5. PER-CHARACTER GM BONUSES & ISSUE ACKNOWLEDGEMENTS                    */
+/* ------------------------------------------------------------------------- */
+
+const OVERRIDES_FLAG_KEY = "checkerOverrides";
+const SKILL_RANK_LABELS = ["Untrained", "Trained", "Expert", "Master", "Legendary"];
+const SKILL_RANK_WORD_MAP = { trained: 1, expert: 2, master: 3, legendary: 4 };
+
+/**
+ * Produces a dot-free, deterministic issue key safe for Foundry dot-notation flag updates & ForcedDeletion.
+ */
+export function sanitizeIssueId(id) {
+  return String(id || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9:_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function clampInt(val, min, max) {
+  const n = Math.trunc(Number(val));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(min, Math.min(max, n));
+}
+
+function isOverridesObjectEmpty(ov) {
+  if (!ov) return true;
+  return ov.bonusTrainedSkills === 0
+    && ov.bonusSkillIncreases === 0
+    && ov.bonusLores === 0
+    && ov.bonusLanguages === 0
+    && !ov.note
+    && Object.keys(ov.acknowledgedIssues || {}).length === 0;
+}
+
+/**
+ * Reads normalized per-character GM bonuses and accepted/acknowledged issues
+ * from `actor.flags[MODULE_ID].checkerOverrides`.
+ *
+ * @param {Actor} actor
+ * @returns {{ bonusTrainedSkills: number, bonusSkillIncreases: number, bonusLores: number, bonusLanguages: number, note: string, acknowledgedIssues: Record<string, boolean> }}
+ */
+export function getCheckerOverrides(actor) {
+  const empty = {
+    bonusTrainedSkills: 0,
+    bonusSkillIncreases: 0,
+    bonusLores: 0,
+    bonusLanguages: 0,
+    note: "",
+    acknowledgedIssues: {}
+  };
+  if (!actor || actor.type !== "character") return empty;
+  const raw = actor.getFlag?.(MODULE_ID, OVERRIDES_FLAG_KEY);
+  if (!raw || typeof raw !== "object") return empty;
+
+  const acknowledgedIssues = {};
+  if (raw.acknowledgedIssues && typeof raw.acknowledgedIssues === "object") {
+    for (const [k, v] of Object.entries(raw.acknowledgedIssues)) {
+      const safe = sanitizeIssueId(k);
+      if (safe && Boolean(v)) acknowledgedIssues[safe] = true;
+    }
+  }
+
+  return {
+    bonusTrainedSkills: clampInt(raw.bonusTrainedSkills, -10, 20),
+    bonusSkillIncreases: clampInt(raw.bonusSkillIncreases, -10, 20),
+    bonusLores: clampInt(raw.bonusLores, 0, 20),
+    bonusLanguages: clampInt(raw.bonusLanguages, -10, 20),
+    note: String(raw.note || "").trim().slice(0, 240),
+    acknowledgedIssues
+  };
+}
+
+/**
+ * Saves per-character GM bonuses & optional note while preserving existing accepted issues.
+ * GM-only. Automatically clears the flag when all values are reset to defaults.
+ */
+export async function saveCheckerOverrides(actor, patch = {}) {
+  if (!actor || actor.type !== "character" || !game.user?.isGM) return false;
+  const current = getCheckerOverrides(actor);
+  const next = {
+    bonusTrainedSkills: "bonusTrainedSkills" in patch
+      ? clampInt(patch.bonusTrainedSkills, -10, 20)
+      : current.bonusTrainedSkills,
+    bonusSkillIncreases: "bonusSkillIncreases" in patch
+      ? clampInt(patch.bonusSkillIncreases, -10, 20)
+      : current.bonusSkillIncreases,
+    bonusLores: "bonusLores" in patch
+      ? clampInt(patch.bonusLores, 0, 20)
+      : current.bonusLores,
+    bonusLanguages: "bonusLanguages" in patch
+      ? clampInt(patch.bonusLanguages, -10, 20)
+      : current.bonusLanguages,
+    note: "note" in patch
+      ? String(patch.note || "").trim().slice(0, 240)
+      : current.note,
+    acknowledgedIssues: { ...current.acknowledgedIssues }
+  };
+
+  if (isOverridesObjectEmpty(next)) {
+    await actor.unsetFlag(MODULE_ID, OVERRIDES_FLAG_KEY);
+  } else {
+    await actor.setFlag(MODULE_ID, OVERRIDES_FLAG_KEY, next);
+  }
+  return true;
+}
+
+/**
+ * Marks a specific checker issue ID as acknowledged/accepted by the GM on this character.
+ */
+export async function acknowledgeCheckerIssue(actor, issueId) {
+  if (!actor || actor.type !== "character" || !game.user?.isGM) return false;
+  const safeId = sanitizeIssueId(issueId);
+  if (!safeId) return false;
+
+  await actor.update({
+    [`flags.${MODULE_ID}.${OVERRIDES_FLAG_KEY}.acknowledgedIssues.${safeId}`]: true
+  });
+  return true;
+}
+
+/**
+ * Restores a previously acknowledged checker issue ID using Foundry v14 ForcedDeletion.
+ */
+export async function restoreCheckerIssue(actor, issueId) {
+  if (!actor || actor.type !== "character" || !game.user?.isGM) return false;
+  const safeId = sanitizeIssueId(issueId);
+  if (!safeId) return false;
+
+  const ForcedDeletion = foundry.data.operators.ForcedDeletion;
+  const delOp = globalThis._del ?? (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+
+  await actor.update({
+    [`flags.${MODULE_ID}.${OVERRIDES_FLAG_KEY}.acknowledgedIssues.${safeId}`]: delOp
+  });
+
+  // Clean up flag entirely if no bonuses, note, or remaining acknowledgements exist
+  const after = getCheckerOverrides(actor);
+  if (isOverridesObjectEmpty(after)) {
+    await actor.unsetFlag(MODULE_ID, OVERRIDES_FLAG_KEY);
+  }
+  return true;
+}
+
+/**
+ * Removes all GM bonuses, notes, and accepted issue overrides from this character.
+ */
+export async function clearCheckerOverrides(actor) {
+  if (!actor || actor.type !== "character" || !game.user?.isGM) return false;
+  await actor.unsetFlag(MODULE_ID, OVERRIDES_FLAG_KEY);
+  return true;
+}
+
+/* ------------------------------------------------------------------------- */
 /* 2. ATTRIBUTE BOOSTS ANALYSIS                                              */
 /* ------------------------------------------------------------------------- */
 
@@ -218,6 +370,7 @@ function analyzeAttributeBoosts(actor, level, variants, dualInfo) {
     });
     if (missing > 0) {
       issues.push({
+        id: sanitizeIssueId(`attributes:missing-${key}`),
         severity: "warning",
         category: "Attributes",
         title: `${label} Boosts (${selected}/${exp})`,
@@ -269,6 +422,7 @@ function analyzeAttributeBoosts(actor, level, variants, dualInfo) {
     const ka = dualInfo.summary.keyAbility;
     if (!ka.selected) {
       issues.push({
+        id: "attributes:missing-dual-key",
         severity: "warning",
         category: "Attributes",
         title: `Dual Class (${dualInfo.name}) Key Attribute`,
@@ -290,40 +444,496 @@ function analyzeAttributeBoosts(actor, level, variants, dualInfo) {
 /* ------------------------------------------------------------------------- */
 
 /**
- * Extract core skill slugs automatically granted by Rule Elements on embedded items.
+ * Splits a comma-separated argument list at top-level parentheses (no eval).
  */
-function collectRuleElementTrainedSkills(actor) {
-  const autoSlugs = new Set();
+function splitTopLevelArgs(str) {
+  const parts = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(str.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(str.slice(start).trim());
+  return parts;
+}
+
+/**
+ * Safely evaluates numeric/conditional PF2e Rule Element value expressions such as:
+ *   2, "2", "ternary(gte(@actor.level,15),4,ternary(gte(@actor.level,7),3,2))",
+ *   or bracketed objects `{ brackets: [{ start, end, value }] }`.
+ * Zero `eval` / `Function` usage.
+ */
+function evaluateSkillRuleRankValue(rawVal, level, itemLevel = 1) {
+  if (typeof rawVal === "number" && Number.isFinite(rawVal)) {
+    return Math.max(0, Math.min(4, Math.trunc(rawVal)));
+  }
+
+  if (rawVal && typeof rawVal === "object") {
+    if (Array.isArray(rawVal.brackets)) {
+      for (const b of rawVal.brackets) {
+        const start = b?.start != null ? Number(b.start) : -Infinity;
+        const end = b?.end != null ? Number(b.end) : Infinity;
+        if (level >= start && level <= end) {
+          return evaluateSkillRuleRankValue(b.value, level, itemLevel);
+        }
+      }
+      return null;
+    }
+    if ("value" in rawVal) {
+      return evaluateSkillRuleRankValue(rawVal.value, level, itemLevel);
+    }
+    return null;
+  }
+
+  if (typeof rawVal !== "string") return null;
+  const trimmed = rawVal.trim();
+  if (!trimmed) return null;
+
+  const numDirect = Number(trimmed);
+  if (Number.isFinite(numDirect)) {
+    return Math.max(0, Math.min(4, Math.trunc(numDirect)));
+  }
+
+  // Substitute common level references safely
+  const substituted = trimmed
+    .replace(/@actor\.system\.details\.level\.value\b/gi, String(level))
+    .replace(/@actor\.level\b/gi, String(level))
+    .replace(/@item\.system\.level\.value\b/gi, String(itemLevel))
+    .replace(/@item\.level\b/gi, String(itemLevel));
+
+  const evalExpr = (expr, depth = 0) => {
+    if (depth > 10) return null;
+    let s = String(expr || "").trim();
+    // Unwrap matching outer parentheses
+    while (s.startsWith("(") && s.endsWith(")")) {
+      let d = 0;
+      let wraps = true;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === "(") d++;
+        else if (s[i] === ")") d--;
+        if (d === 0 && i < s.length - 1) {
+          wraps = false;
+          break;
+        }
+      }
+      if (!wraps) break;
+      s = s.slice(1, -1).trim();
+    }
+
+    const asNum = Number(s);
+    if (s !== "" && Number.isFinite(asNum)) return asNum;
+
+    const fnMatch = s.match(/^([a-z]+)\(([\s\S]*)\)$/i);
+    if (!fnMatch) return null;
+    const fn = fnMatch[1].toLowerCase();
+    const args = splitTopLevelArgs(fnMatch[2]);
+
+    if (fn === "ternary" && args.length === 3) {
+      const cond = evalExpr(args[0], depth + 1);
+      if (cond === null) return null;
+      return cond ? evalExpr(args[1], depth + 1) : evalExpr(args[2], depth + 1);
+    }
+    if ((fn === "gte" || fn === "gt" || fn === "lte" || fn === "lt" || fn === "eq") && args.length === 2) {
+      const a = evalExpr(args[0], depth + 1);
+      const b = evalExpr(args[1], depth + 1);
+      if (a === null || b === null) return null;
+      if (fn === "gte") return a >= b ? 1 : 0;
+      if (fn === "gt") return a > b ? 1 : 0;
+      if (fn === "lte") return a <= b ? 1 : 0;
+      if (fn === "lt") return a < b ? 1 : 0;
+      if (fn === "eq") return a === b ? 1 : 0;
+    }
+    if (fn === "min" || fn === "max") {
+      const vals = args.map(a => evalExpr(a, depth + 1));
+      if (vals.some(v => v === null)) return null;
+      return fn === "min" ? Math.min(...vals) : Math.max(...vals);
+    }
+    return null;
+  };
+
+  const result = evalExpr(substituted);
+  return result !== null && Number.isFinite(result)
+    ? Math.max(0, Math.min(4, Math.trunc(result)))
+    : null;
+}
+
+/**
+ * Evaluates a PF2e Rule Element predicate array safely against actor level, pre-feat skill ranks,
+ * and live `actor.rollOptions.all` (so level-gated Master/Legendary rules or unmet subclass
+ * predicates are skipped cleanly).
+ */
+function evaluateSkillRulePredicate(predicate, actor, level, baseClassBgSet) {
+  if (!Array.isArray(predicate) || predicate.length === 0) return true;
+  const rollOpts = actor.rollOptions?.all && typeof actor.rollOptions.all === "object"
+    ? actor.rollOptions.all
+    : null;
+  const hasRollOpts = Boolean(rollOpts && Object.keys(rollOpts).length > 0);
+
+  const resolveMetric = (token) => {
+    if (typeof token === "number") return token;
+    const str = String(token || "").trim().toLowerCase();
+    if (str === "self:level" || str === "actor:level" || str === "level") return level;
+    const skMatch = str.match(/^skill:([a-z]+):rank$/);
+    if (skMatch) {
+      const slug = normalizeSkillSlug(skMatch[1]);
+      if (CORE_SKILL_SLUGS.includes(slug)) {
+        const srcRank = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
+        return Math.max(baseClassBgSet.has(slug) ? 1 : 0, srcRank);
+      }
+    }
+    const num = Number(str);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const evalClause = (clause) => {
+    if (typeof clause === "string") {
+      const term = clause.trim();
+      if (!term) return true;
+      const skRankMatch = term.match(/^skill:([a-z]+):rank:(\d+)$/i);
+      if (skRankMatch) {
+        const slug = normalizeSkillSlug(skRankMatch[1]);
+        const reqRank = Number(skRankMatch[2]);
+        const srcRank = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
+        const preRank = Math.max(baseClassBgSet.has(slug) ? 1 : 0, srcRank);
+        return preRank >= reqRank;
+      }
+      if (hasRollOpts) return Boolean(rollOpts[term]);
+      return true;
+    }
+    if (!clause || typeof clause !== "object") return true;
+
+    if ("not" in clause) return !evalClause(clause.not);
+    if (Array.isArray(clause.and)) return clause.and.every(evalClause);
+    if (Array.isArray(clause.or)) return clause.or.some(evalClause);
+
+    for (const op of ["gte", "gt", "lte", "lt", "eq"]) {
+      if (Array.isArray(clause[op]) && clause[op].length === 2) {
+        const lhs = resolveMetric(clause[op][0]);
+        const rhs = resolveMetric(clause[op][1]);
+        if (lhs === null || rhs === null) return true;
+        if (op === "gte") return lhs >= rhs;
+        if (op === "gt") return lhs > rhs;
+        if (op === "lte") return lhs <= rhs;
+        if (op === "lt") return lhs < rhs;
+        if (op === "eq") return lhs === rhs;
+      }
+    }
+
+    return true;
+  };
+
+  return predicate.every(evalClause);
+}
+
+/**
+ * Strips HTML tags and PF2e enrichers from a feat description into plain text for fallback scanning.
+ */
+function stripHtmlToPlainText(html) {
+  return String(html || "")
+    .replace(/<br\s*\/?>/gi, ". ")
+    .replace(/<\/(?:p|li|div|h\d)>/gi, ". ")
+    .replace(/@UUID\[[^\]]*\]\{([^}]+)\}/gi, "$1")
+    .replace(/@(?:UUID|Check|Damage|Condition|Template|Localize)\[[^\]]*\]/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Dynamically inspects all embedded PF2e items (feats, archetype dedications, class features,
+ * heritages, ancestries) to detect:
+ *  1. Auto-trained core skills (`ActiveEffectLike` rank 1+)
+ *  2. Auto-upgraded skill ranks (`ActiveEffectLike` rank 2/3/4, level-scaling `ternary` formulas
+ *     like Acrobat Dedication / Inventor Crafting, Medic Dedication Expert Medicine at Lv 2, etc.)
+ *  3. Description-based fallback for archetype/dedication early rank upgrades lacking RE automation
+ *  4. Trained-skill overlap replacements from Ancestry Lore feats & Dedications
+ *  5. Free-choice skill feats (`Skill Mastery` +2 increases, unautomated `Skill Training` +1 trained)
+ */
+function collectItemSkillGrants(actor, level, baseClassBgSet) {
+  const autoTrainedSlugs = new Set();
+  const autoMinRankBySkill = {};
+  const autoAddDeltaBySkill = {};
+  const autoUpgradeSourceBySkill = {};
+  const seenTrainedSources = new Set(baseClassBgSet);
+  const featBonusIncreaseSources = [];
+  const featBonusTrainedSources = [];
+  const autoScalingLoreKeys = new Set();
+  let featOverlapReplacements = 0;
+  let featBonusIncreases = 0;
+  let featBonusTrained = 0;
+
+  const normalizeLoreKeySimple = (val) => String(val || "")
+    .toLowerCase()
+    .replace(/\blore\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+  const recordAutoRank = (slug, rank, sourceName, { upgradeOnly = false } = {}) => {
+    if (!CORE_SKILL_SLUGS.includes(slug) || rank < 1) return;
+    if (!upgradeOnly) {
+      autoTrainedSlugs.add(slug);
+    }
+    if (rank >= 2 && rank > (autoMinRankBySkill[slug] || 0)) {
+      autoMinRankBySkill[slug] = rank;
+      autoUpgradeSourceBySkill[slug] = sourceName || "Archetype / Feature";
+    }
+  };
+
+  const inspectableTypes = new Set(["feat", "heritage", "ancestry", "class", "background"]);
+
   for (const item of actor.items || []) {
-    const rules = item.system?.rules;
-    if (!Array.isArray(rules)) continue;
+    if (!inspectableTypes.has(item.type)) continue;
+
+    const itemSlug = getItemSlug(item);
+    const itemName = item.name || capitalize(itemSlug);
+    const itemLevel = Math.max(1, Number(item.system?.level?.value ?? 1));
+    const rules = Array.isArray(item.system?.rules) ? item.system.rules : [];
     const selections = item.flags?.pf2e?.rulesSelections || {};
+    const plainDesc = stripHtmlToPlainText(item.system?.description?.value);
+    const prereqText = (Array.isArray(item.system?.prerequisites?.value) ? item.system.prerequisites.value : [])
+      .map(p => (typeof p === "string" ? p : (p?.value || "")))
+      .join(" ")
+      .toLowerCase();
+
+    const itemRequiresTrainedIn = (slug) => {
+      if (!slug) return false;
+      const re = new RegExp(`\\b${slug}\\b`, "i");
+      if (prereqText && re.test(prereqText)) return true;
+      return false;
+    };
+
+    // Track auto-scaling Lore feats (e.g. Additional Lore, Esoteric Lore, Bardic Lore)
+    if (item.type === "feat" && (itemSlug === "additional-lore" || itemSlug === "esoteric-lore" || itemSlug === "bardic-lore" || itemSlug === "loremaster-dedication")) {
+      for (const val of Object.values(selections)) {
+        const rawStr = typeof val === "string" ? val : (typeof val?.value === "string" ? val.value : "");
+        const k = normalizeLoreKeySimple(rawStr);
+        if (k) autoScalingLoreKeys.add(k);
+      }
+      if (itemSlug === "esoteric-lore") autoScalingLoreKeys.add("esoteric");
+      if (itemSlug === "bardic-lore") autoScalingLoreKeys.add("bardic");
+      if (itemSlug === "loremaster-dedication") autoScalingLoreKeys.add("loremaster");
+    }
+
+    // Identify whether this item already resolved any ChoiceSet to a core skill
+    const resolvedChoiceSkillSlugs = new Set();
+    for (const val of Object.values(selections)) {
+      const rawStr = typeof val === "string" ? val : (typeof val?.value === "string" ? val.value : "");
+      const norm = normalizeSkillSlug(rawStr);
+      if (CORE_SKILL_SLUGS.includes(norm)) resolvedChoiceSkillSlugs.add(norm);
+    }
+
+    const itemResolvedTrainedSlugs = new Set();
+    const itemResolvedUpgradeSlugs = new Set();
+    const itemPendingGrants = [];
+
+    // Pass 1: PF2e ActiveEffectLike Rule Elements targeting `system.skills.<slug>.rank`
     for (const rule of rules) {
       if (rule?.key !== "ActiveEffectLike" || typeof rule.path !== "string") continue;
-      let path = rule.path;
-      // Resolve simple `{item|flags.pf2e.rulesSelections.<key>}` templates
-      path = path.replace(/\{item\|flags\.pf2e\.rulesSelections\.([^}]+)\}/g, (_, k) => {
-        return typeof selections[k] === "string" ? selections[k] : "";
+
+      const hadTemplate = /\{item\|flags\.pf2e\.rulesSelections\.[^}]+\}/.test(rule.path);
+      const resolvedPath = rule.path.replace(/\{item\|flags\.pf2e\.rulesSelections\.([^}]+)\}/g, (_, k) => {
+        const sel = selections[k];
+        if (typeof sel === "string") return sel;
+        if (sel && typeof sel === "object" && typeof sel.value === "string") return sel.value;
+        return "";
       });
-      const m = path.match(/^system\.skills\.([a-z]+)\.rank$/i);
-      if (m) {
-        const slug = normalizeSkillSlug(m[1]);
-        if (CORE_SKILL_SLUGS.includes(slug)) {
-          autoSlugs.add(slug);
+
+      const m = resolvedPath.match(/^system\.skills\.([a-z]+)\.rank$/i);
+      if (!m) continue;
+      const slug = normalizeSkillSlug(m[1]);
+      if (!CORE_SKILL_SLUGS.includes(slug)) continue;
+
+      if (!evaluateSkillRulePredicate(rule.predicate, actor, level, baseClassBgSet)) continue;
+
+      const mode = String(rule.mode || "upgrade").toLowerCase();
+      let grantedRank = evaluateSkillRuleRankValue(rule.value, level, itemLevel);
+      const srcRank = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
+      const effRank = Number(actor.system?.skills?.[slug]?.rank ?? 0);
+
+      if (mode === "add") {
+        const delta = Math.max(1, grantedRank ?? 1);
+        autoAddDeltaBySkill[slug] = (autoAddDeltaBySkill[slug] || 0) + delta;
+        const preRank = Math.max(seenTrainedSources.has(slug) ? 1 : 0, Math.min(1, srcRank));
+        grantedRank = Math.min(4, preRank + delta);
+      } else if (grantedRank === null) {
+        grantedRank = 1;
+      }
+
+      if (grantedRank < 1) continue;
+
+      itemPendingGrants.push({
+        slug,
+        grantedRank,
+        hadTemplate,
+        mode,
+        srcRank,
+        hasSkillPredicate: Array.isArray(rule.predicate) && JSON.stringify(rule.predicate).toLowerCase().includes(`skill:${slug}:rank`)
+      });
+    }
+
+    // Aggregate per-item skill grants so upgrade-only dedications (e.g. Medic, Acrobat, Dandy,
+    // Archaeologist, Bounty Hunter when already trained) never inflate expected trained skill counts!
+    const upgradedOnThisItem = new Set(itemPendingGrants.filter(g => g.grantedRank >= 2).map(g => g.slug));
+
+    for (const g of itemPendingGrants) {
+      const { slug, grantedRank, hadTemplate, mode, srcRank, hasSkillPredicate } = g;
+      const isUpgradeOnly = (
+        (grantedRank >= 2 && (itemRequiresTrainedIn(slug) || hasSkillPredicate || srcRank >= 1))
+        || (upgradedOnThisItem.has(slug) && srcRank >= 1 && !baseClassBgSet.has(slug))
+        || (mode === "add" && srcRank >= 1)
+      );
+
+      recordAutoRank(slug, grantedRank, itemName, { upgradeOnly: isUpgradeOnly });
+      itemResolvedTrainedSlugs.add(slug);
+      if (grantedRank >= 2) itemResolvedUpgradeSlugs.add(slug);
+
+      // Detect Trained-skill overlap replacement on feats (e.g. Elven Lore / Dedications granting a static Trained skill already known)
+      if (
+        item.type === "feat"
+        && grantedRank === 1
+        && !isUpgradeOnly
+        && !upgradedOnThisItem.has(slug)
+        && !hadTemplate
+        && seenTrainedSources.has(slug)
+        && !Array.from(resolvedChoiceSkillSlugs).some(s => s !== slug)
+      ) {
+        const isAncestryLoreFeat = /-lore$/.test(itemSlug) && itemSlug !== "additional-lore";
+        const descGrantsReplacement = /(?:already\s+trained|would\s+automatically\s+become\s+trained)[\s\S]{0,180}?(?:skill\s+of\s+your\s+choice|another\s+skill)/i.test(plainDesc);
+        if (isAncestryLoreFeat || descGrantsReplacement) {
+          featOverlapReplacements++;
+        }
+      }
+
+      if (!isUpgradeOnly) {
+        seenTrainedSources.add(slug);
+      }
+    }
+
+    // Pass 2: Standard PF2e free-choice skill feats (only if not already automated by REs)
+    if (item.type === "feat") {
+      if (itemSlug === "skill-mastery" || /^skill-mastery-/.test(itemSlug)) {
+        const remaining = Math.max(0, 2 - itemResolvedUpgradeSlugs.size);
+        if (remaining > 0) {
+          featBonusIncreases += remaining;
+          featBonusIncreaseSources.push({ source: itemName, count: remaining });
+        }
+      } else if (itemSlug === "skill-training") {
+        if (itemResolvedTrainedSlugs.size === 0) {
+          featBonusTrained += 1;
+          featBonusTrainedSources.push({ source: itemName, count: 1 });
+        }
+      }
+    }
+
+    // Pass 3: Safe sentence-scoped description fallback for archetype/feat rank upgrades
+    // (handles unautomated or homebrew dedications like Medic/Acrobat/Archaeologist/Dandy)
+    if ((item.type === "feat" || item.type === "heritage") && plainDesc) {
+      const sentences = plainDesc.split(/(?<=[.!?;])\s+|,\s*(?=and\s+at\s+\d+(?:st|nd|rd|th)\s+level\b)|(?=\band\s+at\s+\d+(?:st|nd|rd|th)\s+level\b)/i);
+      for (const sentence of sentences) {
+        if (!/\b(?:expert|master|legendary)\b/i.test(sentence)) continue;
+        // Skip conditional requirement checks ("if you are an expert in Medicine, you heal...")
+        if (/\b(?:if|when|while)\s+you\s+(?:are|become)\s+(?:an?\s+)?(?:expert|master|legendary)\b/i.test(sentence)) continue;
+
+        // Check level gate in the sentence (e.g. "At 7th level, you become a master in Acrobatics")
+        const lvlGateMatch = sentence.match(/\bat\s+(\d+)(?:st|nd|rd|th)\s+level\b/i);
+        if (lvlGateMatch && level < Number(lvlGateMatch[1])) continue;
+
+        const requiresPreTrained = /\bif\s+you\s+(?:are|were)\s+already\s+trained\b/i.test(sentence);
+
+        let targetRank = 0;
+        let skillClause = "";
+
+        const mBecome = sentence.match(/\byou\s+become\s+(?:an?\s+)?(expert|master|legendary)\s+in\s+([^.;]+)/i);
+        if (mBecome) {
+          targetRank = SKILL_RANK_WORD_MAP[mBecome[1].toLowerCase()] || 0;
+          skillClause = mBecome[2] || "";
+        } else {
+          const mIncrease = sentence.match(/\b(?:your\s+proficiency\s+rank\s+in|increase\s+your\s+proficiency\s+rank\s+in)\s+([^.;]+?)\s+(?:increases?\s+to|to)\s+(expert|master|legendary)\b/i);
+          if (mIncrease) {
+            skillClause = mIncrease[1] || "";
+            targetRank = SKILL_RANK_WORD_MAP[mIncrease[2].toLowerCase()] || 0;
+          }
+        }
+
+        if (targetRank < 2 || !skillClause) continue;
+
+        // Trim trailing non-skill clauses ("instead", "and you gain...", "for the purposes of...", etc.)
+        const trimmedClause = skillClause.split(/\b(?:instead|rather|when|while|for|with|if|which|that|as well as|and you|and gain|and can)\b/i)[0] || "";
+        const mentioned = CORE_SKILL_SLUGS.filter(s => new RegExp(`\\b${s}\\b`, "i").test(trimmedClause));
+        if (mentioned.length === 0) continue;
+
+        const isChoiceOr = mentioned.length > 1 && /\bor\b/i.test(trimmedClause) && !/\band\b/i.test(trimmedClause);
+        if (isChoiceOr) {
+          // Only credit at most one skill from an "A or B" choice — pick whichever is actually >= targetRank
+          const chosen = mentioned.find(slug => {
+            if (itemResolvedUpgradeSlugs.has(slug)) return false;
+            const eff = Number(actor.system?.skills?.[slug]?.rank ?? 0);
+            const src = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
+            return Math.max(eff, src) >= targetRank;
+          });
+          if (chosen) {
+            recordAutoRank(chosen, targetRank, itemName, { upgradeOnly: true });
+          }
+        } else {
+          for (const slug of mentioned) {
+            if (itemResolvedUpgradeSlugs.has(slug)) continue;
+            if (requiresPreTrained) {
+              const src = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
+              const eff = Number(actor.system?.skills?.[slug]?.rank ?? 0);
+              if (!baseClassBgSet.has(slug) && src < 1 && eff < targetRank) continue;
+            }
+            recordAutoRank(slug, targetRank, itemName, { upgradeOnly: true });
+          }
         }
       }
     }
   }
-  return autoSlugs;
+
+  return {
+    autoTrainedSlugs,
+    autoMinRankBySkill,
+    autoAddDeltaBySkill,
+    autoUpgradeSourceBySkill,
+    featOverlapReplacements,
+    featBonusIncreases,
+    featBonusIncreaseSources,
+    featBonusTrained,
+    featBonusTrainedSources,
+    autoScalingLoreKeys
+  };
 }
 
-function analyzeSkills(actor, level, dualInfo) {
+function analyzeSkills(actor, level, dualInfo, overrides = null) {
+  const ov = overrides || getCheckerOverrides(actor);
   const intMod = Number(actor.system?.abilities?.int?.mod ?? 0);
   const pClassSys = actor.class?.system || {};
   const dClassSys = dualInfo?.system || null;
   const bgSys = actor.background?.system || {};
 
-  // 1. Gather automatic core skill grants from Class, Dual Class, Background, and Rule Elements
+  // Compute Skill Increase schedule upfront so Rogue/Investigator Level 2 Expert cap is exact!
+  const defaultIncLevels = [3, 5, 7, 9, 11, 13, 15, 17, 19];
+  const primaryIncLevels = extractLevelArray(pClassSys.skillIncreaseLevels);
+  const dualIncLevels = dClassSys ? extractLevelArray(dClassSys.skillIncreaseLevels) : [];
+
+  const mergedIncSet = new Set(primaryIncLevels.length > 0 ? primaryIncLevels : (actor.class ? defaultIncLevels : []));
+  for (const l of dualIncLevels) mergedIncSet.add(l);
+
+  const unlockedIncreaseLevels = Array.from(mergedIncSet)
+    .filter(l => l <= level)
+    .sort((a, b) => a - b);
+
+  const isFastProgression = unlockedIncreaseLevels.includes(2) || primaryIncLevels.includes(2) || dualIncLevels.includes(2);
+  const expertMinLevel = isFastProgression ? 2 : 3;
+
+  // 1. Gather automatic core skill grants from Class, Dual Class, Background, and Item Rule Elements / Archetypes
   const primaryAutoSkills = (Array.isArray(pClassSys.trainedSkills?.value) ? pClassSys.trainedSkills.value : [])
     .map(normalizeSkillSlug)
     .filter(s => CORE_SKILL_SLUGS.includes(s));
@@ -341,16 +951,18 @@ function analyzeSkills(actor, level, dualInfo) {
   // Overlaps among Primary Class + Dual Class + Background grant 1 free replacement trained skill each
   const allClassBgRaw = [...primaryAutoSkills, ...dualAutoSkills, ...bgAutoSkills];
   const uniqueClassBgSet = new Set(allClassBgRaw);
-  const overlapReplacements = Math.max(0, allClassBgRaw.length - uniqueClassBgSet.size);
+  const baseOverlapReplacements = Math.max(0, allClassBgRaw.length - uniqueClassBgSet.size);
 
-  // Also detect any skill auto-granted by Subclass / Heritage / Feats / Rule Elements
-  const ruleAutoSet = collectRuleElementTrainedSkills(actor);
-  const autoTrainedSet = new Set([...uniqueClassBgSet, ...ruleAutoSet]);
+  // Detect skills, rank auto-upgrades (Medic/Acrobat/Inventor/etc.), overlaps & bonus feats from embedded items
+  const itemGrants = collectItemSkillGrants(actor, level, uniqueClassBgSet);
+  const overlapReplacements = baseOverlapReplacements + itemGrants.featOverlapReplacements;
+  const autoTrainedSet = new Set([...uniqueClassBgSet, ...itemGrants.autoTrainedSlugs]);
 
   let trainedCoreCount = 0;
   let manualCoreIncreasesSpent = 0;
   const rankCounts = { trained: 0, expert: 0, master: 0, legendary: 0 };
   const overCapSkills = [];
+  const autoSkillUpgrades = [];
 
   for (const slug of CORE_SKILL_SLUGS) {
     const effRank = Number(actor.system?.skills?.[slug]?.rank ?? 0);
@@ -368,21 +980,70 @@ function analyzeSkills(actor, level, dualInfo) {
       else if (effRank >= 4) rankCounts.legendary++;
     }
 
-    // Manual skill increases spent (above Trained)
-    if (srcRank > 1) {
-      manualCoreIncreasesSpent += (srcRank - 1);
-      // Verify PF2e level caps on manually bumped ranks
-      if (srcRank === 2 && level < 3) {
-        overCapSkills.push({ slug, label: capitalize(slug), rankLabel: "Expert", requiredLevel: 3 });
+    // Highest proficiency rank automatically granted by PF2e Rule Elements, Archetypes, or Class Features.
+    // For additive (`mode: "add"`) rules, avoid treating player-stacked `effRank` as the baseline so manual
+    // increases spent on top of an additive bonus still count accurately.
+    const addDelta = Number(itemGrants.autoAddDeltaBySkill?.[slug] || 0);
+    const liveUpgradeBaseline = addDelta > 0 ? 0 : (effRank > srcRank ? effRank : 0);
+    const autoMinRank = Math.max(
+      itemGrants.autoMinRankBySkill[slug] || 0,
+      liveUpgradeBaseline,
+      autoTrainedSet.has(slug) ? 1 : 0
+    );
+
+    if (autoMinRank >= 2) {
+      autoSkillUpgrades.push({
+        slug,
+        label: capitalize(slug),
+        rank: autoMinRank,
+        rankLabel: SKILL_RANK_LABELS[autoMinRank] || `Rank ${autoMinRank}`,
+        source: itemGrants.autoUpgradeSourceBySkill[slug] || "Archetype / Feature"
+      });
+    }
+
+    // Only count manual skill increases spent ABOVE the auto-granted baseline (so Medic Dedication
+    // granting Expert at Lv 2 never charges a class increase even if later upgraded to Master at Lv 7!)
+    const manualIncreasesForSkill = addDelta > 0
+      ? Math.max(0, srcRank - 1)
+      : Math.max(0, srcRank - Math.max(1, autoMinRank));
+    if (manualIncreasesForSkill > 0) {
+      manualCoreIncreasesSpent += manualIncreasesForSkill;
+    }
+
+    // Verify PF2e level caps ONLY on ranks manually bumped above auto-granted minimums
+    if (srcRank > autoMinRank) {
+      if (srcRank === 2 && level < expertMinLevel) {
+        overCapSkills.push({
+          slug,
+          rank: 2,
+          issueId: sanitizeIssueId(`skills:over-cap:${slug}:2`),
+          label: capitalize(slug),
+          rankLabel: "Expert",
+          requiredLevel: expertMinLevel
+        });
       } else if (srcRank === 3 && level < 7) {
-        overCapSkills.push({ slug, label: capitalize(slug), rankLabel: "Master", requiredLevel: 7 });
-      } else if (srcRank === 4 && level < 15) {
-        overCapSkills.push({ slug, label: capitalize(slug), rankLabel: "Legendary", requiredLevel: 15 });
+        overCapSkills.push({
+          slug,
+          rank: 3,
+          issueId: sanitizeIssueId(`skills:over-cap:${slug}:3`),
+          label: capitalize(slug),
+          rankLabel: "Master",
+          requiredLevel: 7
+        });
+      } else if (srcRank >= 4 && level < 15) {
+        overCapSkills.push({
+          slug,
+          rank: 4,
+          issueId: sanitizeIssueId(`skills:over-cap:${slug}:4`),
+          label: capitalize(slug),
+          rankLabel: "Legendary",
+          requiredLevel: 15
+        });
       }
     }
   }
 
-  // 2. Additional trained skills from Class (higher of Dual Classes) + INT modifier
+  // 2. Additional trained skills from Class (higher of Dual Classes) + INT modifier + Feats + GM Bonus
   const primaryAdd = Number(pClassSys.trainedSkills?.additional ?? 0);
   const dualAdd = dClassSys ? Number(dClassSys.trainedSkills?.additional ?? 0) : 0;
   const effectiveClassAdd = dualInfo ? Math.max(primaryAdd, dualAdd) : primaryAdd;
@@ -394,9 +1055,16 @@ function analyzeSkills(actor, level, dualInfo) {
     ? Math.max(0, effectiveClassAdd + intMod)
     : Math.max(0, intMod);
 
-  const expectedTrainedRaw = autoTrainedSet.size + overlapReplacements + additionalFromClassAndInt;
+  const gmBonusTrained = ov.bonusTrainedSkills || 0;
+  const gmBonusIncreases = ov.bonusSkillIncreases || 0;
+  const gmBonusLores = Math.max(0, ov.bonusLores || 0);
 
-  // 3. Lore skills (Background lore, Additional Lore feats, extra manual Lores)
+  const expectedTrainedRaw = Math.max(
+    0,
+    autoTrainedSet.size + overlapReplacements + additionalFromClassAndInt + itemGrants.featBonusTrained + gmBonusTrained
+  );
+
+  // 3. Lore skills (Background lore, Additional Lore feats, GM-awarded Bonus Lores, extra manual Lores)
   const loreItems = actor.itemTypes?.lore || [];
   const normalizeLoreKey = (val) => String(val || "")
     .toLowerCase()
@@ -432,7 +1100,7 @@ function analyzeSkills(actor, level, dualInfo) {
   let featLoreCount = 0;
   let manualLoreIncreasesSpent = 0;
 
-  // Feats that auto-grant a Lore item (Additional Lore, Esoteric Lore, Bardic Lore, Gnome Obsession, etc.)
+  // Feats that auto-grant a Lore item (Additional Lore, Esoteric Lore, Bardic Lore, Ancestry Lore feats like Elven Lore, etc.)
   const loreGrantingFeatSlugs = new Set([
     "additional-lore",
     "bardic-lore",
@@ -443,22 +1111,30 @@ function analyzeSkills(actor, level, dualInfo) {
   ]);
   for (const feat of actor.itemTypes?.feat || []) {
     const slug = getItemSlug(feat);
-    if (loreGrantingFeatSlugs.has(slug)) featLoreCount++;
+    const isAncestryLoreFeat = feat.system?.category === "ancestry" && /-lore$/.test(slug);
+    const hasLoreRule = Array.isArray(feat.system?.rules)
+      && feat.system.rules.some(r => r?.key === "Lore" || (r?.key === "GrantItem" && typeof r?.uuid === "string" && /\blore\b/i.test(r.uuid)));
+    if (loreGrantingFeatSlugs.has(slug) || isAncestryLoreFeat || hasLoreRule) {
+      featLoreCount++;
+    }
   }
 
-  // Also count Lore items with PF2e grantedBy flag
+  // Count Lore items with PF2e grantedBy flag or auto-scaling Lore feat match
   const grantedLoreIds = new Set();
   for (const lore of loreItems) {
     if (lore.flags?.pf2e?.grantedBy?.id) grantedLoreIds.add(lore.id);
+    const loreKey = normalizeLoreKey(lore.name);
+    const isAutoScalingLore = grantedLoreIds.has(lore.id)
+      || (loreKey && itemGrants.autoScalingLoreKeys.has(loreKey));
     const srcLoreRank = Number(lore._source?.system?.proficient?.value ?? 1);
-    if (srcLoreRank > 1 && !grantedLoreIds.has(lore.id)) {
+    if (srcLoreRank > 1 && !isAutoScalingLore) {
       manualLoreIncreasesSpent += (srcLoreRank - 1);
     }
   }
 
-  const expectedMinLores = expectedBgLoreCount + featLoreCount;
+  const expectedMinLores = expectedBgLoreCount + featLoreCount + gmBonusLores;
   const missingLoreCount = Math.max(missingBgLores.length, Math.max(0, expectedMinLores - loreItems.length));
-  const effectiveAutoLores = Math.max(expectedMinLores, grantedLoreIds.size);
+  const effectiveAutoLores = Math.max(expectedMinLores, grantedLoreIds.size + gmBonusLores);
   const extraManualLores = Math.max(0, loreItems.length - effectiveAutoLores);
 
   // Players can spend trained skill picks on either Core Skills OR extra Lore skills
@@ -466,19 +1142,8 @@ function analyzeSkills(actor, level, dualInfo) {
   const missingTrainedSkills = Math.max(0, expectedTrainedRaw - currentTrainedEffective);
   const extraTrainedSkills = Math.max(0, currentTrainedEffective - expectedTrainedRaw);
 
-  // 4. Skill Increases by Level (union of Primary Class + Dual Class unique extra levels!)
-  const defaultIncLevels = [3, 5, 7, 9, 11, 13, 15, 17, 19];
-  const primaryIncLevels = extractLevelArray(pClassSys.skillIncreaseLevels);
-  const dualIncLevels = dClassSys ? extractLevelArray(dClassSys.skillIncreaseLevels) : [];
-
-  const mergedIncSet = new Set(primaryIncLevels.length > 0 ? primaryIncLevels : (actor.class ? defaultIncLevels : []));
-  for (const l of dualIncLevels) mergedIncSet.add(l);
-
-  const unlockedIncreaseLevels = Array.from(mergedIncSet)
-    .filter(l => l <= level)
-    .sort((a, b) => a - b);
-
-  const expectedIncreases = unlockedIncreaseLevels.length;
+  // 4. Skill Increases by Level + Archetype/Feat Bonus Increases (e.g. Skill Mastery) + GM Bonus
+  const expectedIncreases = Math.max(0, unlockedIncreaseLevels.length + itemGrants.featBonusIncreases + gmBonusIncreases);
   const spentIncreases = manualCoreIncreasesSpent + manualLoreIncreasesSpent;
 
   // If a player used a skill increase to become Trained in a brand-new skill (legal in PF2e!)
@@ -488,8 +1153,7 @@ function analyzeSkills(actor, level, dualInfo) {
   const effectiveIncreasesSpent = spentIncreases + increasesUsedForTraining;
   const missingIncreases = Math.max(0, expectedIncreases - effectiveIncreasesSpent);
   const excessIncreases = Math.max(0, spentIncreases - expectedIncreases);
-
-  const isFastProgression = unlockedIncreaseLevels.includes(2) || primaryIncLevels.includes(2) || dualIncLevels.includes(2);
+  const unexplainedExtraTrained = Math.max(0, extraTrainedSkills - increasesUsedForTraining);
 
   // Build readable formula breakdown
   const formulaParts = [];
@@ -497,19 +1161,45 @@ function analyzeSkills(actor, level, dualInfo) {
   if (overlapReplacements > 0) formulaParts.push(`+${overlapReplacements} Overlap Bonus`);
   if (actor.class) formulaParts.push(`+${effectiveClassAdd} ${classAddSource}`);
   if (intMod !== 0) formulaParts.push(`${intMod > 0 ? "+" : ""}${intMod} INT`);
+  if (itemGrants.featBonusTrained > 0) formulaParts.push(`+${itemGrants.featBonusTrained} Feat Bonus`);
+  if (gmBonusTrained !== 0) formulaParts.push(`${gmBonusTrained > 0 ? "+" : ""}${gmBonusTrained} GM Bonus`);
   const formulaText = formulaParts.join(" ") || "Select a Class & Background";
+
+  // Build readable bonus skill increases breakdown (Skill Mastery, GM Bonus, etc.)
+  const increaseBonusParts = [];
+  for (const s of itemGrants.featBonusIncreaseSources) {
+    increaseBonusParts.push(`+${s.count} ${s.source}`);
+  }
+  if (gmBonusIncreases !== 0) {
+    increaseBonusParts.push(`${gmBonusIncreases > 0 ? "+" : ""}${gmBonusIncreases} GM Bonus`);
+  }
+  const increaseBonusText = increaseBonusParts.join(", ");
+  const autoSkillUpgradesText = autoSkillUpgrades
+    .map(u => `${u.label} (${u.rankLabel} — ${u.source})`)
+    .join(", ");
 
   const issues = [];
   if (actor.class && missingTrainedSkills > 0) {
     issues.push({
+      id: "skills:missing-trained",
       severity: "warning",
       category: "Skills",
       title: `Missing ${missingTrainedSkills} Trained Skill${missingTrainedSkills === 1 ? "" : "s"} (${currentTrainedEffective}/${expectedTrainedRaw})`,
       detail: `Expected ${expectedTrainedRaw} trained skills (${formulaText})${expectedBgLoreCount ? ` plus ${expectedBgLoreCount} Background Lore` : ""}.`
     });
   }
+  if (actor.class && unexplainedExtraTrained > 0) {
+    issues.push({
+      id: "skills:extra-trained",
+      severity: "info",
+      category: "Skills",
+      title: `${unexplainedExtraTrained} Extra Trained Skill${unexplainedExtraTrained === 1 ? "" : "s"} / Lore (${currentTrainedEffective}/${expectedTrainedRaw})`,
+      detail: `Expected ${expectedTrainedRaw} trained skills (${formulaText}). If this is a GM reward or extra Lore, add it in GM Adjustments or click Accept.`
+    });
+  }
   if (missingBgLores.length > 0) {
     issues.push({
+      id: "skills:missing-bg-lore",
       severity: "warning",
       category: "Skills",
       title: `Missing Background Lore: ${missingBgLores.join(", ")}`,
@@ -517,33 +1207,50 @@ function analyzeSkills(actor, level, dualInfo) {
     });
   } else if (expectedBgLoreCount > 0 && loreItems.length < expectedBgLoreCount) {
     issues.push({
+      id: "skills:missing-bg-lore",
       severity: "warning",
       category: "Skills",
       title: `Missing Background Lore (${loreItems.length}/${expectedBgLoreCount})`,
       detail: `Your ${actor.background?.name || "Background"} grants a Lore skill${bgCustomSkillText ? ` (${bgCustomSkillText})` : ""}, but no Lore skill is on the sheet yet.`
     });
   } else if (missingLoreCount > 0) {
+    const loreSourceNotes = [];
+    if (expectedBgLoreCount > 0) loreSourceNotes.push(`Background (${expectedBgLoreCount})`);
+    if (featLoreCount > 0) loreSourceNotes.push(`Lore feats (${featLoreCount})`);
+    if (gmBonusLores > 0) loreSourceNotes.push(`GM Bonus (${gmBonusLores})`);
     issues.push({
+      id: "skills:missing-lore",
       severity: "warning",
       category: "Skills",
       title: `Missing ${missingLoreCount} Lore Skill${missingLoreCount === 1 ? "" : "s"} (${loreItems.length}/${expectedMinLores})`,
-      detail: `Expected at least ${expectedMinLores} Lore skill(s) from Background (${expectedBgLoreCount}) and Lore feats (${featLoreCount}).`
+      detail: `Expected at least ${expectedMinLores} Lore skill(s) from ${loreSourceNotes.join(", ") || "character features"}.`
     });
   }
   if (actor.class && missingIncreases > 0) {
     issues.push({
+      id: "skills:missing-increases",
       severity: "warning",
       category: "Skills",
       title: `Missing ${missingIncreases} Skill Increase${missingIncreases === 1 ? "" : "s"} (${effectiveIncreasesSpent}/${expectedIncreases})`,
-      detail: `At Level ${level}, you have earned ${expectedIncreases} skill increase(s) at level(s): ${unlockedIncreaseLevels.join(", ")}.`
+      detail: `At Level ${level}, you have earned ${expectedIncreases} skill increase(s)${unlockedIncreaseLevels.length > 0 ? ` at level(s): ${unlockedIncreaseLevels.join(", ")}` : ""}${increaseBonusText ? ` (${increaseBonusText})` : ""}.`
     });
   }
-  if (overCapSkills.length > 0) {
+  if (actor.class && excessIncreases > 0) {
     issues.push({
+      id: "skills:excess-increases",
       severity: "warning",
       category: "Skills",
-      title: `Skill Proficiency Above Level Cap`,
-      detail: overCapSkills.map(s => `${s.label} (${s.rankLabel} requires Lv ${s.requiredLevel}+)`).join(", ")
+      title: `${excessIncreases} Extra Skill Increase${excessIncreases === 1 ? "" : "s"} Spent (${spentIncreases}/${expectedIncreases})`,
+      detail: `Sheet has ${spentIncreases} manual skill increase(s) spent vs ${expectedIncreases} expected${increaseBonusText ? ` (including ${increaseBonusText})` : ""}. Add a GM Bonus in GM Adjustments or click Accept.`
+    });
+  }
+  for (const s of overCapSkills) {
+    issues.push({
+      id: s.issueId,
+      severity: "warning",
+      category: "Skills",
+      title: `Skill Above Level Cap: ${s.label} (${s.rankLabel})`,
+      detail: `${s.label} is ${s.rankLabel}, which normally requires Level ${s.requiredLevel}+ unless granted by an archetype, feat, or GM boon.`
     });
   }
 
@@ -566,10 +1273,16 @@ function analyzeSkills(actor, level, dualInfo) {
     missingLoreCount,
     loreStatus: missingLoreCount > 0 ? "missing" : "complete",
     extraManualLores,
+    gmBonusTrained,
+    gmBonusIncreases,
+    gmBonusLores,
+    featBonusTrained: itemGrants.featBonusTrained,
+    featBonusIncreases: itemGrants.featBonusIncreases,
     currentTrained: currentTrainedEffective,
     missingTrained: missingTrainedSkills,
     extraTrained: extraTrainedSkills,
-    trainedStatus: missingTrainedSkills > 0 ? "missing" : (extraTrainedSkills > 0 ? "extra" : "complete"),
+    unexplainedExtraTrained,
+    trainedStatus: missingTrainedSkills > 0 ? "missing" : (unexplainedExtraTrained > 0 ? "extra" : "complete"),
     expectedIncreases,
     spentIncreases: effectiveIncreasesSpent,
     rawSpentIncreases: spentIncreases,
@@ -577,7 +1290,11 @@ function analyzeSkills(actor, level, dualInfo) {
     missingIncreases,
     excessIncreases,
     unlockedIncreaseLevels,
-    increaseLevelsText: unlockedIncreaseLevels.length > 0 ? unlockedIncreaseLevels.join(", ") : "None yet (starts Lv 3)",
+    increaseLevelsText: unlockedIncreaseLevels.length > 0 ? unlockedIncreaseLevels.join(", ") : `None yet (starts Lv ${expertMinLevel})`,
+    increaseBonusText,
+    autoSkillUpgrades,
+    autoSkillUpgradesText,
+    hasAutoSkillUpgrades: autoSkillUpgrades.length > 0,
     isFastProgression,
     increasesStatus: missingIncreases > 0 ? "missing" : (excessIncreases > 0 ? "extra" : "complete"),
     overCapSkills,
@@ -644,6 +1361,7 @@ function analyzeFormulas(actor, level, dualInfo = null) {
 
   if (expected > 0 && missing > 0) {
     issues.push({
+      id: "formulas:missing",
       severity: "warning",
       category: "Formulas",
       title: `Missing ${missing} ${isAlchemist ? "Alchemical " : ""}Formula${missing === 1 ? "" : "s"} (${current}/${expected})`,
@@ -729,6 +1447,7 @@ function analyzeFeats(actor, level, dualInfo) {
 
       if (groupEmpty > 0) {
         issues.push({
+          id: sanitizeIssueId(`feats:empty-${group.id}`),
           severity: "warning",
           category: "Feats",
           title: `${label}: ${groupEmpty} Empty Slot${groupEmpty === 1 ? "" : "s"} (${groupFilled}/${groupTotal})`,
@@ -761,6 +1480,7 @@ function analyzeFeats(actor, level, dualInfo) {
 
     if (missingDualFeatures.length > 0) {
       issues.push({
+        id: "feats:missing-dual-features",
         severity: "warning",
         category: "Dual Class",
         title: `${missingDualFeatures.length} Missing ${dualInfo.name} Class Feature${missingDualFeatures.length === 1 ? "" : "s"}`,
@@ -958,6 +1678,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
           : "Create this spellcasting entry to add slots & spells") + autoHint
       });
       issues.push({
+        id: sanitizeIssueId(`spells:missing-entry:${src.key}`),
         severity: "critical",
         category: "Spellcasting",
         title: `Missing Spellcasting Entry: ${src.title}`,
@@ -1075,6 +1796,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
 
       if (hasMissing) {
         issues.push({
+          id: sanitizeIssueId(`spells:focus-missing:${src.key}`),
           severity: "info",
           category: "Spellcasting",
           title: missingAutoSpells.length > 0
@@ -1195,6 +1917,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
 
     if (slotsOutdated) {
       issues.push({
+        id: sanitizeIssueId(`spells:slots-outdated:${src.key}`),
         severity: "warning",
         category: "Spellcasting",
         title: `Spell Slots Outdated: ${entry.name}`,
@@ -1202,6 +1925,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       });
     } else if (missingAutoSpells.length > 0 || needsFontPrepare || missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       issues.push({
+        id: sanitizeIssueId(`spells:incomplete:${src.key}`),
         severity: "info",
         category: "Spellcasting",
         title: `${entry.name}: ${missingParts.join(" · ")}`,
@@ -1735,6 +2459,9 @@ export function analyzeCharacter(actor) {
   const intMod = Number(actor.system?.abilities?.int?.mod ?? 0);
   const variants = getActiveVariantRules();
   const dualInfo = getActorDualClassInfo(actor, variants);
+  const overrides = getCheckerOverrides(actor);
+  const ackMap = overrides.acknowledgedIssues || {};
+  const isAck = (issueId) => Boolean(issueId && ackMap[sanitizeIssueId(issueId)]);
 
   const primarySlug = actor.class ? getItemSlug(actor.class) : "";
   const requiresDeity = primarySlug === "cleric"
@@ -1798,6 +2525,7 @@ export function analyzeCharacter(actor) {
   for (const ci of coreItems) {
     if (ci.required && !ci.present) {
       coreIssues.push({
+        id: sanitizeIssueId(`core:missing-${ci.key}`),
         severity: "critical",
         category: "Core Build",
         title: `Missing ${ci.label}`,
@@ -1806,7 +2534,7 @@ export function analyzeCharacter(actor) {
     }
   }
 
-  // Languages check
+  // Languages check (includes Multilingual & GM Bonus Languages)
   const knownLangs = Array.isArray(actor.system?.details?.languages?.value)
     ? actor.system.details.languages.value.filter(Boolean)
     : [];
@@ -1819,23 +2547,25 @@ export function analyzeCharacter(actor) {
     : 0;
   const ancExtraLangs = Number(actor.ancestry?.system?.additionalLanguages?.count ?? 0);
   const multilingualCount = (actor.itemTypes?.feat || []).filter(f => getItemSlug(f) === "multilingual").length;
+  const gmBonusLanguages = overrides.bonusLanguages || 0;
   const expectedLangCount = actor.ancestry
-    ? ancBaseLangs + Math.max(0, ancExtraLangs + Math.max(0, intMod)) + (multilingualCount * 2)
+    ? Math.max(0, ancBaseLangs + Math.max(0, ancExtraLangs + Math.max(0, intMod)) + (multilingualCount * 2) + gmBonusLanguages)
     : 0;
   const missingLangs = Math.max(0, expectedLangCount - currentLangCount);
 
   if (actor.ancestry && missingLangs > 0) {
     coreIssues.push({
+      id: "languages:missing",
       severity: "info",
       category: "Languages",
       title: `Missing ${missingLangs} Language${missingLangs === 1 ? "" : "s"} (${currentLangCount}/${expectedLangCount})`,
-      detail: `Ancestry grants ${ancBaseLangs} base + ${ancExtraLangs} extra + ${Math.max(0, intMod)} from INT${multilingualCount ? ` + ${multilingualCount * 2} Multilingual` : ""}.`
+      detail: `Ancestry grants ${ancBaseLangs} base + ${ancExtraLangs} extra + ${Math.max(0, intMod)} from INT${multilingualCount ? ` + ${multilingualCount * 2} Multilingual` : ""}${gmBonusLanguages !== 0 ? ` ${gmBonusLanguages > 0 ? "+" : ""}${gmBonusLanguages} GM Bonus` : ""}.`
     });
   }
 
   // 2. Sub-analyses
   const attributes = analyzeAttributeBoosts(actor, level, variants, dualInfo);
-  const skills = analyzeSkills(actor, level, dualInfo);
+  const skills = analyzeSkills(actor, level, dualInfo, overrides);
   const formulas = analyzeFormulas(actor, level, dualInfo);
   const feats = analyzeFeats(actor, level, dualInfo);
   const spellcasting = analyzeSpellcasting(actor, level, dualInfo);
@@ -1852,60 +2582,78 @@ export function analyzeCharacter(actor) {
     readinessNotes.push("No armor in Inventory (verify unarmored AC is intentional).");
   }
 
-  // 4. Aggregate Issues & Completeness Score
-  const allIssues = [
+  // 4. Aggregate Issues, Partition GM-Accepted Items & Compute Completeness Score
+  const rawIssues = [
     ...coreIssues,
     ...attributes.issues,
     ...skills.issues,
     ...formulas.issues,
     ...feats.issues,
     ...spellcasting.issues
-  ];
+  ].map(iss => ({
+    ...iss,
+    id: sanitizeIssueId(iss.id || `${iss.category}:${iss.title}`)
+  }));
+
+  const allIssues = [];
+  const acknowledgedIssues = [];
+  for (const iss of rawIssues) {
+    if (isAck(iss.id)) {
+      acknowledgedIssues.push(iss);
+    } else {
+      allIssues.push(iss);
+    }
+  }
 
   const criticalCount = allIssues.filter(i => i.severity === "critical").length;
   const warningCount = allIssues.filter(i => i.severity === "warning").length;
   const infoCount = allIssues.filter(i => i.severity === "info").length;
   const actionableMissingCount = criticalCount + warningCount;
 
-  // Weighted checklist score (0-100%)
+  // Weighted checklist score (0-100%, counting GM-accepted items as resolved)
   let totalChecks = 0;
   let passedChecks = 0;
 
   // Core items (weight 2 each)
   for (const ci of coreItems) {
     totalChecks += 2;
-    if (ci.present) passedChecks += 2;
+    if (ci.present || isAck(`core:missing-${ci.key}`)) passedChecks += 2;
   }
   // Attribute tiers
   for (const t of attributes.tiers) {
     totalChecks += 1;
-    if (t.complete) passedChecks += 1;
+    if (t.complete || isAck(`attributes:missing-${t.key}`)) passedChecks += 1;
   }
   // Skills, Lore & skill increases
   if (actor.class) {
     totalChecks += 2;
-    if (skills.missingTrained === 0) passedChecks += 1;
-    if (skills.missingIncreases === 0) passedChecks += 1;
+    if (skills.missingTrained === 0 || isAck("skills:missing-trained")) passedChecks += 1;
+    if (skills.missingIncreases === 0 || isAck("skills:missing-increases")) passedChecks += 1;
   }
   if (skills.expectedMinLores > 0) {
     totalChecks += 1;
-    if (skills.missingLoreCount === 0) passedChecks += 1;
+    const activeLoreAckId = skills.hasMissingBgLore ? "skills:missing-bg-lore" : "skills:missing-lore";
+    if (skills.missingLoreCount === 0 || isAck(activeLoreAckId)) passedChecks += 1;
   }
   // Crafting / Alchemist formulas
   if (formulas.expected > 0) {
     totalChecks += 1;
-    if (formulas.complete) passedChecks += 1;
+    if (formulas.complete || isAck("formulas:missing")) passedChecks += 1;
   }
   // Feat slots
   if (feats.totalSlots > 0) {
-    totalChecks += feats.totalSlots;
-    passedChecks += feats.filledSlots;
+    for (const g of feats.groups) {
+      totalChecks += g.total;
+      passedChecks += isAck(`feats:empty-${g.id}`) ? g.total : g.filled;
+    }
   }
   // Spellcasting entries
   for (const s of spellcasting.sources) {
     totalChecks += 2;
-    if (s.entryExists && !s.slotsOutdated) passedChecks += 2;
-    else if (s.entryExists) passedChecks += 1;
+    const entryOk = s.entryExists || isAck(`spells:missing-entry:${s.key}`);
+    const slotsOk = !s.slotsOutdated || isAck(`spells:slots-outdated:${s.key}`);
+    if (entryOk && slotsOk) passedChecks += 2;
+    else if (entryOk) passedChecks += 1;
   }
 
   const completenessPct = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 100;
@@ -1922,6 +2670,25 @@ export function analyzeCharacter(actor) {
     status = "info";
     statusLabel = `${infoCount} Note${infoCount === 1 ? "" : "s"}`;
   }
+
+  // GM Bonuses human-readable summary
+  const gmBonusesParts = [];
+  if (overrides.bonusTrainedSkills !== 0) {
+    gmBonusesParts.push(`${overrides.bonusTrainedSkills > 0 ? "+" : ""}${overrides.bonusTrainedSkills} Trained Skill${Math.abs(overrides.bonusTrainedSkills) === 1 ? "" : "s"}`);
+  }
+  if (overrides.bonusSkillIncreases !== 0) {
+    gmBonusesParts.push(`${overrides.bonusSkillIncreases > 0 ? "+" : ""}${overrides.bonusSkillIncreases} Skill Increase${Math.abs(overrides.bonusSkillIncreases) === 1 ? "" : "s"}`);
+  }
+  if (overrides.bonusLores > 0) {
+    gmBonusesParts.push(`+${overrides.bonusLores} Lore${overrides.bonusLores === 1 ? "" : "s"}`);
+  }
+  if (overrides.bonusLanguages !== 0) {
+    gmBonusesParts.push(`${overrides.bonusLanguages > 0 ? "+" : ""}${overrides.bonusLanguages} Language${Math.abs(overrides.bonusLanguages) === 1 ? "" : "s"}`);
+  }
+  const hasGmBonuses = gmBonusesParts.length > 0 || Boolean(overrides.note);
+  const gmBonusesSummary = gmBonusesParts.join(" · ");
+  const savedAckCount = Object.keys(ackMap).length;
+  const hasAnySavedOverrides = hasGmBonuses || savedAckCount > 0;
 
   // Owning non-GM players (for whisper button)
   const owners = (game.users?.contents || []).filter(u => !u.isGM && actor.testUserPermission(u, "OWNER"));
@@ -1952,7 +2719,8 @@ export function analyzeCharacter(actor) {
       current: currentLangCount,
       expected: expectedLangCount,
       missing: missingLangs,
-      complete: missingLangs === 0
+      gmBonus: gmBonusLanguages,
+      complete: missingLangs === 0 || isAck("languages:missing")
     },
     attributes,
     skills,
@@ -1960,7 +2728,14 @@ export function analyzeCharacter(actor) {
     feats,
     spellcasting,
     readinessNotes,
+    overrides,
+    hasGmBonuses,
+    gmBonusesSummary,
+    hasAnySavedOverrides,
     allIssues,
+    acknowledgedIssues,
+    acknowledgedCount: acknowledgedIssues.length,
+    hasAcknowledgedIssues: acknowledgedIssues.length > 0,
     criticalCount,
     warningCount,
     infoCount,
@@ -2006,6 +2781,14 @@ export async function postChecklistToChat(actor, { whisperToOwners = false } = {
     </div>
   `).join("");
 
+  const gmNoteParts = [];
+  if (report.gmBonusesSummary) gmNoteParts.push(`GM Bonuses: ${report.gmBonusesSummary}`);
+  if (report.overrides?.note) gmNoteParts.push(report.overrides.note);
+  if (report.acknowledgedCount > 0) gmNoteParts.push(`${report.acknowledgedCount} item${report.acknowledgedCount === 1 ? "" : "s"} accepted by GM`);
+  const gmNoteHtml = gmNoteParts.length > 0
+    ? `<div class="pf2e-cc-chat-detail" style="margin-top: 5px;"><em>${esc(gmNoteParts.join(" · "))}</em></div>`
+    : "";
+
   const content = `
     <div class="pf2e-cc-chat-card">
       <div class="pf2e-cc-chat-header">
@@ -2022,6 +2805,7 @@ export async function postChecklistToChat(actor, { whisperToOwners = false } = {
       </div>
       ${spellLines ? `<div class="pf2e-cc-chat-spells">${spellLines}</div>` : ""}
       <ul class="pf2e-cc-chat-list">${issueRows}</ul>
+      ${gmNoteHtml}
     </div>
   `;
 
