@@ -34,6 +34,7 @@ import {
 import {
   buildLevelRoadmap,
   embedLiveFeatIntoSlot,
+  extractActorAncestryTraits,
   isLevelPlannerEnabled,
   openCharacterSheetToTab,
   openNativeAttributeBuilder,
@@ -428,7 +429,7 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
       const group = actor?.feats?.get?.(groupId);
       const rawFilter = Array.isArray(group?.featFilter) ? group.featFilter : [];
       let category = "";
-      if (groupId === "ancestry") category = "ancestry";
+      if (groupId === "ancestry" || groupId === "ancestryparagon") category = "ancestry";
       else if (groupId === "skill") category = "skill";
       else if (groupId === "general") category = "general";
       else if (groupId === "class" || groupId === "dualclass" || groupId === "archetype") category = "class";
@@ -437,23 +438,20 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
         if (catToken) category = catToken.slice("category-".length);
       }
 
-      const traits = [];
-      for (const token of rawFilter) {
-        if (typeof token === "string" && token.startsWith("traits-")) {
-          const t = normalizeSlug(token.slice("traits-".length));
-          if (t && !traits.includes(t)) traits.push(t);
+      const traits = (groupId === "ancestry" || groupId === "ancestryparagon")
+        ? extractActorAncestryTraits(actor)
+        : [];
+      if (traits.length === 0) {
+        for (const token of rawFilter) {
+          if (typeof token === "string" && token.startsWith("traits-")) {
+            const t = normalizeSlug(token.slice("traits-".length));
+            if (t && !traits.includes(t)) traits.push(t);
+          }
         }
       }
-      if (traits.length === 0) {
-        if (groupId === "ancestry") {
-          const ancSlug = normalizeSlug(actor?.ancestry?.slug || actor?.ancestry?.system?.slug || actor?.ancestry?.name || "");
-          if (ancSlug) traits.push(ancSlug);
-          const herSlug = normalizeSlug(actor?.heritage?.slug || actor?.heritage?.system?.slug || "");
-          if (herSlug && !actor?.heritage?.system?.ancestry) traits.push(herSlug);
-        } else if (groupId === "class") {
-          const clsSlug = normalizeSlug(actor?.class?.slug || actor?.class?.system?.slug || actor?.class?.name || "");
-          if (clsSlug) traits.push(clsSlug);
-        }
+      if (traits.length === 0 && groupId === "class") {
+        const clsSlug = normalizeSlug(actor?.class?.slug || actor?.class?.system?.slug || actor?.class?.name || "");
+        if (clsSlug) traits.push(clsSlug);
       }
 
       const dedications = lvlRow?.featSlots?.find(s => Array.isArray(s.dedications) && s.dedications.length > 0)?.dedications

@@ -268,56 +268,229 @@ function toStringArray(raw) {
   return [];
 }
 
-/** Generic creature/rarity traits that should NOT be used as ancestry/class feat filters */
+/** Generic creature/rarity/meta traits that should NOT be used as ancestry/class feat filters */
 const GENERIC_NON_ANCESTRY_TRAITS = new Set([
   "humanoid", "undead", "construct", "fey", "plant", "fungus", "beast",
   "dragon", "elemental", "fiend", "celestial", "monitor", "aberration",
   "astral", "ethereal", "spirit", "amphibious", "aquatic", "incorporeal",
-  "mindless", "common", "uncommon", "rare", "unique"
+  "mindless", "common", "uncommon", "rare", "unique",
+  "holy", "unholy", "lawful", "chaotic", "good", "evil", "mythic",
+  "minion", "summoned", "eidolon", "companion", "amorphous", "telepathy",
+  "troop", "swarm", "tech", "living", "shadow", "time", "dream",
+  "tiny", "small", "medium", "large", "huge", "gargantuan", "oni",
+  "custom-mixed-heritage", "mixed-ancestry"
 ]);
 
 /**
- * Extracts authoritative ancestry & versatile-heritage feat traits for an actor:
- *  1. PF2e's own native `ancestry` / `ancestryparagon` FeatGroup `featFilter`
- *     (automatically handles Remaster slugs, Versatile Heritages, and Adopted Ancestry!)
- *  2. Live `actor.ancestry` traits & slug
- *  3. Live `actor.heritage` traits (and slug only when it is a Versatile Heritage)
+ * PF2e Remaster & Legacy mixed-heritage / renamed-ancestry trait expansions.
+ * Ensures Aiuvarin/Half-Elf unlocks Elf + Aiuvarin + Half-Elf feats, Dromaar/Half-Orc
+ * unlocks Orc + Dromaar + Half-Orc feats, and Remaster/Legacy renames interoperate cleanly.
  */
-function extractActorAncestryTraits(actor) {
-  const traits = new Set();
+const ANCESTRY_HERITAGE_TRAIT_EXPANSIONS = {
+  "aiuvarin": ["elf", "half-elf"],
+  "half-elf": ["elf", "aiuvarin"],
+  "dromaar": ["orc", "half-orc"],
+  "half-orc": ["orc", "dromaar"],
+  "aasimar": ["nephilim"],
+  "tiefling": ["nephilim"],
+  "aphorite": ["nephilim"],
+  "ganzi": ["nephilim"],
+  "nephilim": ["aasimar", "tiefling"],
+  "gnoll": ["kholo"],
+  "kholo": ["gnoll"],
+  "grippli": ["tripkee"],
+  "tripkee": ["grippli"],
+  "ifrit": ["naari"],
+  "naari": ["ifrit"]
+};
 
+/** Legacy trait slugs hidden from dropdown display labels when their Remaster equivalent is already shown */
+const LEGACY_DISPLAY_ALIAS_TO_REMASTER = {
+  "half-elf": "aiuvarin",
+  "half-orc": "dromaar",
+  "aasimar": "nephilim",
+  "tiefling": "nephilim",
+  "gnoll": "kholo",
+  "grippli": "tripkee",
+  "ifrit": "naari"
+};
+
+/** Symmetric search-box aliases so typing legacy or Remaster terms finds both */
+export const ANCESTRY_SEARCH_ALIASES = {
+  "half-elf": ["half-elf", "aiuvarin"],
+  "aiuvarin": ["aiuvarin", "half-elf"],
+  "half-orc": ["half-orc", "dromaar"],
+  "dromaar": ["dromaar", "half-orc"],
+  "aasimar": ["aasimar", "nephilim"],
+  "tiefling": ["tiefling", "nephilim"],
+  "nephilim": ["nephilim", "aasimar", "tiefling"],
+  "gnoll": ["gnoll", "kholo"],
+  "kholo": ["kholo", "gnoll"],
+  "grippli": ["grippli", "tripkee"],
+  "tripkee": ["tripkee", "grippli"],
+  "ifrit": ["ifrit", "naari"],
+  "naari": ["naari", "ifrit"]
+};
+
+/**
+ * Formats an ancestry/class trait list for compact UI dropdown labels, omitting redundant
+ * legacy aliases (e.g. `half-elf`) when their Remaster equivalent (`aiuvarin`) is already listed.
+ */
+export function formatTraitSummaryList(traits = []) {
+  const clean = (Array.isArray(traits) ? traits : []).map(normalizeSlug).filter(Boolean);
+  const set = new Set(clean);
+  return clean
+    .filter(t => {
+      const remaster = LEGACY_DISPLAY_ALIAS_TO_REMASTER[t];
+      return !(remaster && set.has(remaster));
+    })
+    .map(t => capitalize(t.replace(/-/g, " ")));
+}
+
+/**
+ * Extracts authoritative ancestry, versatile/mixed heritage, and Adopted Ancestry feat traits:
+ *  1. PF2e's own native `ancestry` / `ancestryparagon` FeatGroup `featFilter` / `filter`
+ *  2. Live post-Rule-Element `actor.system.traits.value` & `actor.traits` (filtered to ancestry/heritage traits)
+ *  3. Live `actor.ancestry` & `actor.heritage` traits, slugs, `ActorTraits` / `ChoiceSet` rules & `rulesSelections`
+ *  4. Live `Adopted Ancestry` feat selection (rulesSelections, ChoiceSet, or parenthetical name)
+ *  5. PF2e Remaster/Legacy mixed-heritage expansions (e.g. Aiuvarin/Half-Elf -> Elf, Dromaar/Half-Orc -> Orc)
+ */
+export function extractActorAncestryTraits(actor) {
+  const traits = new Set();
+  const knownAncestryTraits = CONFIG.PF2E?.ancestryTraits && typeof CONFIG.PF2E.ancestryTraits === "object"
+    && Object.keys(CONFIG.PF2E.ancestryTraits).length > 0
+    ? CONFIG.PF2E.ancestryTraits
+    : null;
+
+  const isKnownAncestrySlug = (slug, { requireRegistry = false } = {}) => Boolean(
+    slug
+    && !GENERIC_NON_ANCESTRY_TRAITS.has(slug)
+    && (
+      Object.prototype.hasOwnProperty.call(ANCESTRY_HERITAGE_TRAIT_EXPANSIONS, slug)
+      || (knownAncestryTraits
+        ? Object.prototype.hasOwnProperty.call(knownAncestryTraits, slug)
+        : !requireRegistry)
+    )
+  );
+
+  const addTrait = (raw, { strictKnown = false, requireRegistry = false } = {}) => {
+    const slug = normalizeSlug(raw);
+    if (!slug || GENERIC_NON_ANCESTRY_TRAITS.has(slug)) return;
+    if (strictKnown && !isKnownAncestrySlug(slug, { requireRegistry })) return;
+    traits.add(slug);
+  };
+
+  const ingestFilterToken = (token) => {
+    if (typeof token !== "string") return;
+    if (token.startsWith("traits-")) {
+      addTrait(token.slice("traits-".length));
+    } else if (token.startsWith("item:trait:")) {
+      addTrait(token.slice("item:trait:".length));
+    } else if (token.startsWith("trait:")) {
+      addTrait(token.slice("trait:".length));
+    }
+  };
+
+  // 1. PF2e native FeatGroup filters (`featFilter` & `filter`)
   for (const groupId of ["ancestry", "ancestryparagon"]) {
-    const ff = actor?.feats?.get?.(groupId)?.featFilter;
-    if (Array.isArray(ff)) {
-      for (const token of ff) {
-        if (typeof token === "string" && token.startsWith("traits-")) {
-          const slug = normalizeSlug(token.slice("traits-".length));
-          if (slug && !GENERIC_NON_ANCESTRY_TRAITS.has(slug)) traits.add(slug);
+    const grp = actor?.feats?.get?.(groupId);
+    if (!grp) continue;
+    for (const src of [grp.featFilter, grp.filter]) {
+      if (Array.isArray(src)) {
+        for (const token of src) ingestFilterToken(token);
+      } else if (src && typeof src === "object") {
+        for (const t of toStringArray(src.traits)) {
+          if (typeof t === "string") {
+            if (t.startsWith("traits-") || t.includes("trait:")) ingestFilterToken(t);
+            else addTrait(t);
+          } else if (t && typeof t === "object" && typeof t.value === "string") {
+            addTrait(t.value);
+          }
         }
       }
     }
   }
 
-  if (actor?.ancestry) {
-    for (const t of toStringArray(actor.ancestry.system?.traits?.value)) {
-      const slug = normalizeSlug(t);
-      if (slug && !GENERIC_NON_ANCESTRY_TRAITS.has(slug)) traits.add(slug);
-    }
-    const ancSlug = normalizeSlug(actor.ancestry.slug || actor.ancestry.system?.slug || actor.ancestry.name);
-    if (ancSlug && !GENERIC_NON_ANCESTRY_TRAITS.has(ancSlug)) traits.add(ancSlug);
+  // 2. Live post-Rule-Element actor traits (where Aiuvarin/Half-Elf/Dromaar/Custom Mixed Heritage add `elf`/`orc`/etc.)
+  for (const t of [
+    ...toStringArray(actor?.system?.traits?.value),
+    ...toStringArray(actor?.traits)
+  ]) {
+    addTrait(t, { strictKnown: true });
   }
 
+  // Helper to inspect ActorTraits & ChoiceSet rules + rulesSelections on an ancestry/heritage/feat item
+  const ingestItemGrantedAncestryTraits = (item) => {
+    if (!item) return;
+    const selections = item.flags?.pf2e?.rulesSelections && typeof item.flags.pf2e.rulesSelections === "object"
+      ? item.flags.pf2e.rulesSelections
+      : null;
+
+    if (selections) {
+      for (const val of Object.values(selections)) {
+        if (typeof val === "string") addTrait(val, { strictKnown: true, requireRegistry: true });
+      }
+    }
+
+    const rules = Array.isArray(item.system?.rules) ? item.system.rules : [];
+    for (const rule of rules) {
+      if (!rule || typeof rule !== "object") continue;
+      if (rule.key === "ActorTraits") {
+        for (const rawAdd of toStringArray(rule.add)) {
+          if (typeof rawAdd !== "string") continue;
+          const tplMatch = rawAdd.match(/\{item\|flags\.pf2e\.rulesSelections\.([^}]+)\}/i);
+          if (tplMatch && selections) {
+            const resolved = selections[tplMatch[1].trim()];
+            if (typeof resolved === "string") addTrait(resolved, { strictKnown: true, requireRegistry: true });
+          } else if (!rawAdd.includes("{")) {
+            addTrait(rawAdd, { strictKnown: true });
+          }
+        }
+      } else if (rule.key === "ChoiceSet" && typeof rule.selection === "string") {
+        addTrait(rule.selection, { strictKnown: true, requireRegistry: true });
+      }
+    }
+  };
+
+  // 3. Live `actor.ancestry`
+  if (actor?.ancestry) {
+    for (const t of toStringArray(actor.ancestry.system?.traits?.value)) {
+      addTrait(t);
+    }
+    addTrait(actor.ancestry.slug || actor.ancestry.system?.slug || actor.ancestry.name);
+    ingestItemGrantedAncestryTraits(actor.ancestry);
+  }
+
+  // 4. Live `actor.heritage`
   if (actor?.heritage) {
     for (const t of toStringArray(actor.heritage.system?.traits?.value)) {
-      const slug = normalizeSlug(t);
-      if (slug && !GENERIC_NON_ANCESTRY_TRAITS.has(slug)) traits.add(slug);
+      addTrait(t);
     }
-    // Only include heritage slug itself if it's a versatile heritage (no parent ancestry bound),
-    // preventing non-trait sub-heritages like "whisper-elf" from breaking Compendium Browser trait filters.
+    const herSlug = normalizeSlug(actor.heritage.slug || actor.heritage.system?.slug || actor.heritage.name);
+    // Include heritage slug if it is a Versatile Heritage (no bound parent ancestry) OR a known
+    // mixed/legacy heritage (e.g., Legacy Half-Elf / Half-Orc which bound `ancestry: human`).
     const isVersatile = !actor.heritage.system?.ancestry;
-    if (isVersatile) {
-      const herSlug = normalizeSlug(actor.heritage.slug || actor.heritage.system?.slug || actor.heritage.name);
-      if (herSlug && !GENERIC_NON_ANCESTRY_TRAITS.has(herSlug)) traits.add(herSlug);
+    if (herSlug && (isVersatile || Object.prototype.hasOwnProperty.call(ANCESTRY_HERITAGE_TRAIT_EXPANSIONS, herSlug))) {
+      addTrait(herSlug);
+    }
+    ingestItemGrantedAncestryTraits(actor.heritage);
+  }
+
+  // 5. Live `Adopted Ancestry` feat (or Custom Mixed Ancestry feat)
+  for (const feat of actor?.itemTypes?.feat || []) {
+    const fSlug = normalizeSlug(feat.slug || feat.system?.slug || feat.name);
+    if (fSlug === "adopted-ancestry" || /^adopted-ancestry(?:-|$)/.test(fSlug) || /adopted\s+ancestry/i.test(feat.name || "")) {
+      ingestItemGrantedAncestryTraits(feat);
+      const parenMatch = String(feat.name || "").match(/\(([^)]+)\)/);
+      if (parenMatch) addTrait(parenMatch[1], { strictKnown: true });
+    }
+  }
+
+  // 6. Expand mixed-heritage & Remaster/Legacy trait equivalences (e.g. aiuvarin -> elf + half-elf)
+  for (const existing of Array.from(traits)) {
+    const extras = ANCESTRY_HERITAGE_TRAIT_EXPANSIONS[existing];
+    if (Array.isArray(extras)) {
+      for (const ex of extras) addTrait(ex);
     }
   }
 
@@ -1111,8 +1284,22 @@ export function buildLevelRoadmap(actor, options = {}) {
       liveFeatsBySlotKey.set(loc, feat);
     }
   }
-  if (actor.heritage?.name) recordKnownFeatName(actor.heritage.name);
-  if (actor.ancestry?.name) recordKnownFeatName(actor.ancestry.name);
+  if (actor.heritage?.name) {
+    recordKnownFeatName(actor.heritage.name);
+    const herSlug = normalizeSlug(actor.heritage.slug || actor.heritage.system?.slug || actor.heritage.name);
+    for (const alias of ANCESTRY_HERITAGE_TRAIT_EXPANSIONS[herSlug] || []) {
+      recordKnownFeatName(alias.replace(/-/g, " "));
+      recordKnownFeatName(alias);
+    }
+  }
+  if (actor.ancestry?.name) {
+    recordKnownFeatName(actor.ancestry.name);
+    const ancSlug = normalizeSlug(actor.ancestry.slug || actor.ancestry.system?.slug || actor.ancestry.name);
+    for (const alias of ANCESTRY_HERITAGE_TRAIT_EXPANSIONS[ancSlug] || []) {
+      recordKnownFeatName(alias.replace(/-/g, " "));
+      recordKnownFeatName(alias);
+    }
+  }
   if (actor.class?.name) recordKnownFeatName(actor.class.name);
   if (dualInfo?.name) recordKnownFeatName(dualInfo.name);
   // Also scan `actor.feats` groups directly (most authoritative mapping for PF2e v14!)

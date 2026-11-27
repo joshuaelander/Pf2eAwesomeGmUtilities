@@ -67,6 +67,7 @@ export const GM_SCREEN_CARDS = [
   { id: "treat-wounds", tab: "skills", label: "Treat Wounds & Repair" },
   { id: "recall-knowledge", tab: "skills", label: "Recall Knowledge (Remaster)" },
   { id: "spell-rank-dcs", tab: "skills", label: "Spell Rank DCs & Learn a Spell" },
+  { id: "rituals-rules", tab: "skills", label: "Rituals (Casting, DCs & Secondary Checks)" },
   { id: "social-attitudes", tab: "skills", label: "NPC Attitudes & Social Checks" },
   { id: "downtime-niche", tab: "skills", label: "Crafting, Identify Magic & Retraining" },
   { id: "exploration-activities", tab: "skills", label: "Exploration Activities" },
@@ -557,6 +558,21 @@ export const DOWNTIME_NICHE_RULES = [
   { label: "Identify Magic (10 min)", text: "Secret Arcana/Nature/Occultism/Religion vs Item/Spell Lv DC. Crit: full properties & curse hints. Fail: cannot retry for 1 day." },
   { label: "Retraining", text: "Feat / Skill / Swappable choice = 1 week of Downtime; major class feature (e.g. subclass) = 1 month (with teacher/tools as needed)." },
   { label: "Subsist (Downtime)", text: "Society or Survival vs area DC. Succ: free modest living; Fail: Fatigued until fed; Crit Fail: -2 to Subsist for 1 week & starving risk." }
+];
+
+export const RITUAL_SECONDARY_OUTCOMES = [
+  { degree: "Critical Success", cls: "is-crit-succ", effect: "+2 circumstance bonus to Primary check." },
+  { degree: "Success", cls: "is-succ", effect: "No bonus or penalty." },
+  { degree: "Failure", cls: "is-fail", effect: "-4 circumstance penalty to Primary check." },
+  { degree: "Critical Failure", cls: "is-crit-fail", effect: "-4 circ. penalty AND downgrade Primary degree by 1 step." }
+];
+
+export const RITUAL_RULES = [
+  { label: "Who Can Cast", text: "Anyone (even non-casters!) who knows the ritual, meets the Primary skill proficiency, and has Ritual Rank ≤ ⌈Character Level / 2⌉." },
+  { label: "DCs (2× Ritual Rank)", text: "Base level is TWICE the ritual's rank. Roll Secondary checks FIRST (Standard DC; 1 unique caster per check), then Primary check (Very Hard +5 DC)." },
+  { label: "No Hero Points / Buffs", text: "Fortune & Misfortune effects (including Hero Points) CANNOT apply, nor short buffs unless active for the full cast time. Multiple +2 bonuses or -4 penalties don't stack with themselves, though +2 and -4 can both apply." },
+  { label: "Cost & Interruption", text: "Cast over hours or days (8-hr blocks); interruption ruins it. Material costs are consumed when started, even on Failure or Critical Failure." },
+  { label: "Learning & Heightening", text: "Always Uncommon or Rare; learned via downtime/teacher (doesn't count against spell slots/repertoire). Heighten up to ⌈Level / 2⌉ (recalculates 2× Rank DCs)." }
 ];
 
 export const EXPLORATION_ACTIVITIES = [

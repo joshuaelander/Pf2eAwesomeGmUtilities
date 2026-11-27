@@ -19,6 +19,7 @@ import {
   resolveSpellDocumentByUuid
 } from "./character-checker-engine.js";
 import {
+  ANCESTRY_SEARCH_ALIASES,
   FORMULA_CRAFTABLE_TYPES,
   applyPlannedLevelChoices,
   applyPlannedLevelUp,
@@ -28,6 +29,7 @@ import {
   computeMatchingArchetypeFeatUuids,
   embedLiveCoreItem,
   evaluateFeatPrerequisites,
+  formatTraitSummaryList,
   getActorLevelPlan,
   getLightweightCoreBuildIndex,
   getLightweightFeatIndex,
@@ -268,9 +270,7 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
     }
   }
 
-  const traitDisplayList = (slot.traits || [])
-    .filter(Boolean)
-    .map(t => capitalize(String(t).replace(/-/g, " ")));
+  const traitDisplayList = formatTraitSummaryList(slot.traits || []);
   const traitSummary = traitDisplayList.length > 0 ? ` (${traitDisplayList.join(", ")})` : "";
 
   let scopeOptionsHtml = "";
@@ -409,8 +409,13 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
           }
         }
 
-        if (query && !f.name.toLowerCase().includes(query) && !f.traits.some(t => t.includes(query)) && !f.prerequisites.some(p => p.toLowerCase().includes(query))) {
-          continue;
+        if (query) {
+          const querySlug = normalizeSlug(query);
+          const traitQueryTerms = ANCESTRY_SEARCH_ALIASES[querySlug] || (querySlug && querySlug !== query ? [query, querySlug] : [query]);
+          const matchesName = f.name.toLowerCase().includes(query);
+          const matchesTrait = f.traits.some(t => traitQueryTerms.some(term => t.includes(term)));
+          const matchesPrereq = f.prerequisites.some(p => p.toLowerCase().includes(query));
+          if (!matchesName && !matchesTrait && !matchesPrereq) continue;
         }
 
         const evalRes = prereqState

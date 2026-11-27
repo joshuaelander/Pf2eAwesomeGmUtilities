@@ -5,7 +5,7 @@
     <div class="pf2e-gs-search-wrap">
       <i class="fa-solid fa-magnifying-glass pf2e-gs-search-icon"></i>
       <input type="text" class="pf2e-gs-search" value="{{searchQuery}}"
-        placeholder="Filter all tables & rules (e.g. stealth, fly, poison, chase, influence, infiltration, hexploration)..."
+        placeholder="Filter all tables & rules (e.g. stealth, fly, poison, ritual, chase, influence, hexploration)..."
         autocomplete="off" />
       <button type="button" class="pf2e-gs-search-clear" title="Clear filter"
         style="{{#unless searchQuery}}display:none;{{/unless}}">
@@ -1101,6 +1101,25 @@
           </div>
         </div>
 
+        <!-- Crafting, Identify Magic & Retraining -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'downtime-niche')}}is-user-hidden{{/if}}"
+          data-gs-card="downtime-niche"
+          data-gs-keywords="craft crafting formula identify magic retrain retraining subsist downtime">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-hammer"></i> Crafting, Identify Magic &amp; Retraining</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each downtimeNicheRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
         <!-- Treat Wounds & Repair -->
         <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'treat-wounds')}}is-user-hidden{{/if}}"
           data-gs-card="treat-wounds"
@@ -1211,19 +1230,36 @@
           </div>
         </div>
 
-        <!-- Crafting, Identify Magic & Retraining -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'downtime-niche')}}is-user-hidden{{/if}}"
-          data-gs-card="downtime-niche"
-          data-gs-keywords="craft crafting formula identify magic retrain retraining subsist downtime">
+        <!-- Rituals (Casting, DCs & Secondary Checks) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'rituals-rules')}}is-user-hidden{{/if}}"
+          data-gs-card="rituals-rules"
+          data-gs-keywords="ritual rituals primary check secondary caster casters very hard dc cost heighten learn downtime fortune hero point">
           <div class="pf2e-gs-card-head">
-            <h4><i class="fa-solid fa-hammer"></i> Crafting, Identify Magic &amp; Retraining</h4>
+            <h4><i class="fa-solid fa-scroll"></i> Rituals (Casting &amp; Secondary Checks)</h4>
             <div class="pf2e-gs-card-head-right">
               <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Rank {{spellRank}} (Lv {{ritualBaseLevel}}): Sec DC {{ritualSecondaryDc}} · Pri DC {{ritualPrimaryDc}}</span>
             </div>
           </div>
           <div class="pf2e-gs-card-body">
+            <table class="pf2e-gs-table pf2e-gs-mini-table">
+              <thead>
+                <tr>
+                  <th>Secondary Check</th>
+                  <th>Effect on Primary Check</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each ritualSecondaryOutcomes}}
+                <tr data-gs-row="1">
+                  <td><span class="pf2e-gs-pill {{this.cls}}">{{this.degree}}</span></td>
+                  <td>{{this.effect}}</td>
+                </tr>
+                {{/each}}
+              </tbody>
+            </table>
             <ul class="pf2e-gs-bullets">
-              {{#each downtimeNicheRules}}
+              {{#each ritualRules}}
               <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
               {{/each}}
             </ul>

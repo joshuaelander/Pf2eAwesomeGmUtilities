@@ -45,6 +45,8 @@ import {
   POISON_RULES,
   QUICK_CHECK_SKILLS,
   RECALL_KNOWLEDGE_SKILLS,
+  RITUAL_RULES,
+  RITUAL_SECONDARY_OUTCOMES,
   SIMPLE_DCS,
   SOCIAL_ATTITUDE_RULES,
   SPELL_RANK_DCS,
@@ -227,6 +229,9 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const adjObj = DC_ADJUSTMENTS.find(a => a.delta === adj) || DC_ADJUSTMENTS[3];
     const spellRank = Math.max(1, Math.min(10, Math.ceil(Math.max(1, lvl) / 2)));
     const spellRankDc = getSpellRankDc(spellRank);
+    const ritualBaseLevel = spellRank * 2;
+    const ritualSecondaryDc = getLevelDc(ritualBaseLevel);
+    const ritualPrimaryDc = ritualSecondaryDc + 5;
 
     // Split DC by Level into two side-by-side 13-row columns (0–12 and 13–25)
     const dcRows = DC_BY_LEVEL.map(row => ({
@@ -325,6 +330,9 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       finalDc,
       spellRank,
       spellRankDc,
+      ritualBaseLevel,
+      ritualSecondaryDc,
+      ritualPrimaryDc,
       simpleDcs: SIMPLE_DCS.map(s => ({
         ...s,
         isActive: this._simpleDcOverride?.rank === s.rank
@@ -381,6 +389,8 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       recallKnowledgeSkills: RECALL_KNOWLEDGE_SKILLS,
       socialAttitudeRules: SOCIAL_ATTITUDE_RULES,
       downtimeNicheRules: DOWNTIME_NICHE_RULES,
+      ritualSecondaryOutcomes: RITUAL_SECONDARY_OUTCOMES,
+      ritualRules: RITUAL_RULES,
       explorationActivities: EXPLORATION_ACTIVITIES,
       conditions: PF2E_CONDITIONS,
       encounterEval,
