@@ -2,7 +2,7 @@
  * PF2e Awesome GM Utilities - Instant-Access PF2e GM Screen (ApplicationV2)
  *
  * Features:
- *  - Scannable single-glance Remaster PF2e reference tables & niche rules across 6 organized tabs
+ *  - Scannable single-glance Remaster PF2e reference tables & niche rules across 7 organized tabs
  *  - Customizable card visibility (checkboxes per card saved persistently per GM client)
  *  - Balanced 2-column masonry layout that auto-reflows with zero gaps when hiding/filtering cards
  *  - Live instant search across ALL tabs simultaneously (surfaces hidden matches with a subtle tag)
@@ -49,11 +49,24 @@ import {
   SOCIAL_ATTITUDE_RULES,
   SPELL_RANK_DCS,
   STEALTH_SNEAKING_RULES,
+  SUBSYSTEM_CHASES_RULES,
+  SUBSYSTEM_DUELS_RULES,
+  SUBSYSTEM_HEXPLORATION_RULES,
+  SUBSYSTEM_HEXPLORATION_SPEEDS,
+  SUBSYSTEM_INFILTRATION_RULES,
+  SUBSYSTEM_INFLUENCE_RULES,
+  SUBSYSTEM_LEADERSHIP_RULES,
+  SUBSYSTEM_REPUTATION_NOTES,
+  SUBSYSTEM_REPUTATION_TIERS,
+  SUBSYSTEM_RESEARCH_RULES,
+  SUBSYSTEM_VEHICLES_RULES,
   SWIMMING_UNDERWATER_RULES,
   TACTICAL_MISC_RULES,
   TRAVEL_SPEED_TABLE,
   TREASURE_BY_LEVEL,
   TREAT_WOUNDS_TABLE,
+  VICTORY_POINT_OUTCOMES,
+  VICTORY_POINT_TIPS,
   evaluateCounteract,
   evaluateEncounterBudget,
   getLevelDc,
@@ -207,7 +220,8 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
   _buildContext() {
     const partyDefaults = detectPartyDefaults();
     const lvl = Math.max(0, Math.min(25, Number(this._focusLevel) || 0));
-    const baseDc = this._simpleDcOverride ? this._simpleDcOverride.dc : getLevelDc(lvl);
+    const levelStandardDc = getLevelDc(lvl);
+    const baseDc = this._simpleDcOverride ? this._simpleDcOverride.dc : levelStandardDc;
     const adj = Number(this._dcAdjustment) || 0;
     const finalDc = baseDc + adj;
     const adjObj = DC_ADJUSTMENTS.find(a => a.delta === adj) || DC_ADJUSTMENTS[3];
@@ -301,6 +315,9 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       partyLevel: partyDefaults.level,
       isAtPartyLevel: lvl === partyDefaults.level,
       simpleDcOverride: this._simpleDcOverride,
+      levelStandardDc,
+      levelEasyDc: levelStandardDc - 2,
+      levelHardDc: levelStandardDc + 2,
       baseDc,
       dcAdjustment: adj,
       dcAdjustmentLabel: adjObj.label,
@@ -346,6 +363,19 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       drugsAlcoholRules: DRUGS_ALCOHOL_RULES,
       alcoholStages: ALCOHOL_STAGES,
       hazardsHauntsRules: HAZARDS_HAUNTS_RULES,
+      victoryPointOutcomes: VICTORY_POINT_OUTCOMES,
+      victoryPointTips: VICTORY_POINT_TIPS,
+      subsystemChasesRules: SUBSYSTEM_CHASES_RULES,
+      subsystemInfluenceRules: SUBSYSTEM_INFLUENCE_RULES,
+      subsystemResearchRules: SUBSYSTEM_RESEARCH_RULES,
+      subsystemInfiltrationRules: SUBSYSTEM_INFILTRATION_RULES,
+      subsystemReputationTiers: SUBSYSTEM_REPUTATION_TIERS,
+      subsystemReputationNotes: SUBSYSTEM_REPUTATION_NOTES,
+      subsystemDuelsRules: SUBSYSTEM_DUELS_RULES,
+      subsystemHexplorationSpeeds: SUBSYSTEM_HEXPLORATION_SPEEDS,
+      subsystemHexplorationRules: SUBSYSTEM_HEXPLORATION_RULES,
+      subsystemVehiclesRules: SUBSYSTEM_VEHICLES_RULES,
+      subsystemLeadershipRules: SUBSYSTEM_LEADERSHIP_RULES,
       treatWoundsRows: TREAT_WOUNDS_TABLE,
       earnIncomeRows,
       recallKnowledgeSkills: RECALL_KNOWLEDGE_SKILLS,

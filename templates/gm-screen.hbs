@@ -5,7 +5,7 @@
     <div class="pf2e-gs-search-wrap">
       <i class="fa-solid fa-magnifying-glass pf2e-gs-search-icon"></i>
       <input type="text" class="pf2e-gs-search" value="{{searchQuery}}"
-        placeholder="Filter all tables & rules (e.g. stealth, invisible, fly, swim, poison, haunt, mounted, hero)..."
+        placeholder="Filter all tables & rules (e.g. stealth, fly, poison, chase, influence, infiltration, hexploration)..."
         autocomplete="off" />
       <button type="button" class="pf2e-gs-search-clear" title="Clear filter"
         style="{{#unless searchQuery}}display:none;{{/unless}}">
@@ -109,7 +109,7 @@
     <section class="pf2e-gs-stack" data-gs-panel="dcs">
 
       <!-- Quick DC Live Bar (Full-Width) -->
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " dc-calculator")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'dc-calculator')}}is-user-hidden{{/if}}"
         data-gs-card="dc-calculator"
         data-gs-keywords="dc calculator simple level adjustment difficulty check prompt chat">
         <div class="pf2e-gs-card-head">
@@ -181,7 +181,7 @@
       <div class="pf2e-gs-masonry">
 
         <!-- DC by Level (Compact 2-Column Split for Lv 0–25) -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " dc-by-level")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'dc-by-level')}}is-user-hidden{{/if}}"
           data-gs-card="dc-by-level" data-gs-keywords="dc by level table standard level-based difficulty 0 25">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-table-list"></i> DC by Level (0–25)</h4>
@@ -228,7 +228,7 @@
         </div>
 
         <!-- Degrees of Success (Cleanly Separate from Hero Points) -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " degrees-of-success")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'degrees-of-success')}}is-user-hidden{{/if}}"
           data-gs-card="degrees-of-success" data-gs-keywords="degrees of success critical failure nat 20 nat 1 tie">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-scale-balanced"></i> Degrees of Success</h4>
@@ -251,7 +251,7 @@
         </div>
 
         <!-- Counteract Calculator & Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " counteract")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'counteract')}}is-user-hidden{{/if}}"
           data-gs-card="counteract" data-gs-keywords="counteract dispel magic cleanse affliction rank check">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-wand-sparkles"></i> Counteract Calculator &amp; Rules</h4>
@@ -312,7 +312,7 @@
         </div>
 
         <!-- Hero Points (Own Dedicated Card) -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " hero-points")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'hero-points')}}is-user-hidden{{/if}}"
           data-gs-card="hero-points"
           data-gs-keywords="hero point reroll fortune heroic recovery stabilize session award">
           <div class="pf2e-gs-card-head">
@@ -332,7 +332,7 @@
         </div>
 
         <!-- Key Flat Checks Cheat-Sheet -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " flat-checks")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'flat-checks')}}is-user-hidden{{/if}}"
           data-gs-card="flat-checks"
           data-gs-keywords="flat check dc 5 dc 11 dc 15 concealed hidden stupefied grabbed dying persistent recovery">
           <div class="pf2e-gs-card-head">
@@ -365,7 +365,7 @@
     <section class="pf2e-gs-stack" data-gs-panel="combat" style="display:none;">
 
       <!-- Common Combat Actions (Full-Width Table) -->
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " combat-actions")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'combat-actions')}}is-user-hidden{{/if}}"
         data-gs-card="combat-actions"
         data-gs-keywords="combat actions trip grapple shove disarm reposition demoralize feint diversion tumble escape aid persistent damage map">
         <div class="pf2e-gs-card-head">
@@ -403,7 +403,7 @@
       <div class="pf2e-gs-masonry">
 
         <!-- Cover -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " cover")}}is-user-hidden{{/if}}" data-gs-card="cover"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'cover')}}is-user-hidden{{/if}}" data-gs-card="cover"
           data-gs-keywords="cover lesser standard greater take cover ac reflex stealth">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-shield-halved"></i> Cover</h4>
@@ -434,7 +434,7 @@
         </div>
 
         <!-- Concealment & Detection States -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " detection")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'detection')}}is-user-hidden{{/if}}"
           data-gs-card="detection"
           data-gs-keywords="detection concealed hidden undetected unnoticed observed flat check stealth seek">
           <div class="pf2e-gs-card-head">
@@ -466,7 +466,7 @@
         </div>
 
         <!-- Stealth, Hide, Sneak, Seek & Point Out -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " stealth-sneaking")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'stealth-sneaking')}}is-user-hidden{{/if}}"
           data-gs-card="stealth-sneaking"
           data-gs-keywords="stealth sneak sneaking hide seek point out perception cover concealment hidden undetected">
           <div class="pf2e-gs-card-head">
@@ -485,7 +485,7 @@
         </div>
 
         <!-- Invisibility Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " invisibility")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'invisibility')}}is-user-hidden{{/if}}"
           data-gs-card="invisibility"
           data-gs-keywords="invisible invisibility unseen hidden undetected flat dc 11 seek sneak revealing light see the unseen">
           <div class="pf2e-gs-card-head">
@@ -504,7 +504,7 @@
         </div>
 
         <!-- Dying, Wounded & Recovery -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " dying-recovery")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'dying-recovery')}}is-user-hidden{{/if}}"
           data-gs-card="dying-recovery"
           data-gs-keywords="dying wounded doomed recovery check stabilize 0 hp death initiative">
           <div class="pf2e-gs-card-head">
@@ -523,7 +523,7 @@
         </div>
 
         <!-- Falling, Terrain, Flanking & Suffocation -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " falling-terrain")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'falling-terrain')}}is-user-hidden{{/if}}"
           data-gs-card="falling-terrain"
           data-gs-keywords="falling grab an edge water snow difficult terrain flanking breath hold suffocation drown">
           <div class="pf2e-gs-card-head">
@@ -542,7 +542,7 @@
         </div>
 
         <!-- Mounted Combat -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " mounted-combat")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'mounted-combat')}}is-user-hidden{{/if}}"
           data-gs-card="mounted-combat"
           data-gs-keywords="mounted combat mount ride horse companion command an animal shared map reach dismount">
           <div class="pf2e-gs-card-head">
@@ -561,7 +561,7 @@
         </div>
 
         <!-- Flying & Aerial Combat -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " flying-rules")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'flying-rules')}}is-user-hidden{{/if}}"
           data-gs-card="flying-rules"
           data-gs-keywords="fly flying aerial flight hover upward difficult terrain maneuver in flight arrest a fall dc 15">
           <div class="pf2e-gs-card-head">
@@ -580,7 +580,7 @@
         </div>
 
         <!-- Swimming & Underwater Combat -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " swimming-underwater")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'swimming-underwater')}}is-user-hidden{{/if}}"
           data-gs-card="swimming-underwater"
           data-gs-keywords="swim swimming underwater aquatic water combat athletics fire acid resistance off-guard piercing">
           <div class="pf2e-gs-card-head">
@@ -599,7 +599,7 @@
         </div>
 
         <!-- Delay, Ready, Shield Block & Squeezing -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " tactical-misc")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'tactical-misc')}}is-user-hidden{{/if}}"
           data-gs-card="tactical-misc"
           data-gs-keywords="delay ready reaction shield block hardness broken squeeze stand crawl prone">
           <div class="pf2e-gs-card-head">
@@ -628,7 +628,7 @@
       <div class="pf2e-gs-masonry">
 
         <!-- Afflictions Core Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " afflictions-core")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'afflictions-core')}}is-user-hidden{{/if}}"
           data-gs-card="afflictions-core"
           data-gs-keywords="affliction afflictions stage stages onset interval maximum duration virulent counteract cleanse">
           <div class="pf2e-gs-card-head">
@@ -647,7 +647,7 @@
         </div>
 
         <!-- Poison Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " poison-rules")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'poison-rules')}}is-user-hidden{{/if}}"
           data-gs-card="poison-rules"
           data-gs-keywords="poison poisons injury contact ingested inhaled multiple exposure stack treat poison medicine">
           <div class="pf2e-gs-card-head">
@@ -667,7 +667,7 @@
         </div>
 
         <!-- Disease Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " disease-rules")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'disease-rules')}}is-user-hidden{{/if}}"
           data-gs-card="disease-rules"
           data-gs-keywords="disease diseases plague sickness infection treat disease medicine bed rest cleanse affliction">
           <div class="pf2e-gs-card-head">
@@ -687,7 +687,7 @@
         </div>
 
         <!-- Curse Rules -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " curse-rules")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'curse-rules')}}is-user-hidden{{/if}}"
           data-gs-card="curse-rules"
           data-gs-keywords="curse curses cursed item hex cleanse affliction counteract ritual remove curse">
           <div class="pf2e-gs-card-head">
@@ -707,7 +707,7 @@
         </div>
 
         <!-- Drugs, Alcohol & Addiction -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " drugs-alcohol")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'drugs-alcohol')}}is-user-hidden{{/if}}"
           data-gs-card="drugs-alcohol"
           data-gs-keywords="drug drugs alcohol drunk intoxication addiction withdrawal voluntary fail tavern">
           <div class="pf2e-gs-card-head">
@@ -743,7 +743,7 @@
         </div>
 
         <!-- Hazards & Haunts -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " hazards-haunts")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'hazards-haunts')}}is-user-hidden{{/if}}"
           data-gs-card="hazards-haunts"
           data-gs-keywords="hazard hazards haunt haunts trap traps simple complex disable thievery religion stealth initiative routine hardness">
           <div class="pf2e-gs-card-head">
@@ -765,7 +765,275 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- TAB 4: SKILLS, TREAT WOUNDS, EARN INCOME, RECALL KNOWLEDGE, SOCIAL  -->
+    <!-- TAB 4: GM CORE SUBSYSTEMS (CHASES, INFLUENCE, RESEARCH, HEISTS...)  -->
+    <!-- =================================================================== -->
+    <section class="pf2e-gs-stack" data-gs-panel="subsystems" style="display:none;">
+
+      <!-- Victory Points Core Framework (Full-Width Banner Card) -->
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-victory-points')}}is-user-hidden{{/if}}"
+        data-gs-card="subsystem-victory-points"
+        data-gs-keywords="subsystem subsystems victory points vp framework threshold round dc scaling gm core">
+        <div class="pf2e-gs-card-head">
+          <h4><i class="fa-solid fa-diagram-project"></i> Victory Points (Core Subsystem Framework)</h4>
+          <div class="pf2e-gs-card-head-right">
+            <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+            <span class="pf2e-gs-subhint">Lv {{focusLevel}} DC: <strong>{{levelStandardDc}}</strong> (Easy
+              {{levelEasyDc}} · Hard {{levelHardDc}})</span>
+          </div>
+        </div>
+        <div class="pf2e-gs-card-body">
+          <div class="pf2e-gs-grid-2">
+            <table class="pf2e-gs-table">
+              <thead>
+                <tr>
+                  <th>Degree</th>
+                  <th class="is-num">Points</th>
+                  <th>Standard Effect</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each victoryPointOutcomes}}
+                <tr data-gs-row="1">
+                  <td><span class="pf2e-gs-pill {{this.cls}}">{{this.degree}}</span></td>
+                  <td class="is-num is-dc">{{this.points}}</td>
+                  <td>{{this.note}}</td>
+                </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <ul class="pf2e-gs-bullets">
+              {{#each victoryPointTips}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Balanced 2-Column Masonry for All 9 Official GM Core Subsystems -->
+      <div class="pf2e-gs-masonry">
+
+        <!-- Chases -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-chases')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-chases"
+          data-gs-keywords="chase chases pursuit escape obstacle obstacles chase points cp fleeing">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-person-running"></i> Chases</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">~8–10 obstacles · 1 CP / PC</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemChasesRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Influence (Social Encounters) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-influence')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-influence"
+          data-gs-keywords="influence social encounter gala negotiation discover discovery dc weakness resistance bias ip">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-handshake"></i> Influence (Social Encounters)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Discover or Influence / round</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemInfluenceRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Research (Libraries & Archives) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-research')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-research"
+          data-gs-keywords="research library archive tome book scholar clue mystery investigation rp research points">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-book-open"></i> Research (Libraries &amp; Archives)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Max RP cap per source</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemResearchRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Infiltration (Heists) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-infiltration')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-infiltration"
+          data-gs-keywords="infiltration heist stealth break-in awareness points ap edge points ep complication alarm ip">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-mask"></i> Infiltration (Heists)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">IP vs Awareness (AP) · Edge Points</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemInfiltrationRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Duels (Martial & Spellcasting) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-duels')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-duels"
+          data-gs-keywords="duel duels combat martial spellcasting initiative tradition focus dueling counter first blood">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-khanda"></i> Duels (Martial &amp; Spellcasting)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Combat: re-roll init. · Spell: Dueling Counter</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemDuelsRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Reputation (Factions & Standing) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-reputation')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-reputation"
+          data-gs-keywords="reputation faction standing revered admired liked ignored disliked hated hunted favor disservice">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-crown"></i> Reputation (Factions &amp; Standing)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Scale: -50 to +50</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <table class="pf2e-gs-table pf2e-gs-mini-table">
+              <thead>
+                <tr>
+                  <th>Standing</th>
+                  <th class="is-num">Points</th>
+                  <th>Raised By</th>
+                  <th>Lowered By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each subsystemReputationTiers}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.tier}}</strong></td>
+                  <td class="is-num is-dc">{{this.range}}</td>
+                  <td>{{this.raised}}</td>
+                  <td>{{this.lowered}}</td>
+                </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemReputationNotes}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Hexploration (Wilderness & Mapping) -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-hexploration')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-hexploration"
+          data-gs-keywords="hexploration hex wilderness map reconnoiter travel forced march camp exploration 12 mile">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-map-location-dot"></i> Hexploration (Wilderness &amp; Mapping)</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">12-mile hexes · Slowest Speed</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <table class="pf2e-gs-table pf2e-gs-mini-table">
+              <thead>
+                <tr>
+                  <th>Slowest Party Speed</th>
+                  <th class="is-num">Activities / Day</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{#each subsystemHexplorationSpeeds}}
+                <tr data-gs-row="1">
+                  <td><strong>{{this.speed}}</strong></td>
+                  <td class="is-num is-dc">{{this.perDay}}</td>
+                </tr>
+                {{/each}}
+              </tbody>
+            </table>
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemHexplorationRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Vehicles & Piloting -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-vehicles')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-vehicles"
+          data-gs-keywords="vehicle vehicles piloting drive momentum uncontrolled take control run over ram collision chariot ship wagon">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-ship"></i> Vehicles &amp; Piloting</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">1 move / round · Momentum</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemVehiclesRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+        <!-- Leadership & Organizations -->
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'subsystem-leadership')}}is-user-hidden{{/if}}"
+          data-gs-card="subsystem-leadership"
+          data-gs-keywords="leadership organization guild followers lieutenants base upkeep windfalls opportunities troubles events downtime">
+          <div class="pf2e-gs-card-head">
+            <h4><i class="fa-solid fa-users-gear"></i> Leadership &amp; Organizations</h4>
+            <div class="pf2e-gs-card-head-right">
+              <span class="pf2e-gs-hidden-tag">Hidden in Customize</span>
+              <span class="pf2e-gs-subhint">Base, Windfalls, Opportunities &amp; Troubles</span>
+            </div>
+          </div>
+          <div class="pf2e-gs-card-body">
+            <ul class="pf2e-gs-bullets">
+              {{#each subsystemLeadershipRules}}
+              <li data-gs-row="1"><strong>{{this.label}}:</strong> {{this.text}}</li>
+              {{/each}}
+            </ul>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 5: SKILLS, TREAT WOUNDS, EARN INCOME, RECALL KNOWLEDGE, SOCIAL  -->
     <!-- =================================================================== -->
     <section class="pf2e-gs-stack" data-gs-panel="skills" style="display:none;">
 
@@ -773,7 +1041,7 @@
       <div class="pf2e-gs-masonry">
 
         <!-- Earn Income (Full 0–20 + Crit Table) -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " earn-income")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'earn-income')}}is-user-hidden{{/if}}"
           data-gs-card="earn-income" data-gs-keywords="earn income downtime money gp sp cp gold per day table">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-coins"></i> Earn Income (Per Day)</h4>
@@ -815,7 +1083,7 @@
         </div>
 
         <!-- NPC Attitudes & Social Checks -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " social-attitudes")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'social-attitudes')}}is-user-hidden{{/if}}"
           data-gs-card="social-attitudes"
           data-gs-keywords="npc attitude helpful friendly indifferent unfriendly hostile make an impression request coerce lie diplomacy intimidation deception">
           <div class="pf2e-gs-card-head">
@@ -834,7 +1102,7 @@
         </div>
 
         <!-- Treat Wounds & Repair -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " treat-wounds")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'treat-wounds')}}is-user-hidden{{/if}}"
           data-gs-card="treat-wounds"
           data-gs-keywords="treat wounds medicine healing dc 15 20 30 40 wounded battle medicine repair crafting">
           <div class="pf2e-gs-card-head">
@@ -875,7 +1143,7 @@
         </div>
 
         <!-- Recall Knowledge -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " recall-knowledge")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'recall-knowledge')}}is-user-hidden{{/if}}"
           data-gs-card="recall-knowledge"
           data-gs-keywords="recall knowledge creature identification arcana nature occultism religion society lore rarity">
           <div class="pf2e-gs-card-head">
@@ -910,7 +1178,7 @@
         </div>
 
         <!-- Spell Rank DCs & Learn a Spell -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " spell-rank-dcs")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'spell-rank-dcs')}}is-user-hidden{{/if}}"
           data-gs-card="spell-rank-dcs" data-gs-keywords="learn a spell identify magic spell rank dc cost gp">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-hat-wizard"></i> Spell Rank DCs &amp; Learn a Spell</h4>
@@ -944,7 +1212,7 @@
         </div>
 
         <!-- Crafting, Identify Magic & Retraining -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " downtime-niche")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'downtime-niche')}}is-user-hidden{{/if}}"
           data-gs-card="downtime-niche"
           data-gs-keywords="craft crafting formula identify magic retrain retraining subsist downtime">
           <div class="pf2e-gs-card-head">
@@ -965,7 +1233,7 @@
       </div>
 
       <!-- Exploration Activities (Full-Width Table) -->
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " exploration-activities")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'exploration-activities')}}is-user-hidden{{/if}}"
         data-gs-card="exploration-activities"
         data-gs-keywords="exploration activities avoid notice defend detect magic follow the expert hustle investigate repeat a spell scout search">
         <div class="pf2e-gs-card-head">
@@ -998,10 +1266,10 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- TAB 5: CONDITIONS CHEAT-SHEET (WITH LIVE PF2E COMPENDIUM LINKS)     -->
+    <!-- TAB 6: CONDITIONS CHEAT-SHEET (WITH LIVE PF2E COMPENDIUM LINKS)     -->
     <!-- =================================================================== -->
     <section class="pf2e-gs-stack" data-gs-panel="conditions" style="display:none;">
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " conditions-list")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'conditions-list')}}is-user-hidden{{/if}}"
         data-gs-card="conditions-list"
         data-gs-keywords="conditions status effects penalty flat-footed off-guard frightened sickened stunned slowed">
         <div class="pf2e-gs-card-head">
@@ -1033,12 +1301,12 @@
     </section>
 
     <!-- =================================================================== -->
-    <!-- TAB 6: ENCOUNTER BUILDER, TREASURE, TRAVEL, LIGHT & ENVIRONMENT     -->
+    <!-- TAB 7: ENCOUNTER BUILDER, TREASURE, TRAVEL, LIGHT & ENVIRONMENT     -->
     <!-- =================================================================== -->
     <section class="pf2e-gs-stack" data-gs-panel="encounters" style="display:none;">
 
       <!-- Interactive Encounter XP Builder (Full-Width) -->
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " encounter-builder")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'encounter-builder')}}is-user-hidden{{/if}}"
         data-gs-card="encounter-builder"
         data-gs-keywords="encounter builder xp budget threat severity trivial low moderate severe extreme creature hazard">
         <div class="pf2e-gs-card-head">
@@ -1152,7 +1420,7 @@
       </div>
 
       <!-- Party Treasure by Level (Full-Width) -->
-      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " treasure-by-level")}}is-user-hidden{{/if}}"
+      <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'treasure-by-level')}}is-user-hidden{{/if}}"
         data-gs-card="treasure-by-level"
         data-gs-keywords="treasure loot wealth gold gp permanent consumables party by level">
         <div class="pf2e-gs-card-head">
@@ -1196,7 +1464,7 @@
       <div class="pf2e-gs-masonry">
 
         <!-- Overland Travel Speed -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " travel-speed")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'travel-speed')}}is-user-hidden{{/if}}"
           data-gs-card="travel-speed" data-gs-keywords="travel speed miles per hour day overland movement">
           <div class="pf2e-gs-card-head">
             <h4><i class="fa-solid fa-route"></i> Overland Travel Speed</h4>
@@ -1230,7 +1498,7 @@
         </div>
 
         <!-- Light, Vision & Senses -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " light-vision")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'light-vision')}}is-user-hidden{{/if}}"
           data-gs-card="light-vision"
           data-gs-keywords="light dim darkness vision darkvision low-light torch lantern senses precise imprecise vague tremorsense">
           <div class="pf2e-gs-card-head">
@@ -1249,7 +1517,7 @@
         </div>
 
         <!-- Accomplishment XP Awards -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " accomplishment-xp")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'accomplishment-xp')}}is-user-hidden{{/if}}"
           data-gs-card="accomplishment-xp"
           data-gs-keywords="accomplishment xp award minor moderate major story milestone">
           <div class="pf2e-gs-card-head">
@@ -1281,7 +1549,7 @@
         </div>
 
         <!-- Object Hardness, Doors & Environment -->
-        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap " objects-environment")}}is-user-hidden{{/if}}"
+        <div class="pf2e-gs-card {{#if (lookup hiddenCardMap 'objects-environment')}}is-user-hidden{{/if}}"
           data-gs-card="objects-environment"
           data-gs-keywords="hardness hp broken threshold door force open wood stone iron temperature cold heat bulk encumbrance">
           <div class="pf2e-gs-card-head">

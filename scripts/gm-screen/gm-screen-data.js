@@ -14,6 +14,7 @@ export const GM_SCREEN_TABS = [
   { id: "dcs", label: "DCs & Core", icon: "fa-solid fa-bullseye" },
   { id: "combat", label: "Combat & Tactics", icon: "fa-solid fa-swords" },
   { id: "afflictions", label: "Afflictions & Hazards", icon: "fa-solid fa-skull-crossbones" },
+  { id: "subsystems", label: "Subsystems", icon: "fa-solid fa-diagram-project" },
   { id: "skills", label: "Skills & Downtime", icon: "fa-solid fa-coins" },
   { id: "conditions", label: "Conditions", icon: "fa-solid fa-biohazard" },
   { id: "encounters", label: "Encounters & Loot", icon: "fa-solid fa-dragon" }
@@ -49,7 +50,19 @@ export const GM_SCREEN_CARDS = [
   { id: "drugs-alcohol", tab: "afflictions", label: "Drugs, Alcohol & Addiction" },
   { id: "hazards-haunts", tab: "afflictions", label: "Hazards & Haunts (Simple & Complex)" },
 
-  // Tab 4: Skills & Downtime
+  // Tab 4: Subsystems (GM Core Chapter 4)
+  { id: "subsystem-victory-points", tab: "subsystems", label: "Victory Points (Core Framework)" },
+  { id: "subsystem-chases", tab: "subsystems", label: "Chases" },
+  { id: "subsystem-influence", tab: "subsystems", label: "Influence (Social Encounters)" },
+  { id: "subsystem-research", tab: "subsystems", label: "Research (Libraries & Archives)" },
+  { id: "subsystem-infiltration", tab: "subsystems", label: "Infiltration (Heists)" },
+  { id: "subsystem-reputation", tab: "subsystems", label: "Reputation (Factions & Standing)" },
+  { id: "subsystem-duels", tab: "subsystems", label: "Duels (Martial & Spellcasting)" },
+  { id: "subsystem-hexploration", tab: "subsystems", label: "Hexploration (Wilderness & Mapping)" },
+  { id: "subsystem-vehicles", tab: "subsystems", label: "Vehicles & Piloting" },
+  { id: "subsystem-leadership", tab: "subsystems", label: "Leadership & Organizations" },
+
+  // Tab 5: Skills & Downtime
   { id: "earn-income", tab: "skills", label: "Earn Income (Per Day)" },
   { id: "treat-wounds", tab: "skills", label: "Treat Wounds & Repair" },
   { id: "recall-knowledge", tab: "skills", label: "Recall Knowledge (Remaster)" },
@@ -58,10 +71,10 @@ export const GM_SCREEN_CARDS = [
   { id: "downtime-niche", tab: "skills", label: "Crafting, Identify Magic & Retraining" },
   { id: "exploration-activities", tab: "skills", label: "Exploration Activities" },
 
-  // Tab 5: Conditions
+  // Tab 6: Conditions
   { id: "conditions-list", tab: "conditions", label: "PF2e Remaster Conditions" },
 
-  // Tab 6: Encounters & Loot
+  // Tab 7: Encounters & Loot
   { id: "encounter-builder", tab: "encounters", label: "Quick Encounter XP Calculator" },
   { id: "treasure-by-level", tab: "encounters", label: "Party Treasure by Level" },
   { id: "travel-speed", tab: "encounters", label: "Overland Travel Speed" },
@@ -387,6 +400,102 @@ export const HAZARDS_HAUNTS_RULES = [
   { label: "Disabling (2A)", text: "Must detect first. Traps: Thievery · Environmental: Survival/Nature · Haunts: Religion/Occultism · Magical: Dispel Magic. Crit Fail normally triggers it!" },
   { label: "Haunts", text: "Spiritual echoes bound to a site/object. Even if disabled or reduced to 0 HP, Haunts reset until their underlying unrest is resolved." },
   { label: "Breaking Traps", text: "Physical hazards use AC, Hardness, HP, and Broken Threshold (BT = ½ HP; usually stops functioning when Broken). Check immunities (crit, precision, mental)." }
+];
+
+/* ------------------------------------------------------------------------- */
+/* 3.5. GM CORE SUBSYSTEMS (VICTORY POINTS, CHASES, INFLUENCE, RESEARCH...)  */
+/* ------------------------------------------------------------------------- */
+
+export const VICTORY_POINT_OUTCOMES = [
+  { degree: "Critical Success", cls: "is-crit-succ", points: "+2 VP", note: "Major breakthrough or bonus momentum." },
+  { degree: "Success", cls: "is-succ", points: "+1 VP", note: "Steady progress toward the current threshold." },
+  { degree: "Failure", cls: "is-fail", points: "0 VP", note: "No progress (or +1 Awareness Point in Infiltrations)." },
+  { degree: "Critical Failure", cls: "is-crit-fail", points: "-1 VP", note: "Setback (min 0 VP; or +2 Awareness Points / complication)." }
+];
+
+export const VICTORY_POINT_TIPS = [
+  { label: "Setting Thresholds", text: "Scale to party size & rounds (e.g., 4 PCs over 3 rounds ≈ 6–8 VP Moderate, 9–12 VP Hard). Award XP by overall encounter threat." },
+  { label: "DC Scaling", text: "Base on Party/Task Level DC; apply Easy (-2) for clever/ideal skills or Hard (+2) for risky or tangential approaches." },
+  { label: "Time & Stakes", text: "Run in discrete rounds (1 round, 10 min, 1 hr, or 1 day) against a ticking clock, rival, or escalating complication track." }
+];
+
+export const SUBSYSTEM_CHASES_RULES = [
+  { label: "Structure", text: "Linear or branching track of ~8–10 obstacles; pursued starts 1–2 obstacles ahead. Replaces raw Speed with cinematic turns." },
+  { label: "Chase Points (CP)", text: "Each obstacle typically needs 1 CP per PC (e.g. 4 CP for 4 PCs) to clear. Crit Succ: +2 CP | Succ: +1 CP | Fail: 0 | Crit Fail: -1 CP." },
+  { label: "Clearing Obstacles", text: "Excess CP are discarded once an obstacle is cleared — each PC gets 1 main check/action per chase round (skills, spells, or Aid)." },
+  { label: "Split Paths & Costs", text: "Offer 2–3 skill options per obstacle (or creative spells/resources for auto-CP). Pursuers catch up on the same obstacle; pursued escapes after the final obstacle." }
+];
+
+export const SUBSYSTEM_INFLUENCE_RULES = [
+  { label: "Social Rounds", text: "Run in timed rounds (e.g. 15–30 min at a gala or negotiation). Each PC takes 1 main action per round: Discover or Influence." },
+  { label: "Discover (Secret)", text: "Perception or listed skill vs Discovery DC. Crit: learn 2 facts (lowest-DC skill, Weakness, Resistance, or personal Bias) | Succ: 1 fact | Crit Fail: false read." },
+  { label: "Influence Check", text: "Roll a listed Influence skill vs that NPC's DC. Crit: +2 IP | Succ: +1 IP | Fail: 0 | Crit Fail: -1 IP (risk of offending NPC)." },
+  { label: "Weaknesses & Biases", text: "Using an NPC's Weakness lowers DC by 1 step (-2 or -5); triggering a Resistance raises DC (+2) or imposes a penalty. Hit IP thresholds to win favors." }
+];
+
+export const SUBSYSTEM_RESEARCH_RULES = [
+  { label: "Research Rounds", text: "Tracked in 10-min, 1-hr, or 1-day rounds under a deadline, rival scholars, or hazardous archive conditions." },
+  { label: "Research Check", text: "Relevant Lore/Arcana/Occultism/Religion/Society vs Source DC. Crit: +2 RP | Succ: +1 RP | Fail: 0 | Crit Fail: -1 RP or complication." },
+  { label: "Source Caps", text: "Each tome, archive wing, or witness has a Maximum RP cap — PCs must consult multiple sources to reach higher lore thresholds." },
+  { label: "Thresholds & Events", text: "Reaching Research Point (RP) tiers unlocks progressive clues; missed deadlines or Crit Fails trigger guardians, curses, or rival advances." }
+];
+
+export const SUBSYSTEM_INFILTRATION_RULES = [
+  { label: "Dual Tracks", text: "Earn Infiltration Points (IP) to clear obstacles (Crit +2 IP, Succ +1 IP) while keeping Awareness Points (AP) low (Fail +1 AP, Crit Fail +2 AP)." },
+  { label: "Individual vs Group", text: "Individual obstacles require each PC to clear required IP; Group obstacles pool the party's IP together." },
+  { label: "Awareness Escalation", text: "Every AP threshold (typically every 5 AP) triggers Complications (raised DCs, patrols, lockdowns); max AP (≈ 2× total IP) fails the heist." },
+  { label: "Prep & Edge Points (EP)", text: "Downtime prep (scouting, bribes, forged papers) earns Edge Points. Spend 1 matching EP to turn a Failure or Crit Failure into a Success!" },
+  { label: "Time Pressure", text: "GM may add +1 AP at the end of each infiltration round or when PCs take noisy/disruptive actions." }
+];
+
+export const SUBSYSTEM_REPUTATION_TIERS = [
+  { tier: "Revered", range: "+30 to +50", raised: "Major favor", lowered: "Mod / Major" },
+  { tier: "Admired", range: "+15 to +29", raised: "Major favor", lowered: "Any disservice" },
+  { tier: "Liked", range: "+5 to +14", raised: "Mod / Major", lowered: "Any disservice" },
+  { tier: "Ignored", range: "-4 to +4", raised: "Any favor", lowered: "Any disservice" },
+  { tier: "Disliked", range: "-5 to -14", raised: "Any favor", lowered: "Mod / Major" },
+  { tier: "Hated", range: "-15 to -29", raised: "Any favor", lowered: "Major disservice" },
+  { tier: "Hunted", range: "-30 to -50", raised: "Mod / Major", lowered: "Major disservice" }
+];
+
+export const SUBSYSTEM_REPUTATION_NOTES = [
+  { label: "Point Awards", text: "Minor favor/disservice: ±1 pt · Moderate: ±2 pts · Major: ±5+ pts. Attitudes range from Helpful (Revered) to Hostile/ambush on sight (Hunted)." }
+];
+
+export const SUBSYSTEM_DUELS_RULES = [
+  { label: "Combat Duels", text: "Re-roll initiative every round (Deception, Intimidation, or Perception). Follow agreed terms; ends on First Blood, Submission, or Unconsciousness." },
+  { label: "Spellcasting Duels", text: "Roll initiative once normally (Arcana, Nature, Occultism, or Religion). If Trained, your initiative skill sets your starting Tradition Focus." },
+  { label: "Dueling Counter (R)", text: "When your foe Casts a Spell of your focused tradition, expend a prepared spell or spell slot and attempt a counteract check against it." },
+  { label: "Change Focus & Mixed", text: "Spend 1A (Change Tradition Focus, Trained in matching skill) to shift traditions. Mixed duels re-roll initiative each round using combat or magic skills." }
+];
+
+export const SUBSYSTEM_HEXPLORATION_SPEEDS = [
+  { speed: "≤ 10 ft", perDay: "½ / day" },
+  { speed: "15–25 ft", perDay: "1 / day" },
+  { speed: "30–40 ft", perDay: "2 / day" },
+  { speed: "45–55 ft", perDay: "3 / day" },
+  { speed: "60+ ft", perDay: "4 / day" }
+];
+
+export const SUBSYSTEM_HEXPLORATION_RULES = [
+  { label: "12-Mile Hexes", text: "Daily activities depend on the slowest PC's Speed. Unused progress into a hex carries over to the next day." },
+  { label: "Travel & Reconnoiter", text: "Open terrain: 1 activity · Difficult (forest/desert): 2 · Greater Difficult (swamp/mountain): 3. Roads reduce Travel cost by 1 step." },
+  { label: "Map & Camp", text: "Reconnoiter finds hidden landmarks/hazards and lets PCs Map the Area (Survival) to avoid getting lost." },
+  { label: "Forced March", text: "+1 Travel activity (Travel only that day). Safe for Con mod days (min 1); beyond that → Fatigued until a full rest day." }
+];
+
+export const SUBSYSTEM_VEHICLES_RULES = [
+  { label: "Drive (1A / 2A / 3A)", text: "1A: Piloting check → move Speed (Fail: straight; Crit Fail: straight + Uncontrolled). 2A (Reckless): 2× Speed straight. 3A (Reckless, -5): 3× Speed straight." },
+  { label: "Momentum Rule", text: "If a vehicle moved last round, the pilot MUST Drive or Stop on their turn — otherwise it keeps moving and becomes Uncontrolled!" },
+  { label: "Take Control (1A)", text: "Adjacent to controls + Piloting check (Driving/Sailing/Piloting Lore or Nature) to take over or stabilize an Uncontrolled vehicle (max 1 move/round)." },
+  { label: "Run Over (3A, Reckless)", text: "Move 2× Speed straight. Creatures ≥ 2 sizes smaller take Collision Dmg (basic Reflex vs Collision DC). Ramming a target 1 size smaller or larger deals Collision Dmg — if damaged, pilot & vehicle also take Collision Dmg (no save) and stop!" }
+];
+
+export const SUBSYSTEM_LEADERSHIP_RULES = [
+  { label: "Followers & Lieutenants", text: "Organization scales Lv 1–20 (~2× followers per lower level, managed by Lieutenants). Noncombatant support — never free crafting, magic, or combat labor." },
+  { label: "Base & Free Upkeep", text: "Requires a formal base of operations by ~Lv 6. Follower labor covers routine maintenance and expansions — PCs do NOT pay basic upkeep." },
+  { label: "Leadership Events", text: "Inject periodic downtime events: Windfalls (uncommon access, clues, prestige), Opportunities (strategic/moral choices), and Troubles (crises needing PCs)." },
+  { label: "Campaign Balance", text: "Keep Troubles smaller in cost than Windfalls so the organization stays a net-positive narrative asset without bogging down table pacing." }
 ];
 
 /* ------------------------------------------------------------------------- */

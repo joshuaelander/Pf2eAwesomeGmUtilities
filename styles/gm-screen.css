@@ -325,21 +325,20 @@
 }
 
 .pf2e-gs-root .pf2e-gs-customize-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  align-items: start;
+  column-count: 3;
+  column-gap: 8px;
+  margin-bottom: -8px;
 }
 
 @container gm-screen (max-width: 820px) {
   .pf2e-gs-root .pf2e-gs-customize-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-count: 2;
   }
 }
 
 @container gm-screen (max-width: 540px) {
   .pf2e-gs-root .pf2e-gs-customize-grid {
-    grid-template-columns: 1fr;
+    column-count: 1;
   }
 }
 
@@ -348,9 +347,14 @@
   border: 1px solid var(--pf2e-gm-border-subtle);
   border-radius: 6px;
   padding: 6px 8px;
-  display: flex;
+  display: inline-flex;
   flex-direction: column;
+  width: 100%;
   gap: 5px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin-bottom: 8px;
 }
 
 .pf2e-gs-root .pf2e-gs-cust-group-head {
@@ -922,7 +926,8 @@
   line-height: 1.38;
 }
 
-.pf2e-gs-root .pf2e-gs-bullets li.is-hidden {
+.pf2e-gs-root .pf2e-gs-bullets li.is-hidden,
+.pf2e-gs-root .pf2e-gs-bullets:not(:has(li:not(.is-hidden))) {
   display: none !important;
 }
 
