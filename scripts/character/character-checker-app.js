@@ -197,11 +197,12 @@ export class CharacterCheckerApp extends HandlebarsApplicationMixin(ApplicationV
           && !src.slotsOutdated
           && src.status === "incomplete"
         );
-        let syncBtnLabel = `Sync Slots to Level ${selectedReport.level}`;
+        const slotVerb = src.slotIssueKind === "outdated" ? "Sync" : "Fix";
+        let syncBtnLabel = `${slotVerb} Slots to Level ${selectedReport.level}`;
         if (src.slotsOutdated && needsFontPrep) {
-          syncBtnLabel = `Sync & Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
+          syncBtnLabel = `${slotVerb} & Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
         } else if (src.slotsOutdated && autoCount > 0) {
-          syncBtnLabel = `Sync Slots & Add ${autoCount} Spell${autoCount === 1 ? "" : "s"}`;
+          syncBtnLabel = `${slotVerb} Slots & Add ${autoCount} Spell${autoCount === 1 ? "" : "s"}`;
         } else if (!src.slotsOutdated && needsFontPrep) {
           syncBtnLabel = `Prepare ${src.divineFontCount}× ${src.divineFontSpellName}`;
         } else if (!src.slotsOutdated && autoCount > 0) {
@@ -1152,7 +1153,13 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         headerSegments.push(`<span class="pf2e-cc-sheet-missing-list">${unackedMissingSources.length} Missing ${unackedMissingSources.length === 1 ? "Entry" : "Entries"}</span>`);
       }
       if (unackedOutdatedSources.length > 0) {
-        headerSegments.push(`<span class="pf2e-cc-sheet-warn-text">${unackedOutdatedSources.length} Outdated Slots</span>`);
+        const allOutdated = unackedOutdatedSources.every(s => s.slotIssueKind === "outdated");
+        const allExcess = unackedOutdatedSources.every(s => s.slotIssueKind === "excess");
+        const allCantripsOnly = allExcess && unackedOutdatedSources.every(s => s.onlyCantripSlotDiff);
+        const slotSummaryLabel = allOutdated
+          ? "Outdated Slots"
+          : (allCantripsOnly ? "Too Many Cantrip Slots" : (allExcess ? "Too Many Slots" : "Misconfigured Slots"));
+        headerSegments.push(`<span class="pf2e-cc-sheet-warn-text">${unackedOutdatedSources.length} ${slotSummaryLabel}</span>`);
       }
       if (incompleteSources.length > 0) {
         const incompleteSummary = incompleteSources
@@ -1189,18 +1196,19 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
             </div>
           `;
         } else if (src.entryExists && (src.slotsOutdated || autoCount > 0 || needsFontPrep) && isEditable) {
+          const slotVerb = src.slotIssueKind === "outdated" ? "Sync" : "Fix";
           const syncLbl = src.slotsOutdated && needsFontPrep
-            ? `Sync & Prep ${src.divineFontSpellName}`
+            ? `${slotVerb} & Prep ${src.divineFontSpellName}`
             : (src.slotsOutdated && autoCount > 0
-              ? `Sync + ${autoCount}`
+              ? `${slotVerb} + ${autoCount}`
               : (src.slotsOutdated
-                ? "Sync Slots"
+                ? `${slotVerb} Slots`
                 : (needsFontPrep
                   ? `Prep ${src.divineFontCount}× ${src.divineFontSpellName}`
                   : (src.isFocus ? `+ ${autoCount} Focus` : `+ ${autoCount} Auto`))));
           const btnCls = src.slotsOutdated ? "is-warn" : "is-primary";
           const syncTip = [
-            src.slotsOutdated ? `Update slots to Level ${report.level} (${src.slotDiffText})` : "",
+            src.slotsOutdated ? `${slotVerb} slots for Level ${report.level} (${src.slotDiffText})` : "",
             autoCount > 0 ? `Auto-add: ${src.missingAutoSpellsText}` : "",
             needsFontPrep ? `Prepare ${src.divineFontCount}× Rank ${src.divineFontRank} ${src.divineFontSpellName}` : ""
           ].filter(Boolean).join(" · ");
@@ -1214,7 +1222,7 @@ export function registerCharacterSheetCheckerIntegration(onOpenCheckerForActor, 
         } else if (!src.entryExists) {
           actionHtml = `<span class="pf2e-cc-sheet-pill is-missing">Missing Entry</span>`;
         } else if (src.slotsOutdated) {
-          actionHtml = `<span class="pf2e-cc-sheet-pill is-warn">Slots Outdated</span>`;
+          actionHtml = `<span class="pf2e-cc-sheet-pill is-warn">${esc(src.slotStatusLabel || "Slots Misconfigured")}</span>`;
         } else if (src.isFocus || src.castingType === "focus") {
           const curF = Number(src.currentFocusSpells || 0);
           const expF = Number(src.expectedFocusSpells || 1);

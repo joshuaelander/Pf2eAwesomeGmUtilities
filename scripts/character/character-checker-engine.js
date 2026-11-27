@@ -1848,6 +1848,37 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     const slotsOutdated = slotDiffs.length > 0 || flexibleMismatch;
     if (slotsOutdated) outdatedSlotCount++;
 
+    const hasTooManySlots = slotDiffs.some(d => d.current > d.expected);
+    const hasTooFewSlots = slotDiffs.some(d => d.current < d.expected);
+    const onlyCantripSlotDiff = !flexibleMismatch && slotDiffs.length === 1 && slotDiffs[0].rank === 0;
+
+    let slotIssueKind = null;
+    let slotStatusLabel = "";
+    let slotIssueHeading = "";
+    let slotDiffPrefix = "Slot differences";
+    if (slotsOutdated) {
+      if (hasTooManySlots && !hasTooFewSlots && !flexibleMismatch) {
+        slotIssueKind = "excess";
+        slotStatusLabel = onlyCantripSlotDiff ? "Too Many Cantrips" : "Too Many Slots";
+        slotIssueHeading = onlyCantripSlotDiff ? "Too Many Cantrip Slots" : "Too Many Spell Slots";
+        slotDiffPrefix = onlyCantripSlotDiff ? "Too many cantrip slots" : "Too many spell slots";
+      } else if (hasTooFewSlots && !hasTooManySlots && !flexibleMismatch) {
+        slotIssueKind = "outdated";
+        slotStatusLabel = "Slots Outdated";
+        slotIssueHeading = "Spell Slots Outdated";
+        slotDiffPrefix = "Slot differences";
+      } else {
+        slotIssueKind = "misconfigured";
+        slotStatusLabel = "Slots Misconfigured";
+        slotIssueHeading = "Spell Slots Misconfigured";
+        slotDiffPrefix = "Misconfigured slots";
+      }
+    }
+
+    const diffParts = slotDiffs.map(d => `${d.label}: ${d.current}→${d.expected}`);
+    if (flexibleMismatch) diffParts.push("Flexible Casting disabled");
+    const slotDiffText = diffParts.join(", ");
+
     const missingCantrips = Math.max(0, src.cantrips - currentCantrips);
     const missingRepertoire = src.repertoireExpected != null
       ? Math.max(0, src.repertoireExpected - currentLeveledSpells)
@@ -1857,7 +1888,7 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     let statusLabel = "Ready";
     if (slotsOutdated) {
       status = "outdated";
-      statusLabel = "Slots Outdated";
+      statusLabel = slotStatusLabel;
     } else if (missingAutoSpells.length > 0) {
       status = "incomplete";
       statusLabel = `${missingAutoSpells.length} Auto Spell${missingAutoSpells.length === 1 ? "" : "s"}`;
@@ -1897,8 +1928,12 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       status,
       statusLabel,
       slotsOutdated,
+      slotIssueKind,
+      slotStatusLabel,
+      slotDiffPrefix,
+      onlyCantripSlotDiff,
       slotDiffs,
-      slotDiffText: slotDiffs.map(d => `${d.label}: ${d.current}→${d.expected}`).join(", "),
+      slotDiffText,
       currentCantrips,
       currentLeveledSpells,
       currentFocusSpells: 0,
@@ -1916,12 +1951,15 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     });
 
     if (slotsOutdated) {
+      const expectedLine = onlyCantripSlotDiff
+        ? `Level ${level} expects ${src.cantrips} cantrip slot${src.cantrips === 1 ? "" : "s"}`
+        : `Level ${level} expects ${src.slotsSummary}${src.castingType === "prepared" && src.cantrips > 0 ? ` (${src.cantrips} cantrips)` : ""}`;
       issues.push({
         id: sanitizeIssueId(`spells:slots-outdated:${src.key}`),
         severity: "warning",
         category: "Spellcasting",
-        title: `Spell Slots Outdated: ${entry.name}`,
-        detail: `Level ${level} expects ${src.slotsSummary} (diffs: ${slotDiffs.map(d => `${d.label} ${d.current}→${d.expected}`).join(", ")}).${missingAutoSpells.length > 0 ? ` Also ${missingAutoSpells.length} auto-granted spell(s) ready to add.` : ""}`
+        title: `${slotIssueHeading}: ${entry.name}`,
+        detail: `${expectedLine} (${slotDiffText}).${missingAutoSpells.length > 0 ? ` Also ${missingAutoSpells.length} auto-granted spell(s) ready to add.` : ""}`
       });
     } else if (missingAutoSpells.length > 0 || needsFontPrepare || missingCantrips > 0 || missingRepertoire > 0 || pendingChoiceGroups.length > 0) {
       issues.push({
@@ -2777,7 +2815,7 @@ export async function postChecklistToChat(actor, { whisperToOwners = false } = {
     <div class="pf2e-cc-chat-spell">
       <strong>${esc(s.title)}</strong> (${esc(s.sourceBadge)}):
       ${s.cantrips > 0 ? `${s.cantrips} cantrips · ` : ""}${esc(s.slotsSummary)}
-      ${!s.entryExists ? ` — <span class="pf2e-cc-chat-miss">Missing Entry</span>` : (s.slotsOutdated ? ` — <span class="pf2e-cc-chat-warn">Slots Outdated</span>` : "")}
+      ${!s.entryExists ? ` — <span class="pf2e-cc-chat-miss">Missing Entry</span>` : (s.slotsOutdated ? ` — <span class="pf2e-cc-chat-warn">${esc(s.slotStatusLabel || "Slots Misconfigured")}</span>` : "")}
     </div>
   `).join("");
 
