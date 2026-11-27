@@ -757,6 +757,7 @@ function checkPlannedFeatPrereqs(plannedFeat, slotLevel, prereqState) {
 }
 
 const SPELLBOOK_CLASS_SLUGS = new Set(["wizard", "witch", "magus"]);
+const SPELLBOOK_ARCHETYPE_SLUGS = new Set(["wizard", "witch", "magus", "hedge-mage"]);
 
 /**
  * Formats a concise human-readable prompt for how many spells remain to be picked for a milestone.
@@ -930,20 +931,45 @@ function computeSpellMilestonesByLevel(baseReport) {
       return { slots, maxRank };
     }
 
-    // Class full caster (2, 3, or 4 slots per rank; Magus/Summoner cap at 9th)
+    // Class full caster (2, 3, or 4 slots per rank; Magus/Summoner cap at 9th; Animist Apparition gets 10th at Lv 19)
     const slug = src.classSlug || "";
+    const noteLower = String(src.expectedSpellsNote || "").toLowerCase();
+    const isBattleHarbinger = slug === "cleric" && noteLower.includes("battle harbinger");
+    if (isBattleHarbinger) {
+      if (lvl <= 1) { slots[1] = 1; return { slots, maxRank: 1 }; }
+      if (lvl === 2) { slots[1] = 2; return { slots, maxRank: 1 }; }
+      if (lvl === 3) { slots[1] = 2; slots[2] = 1; return { slots, maxRank: 2 }; }
+      if (lvl === 4) { slots[1] = 2; slots[2] = 2; return { slots, maxRank: 2 }; }
+      if (lvl >= 20) { slots[9] = 2; slots[10] = 2; return { slots, maxRank: 10 }; }
+      const topRank = Math.min(9, Math.ceil(lvl / 2));
+      slots[topRank - 1] = 2;
+      slots[topRank] = 2;
+      return { slots, maxRank: topRank };
+    }
+
+    const isAnimistApparition = slug === "animist" && src.castingType === "spontaneous";
+    const isAnimistPrepared = slug === "animist" && src.castingType === "prepared";
+    const hasWizardSchool = slug === "wizard" && noteLower.includes("arcane school");
+    const isFlexible = Boolean(src.flexible || noteLower.includes("flexible spellcaster"));
+    const isWellspring = src.castingType === "spontaneous" && noteLower.includes("wellspring mage");
+
     const maxPerRank = (slug === "sorcerer" || slug === "oracle")
       ? 4
-      : ((slug === "psychic" || slug === "magus" || slug === "summoner" || slug === "necromancer" || (slug === "animist" && src.castingType === "prepared"))
+      : ((slug === "psychic" || slug === "magus" || slug === "summoner" || slug === "necromancer" || isAnimistPrepared)
         ? 2
-        : (slug === "animist" && src.castingType === "spontaneous" ? 1 : 3));
-    const includeTenth = slug !== "magus" && slug !== "summoner" && !(slug === "animist" && src.castingType === "spontaneous");
+        : (isAnimistApparition ? 1 : 3));
+    const includeTenth = slug !== "magus" && slug !== "summoner" && !isAnimistPrepared;
+    const bonusPerRank = hasWizardSchool ? 1 : 0;
     let maxRank = 0;
     for (let r = 1; r <= 9; r++) {
       const unlock = r * 2 - 1;
       if (lvl < unlock) slots[r] = 0;
       else if (maxPerRank === 1) slots[r] = 1;
-      else slots[r] = lvl === unlock ? Math.max(1, maxPerRank - 1) : maxPerRank;
+      else if (isFlexible && maxPerRank >= 3) slots[r] = 2 + bonusPerRank;
+      else slots[r] = (lvl === unlock ? Math.max(1, maxPerRank - 1) : maxPerRank) + bonusPerRank;
+
+      if (slots[r] > 1 && isFlexible && maxPerRank < 3) slots[r] = Math.max(1, slots[r] - 1);
+      if (slots[r] > 1 && isWellspring) slots[r] = Math.max(1, slots[r] - 1);
       if (slots[r] > 0) maxRank = r;
     }
     if (includeTenth && lvl >= 19) {
@@ -979,7 +1005,7 @@ function computeSpellMilestonesByLevel(baseReport) {
       const slug = String(src.classSlug || "").toLowerCase();
       const isSpellbookClass = src.sourceKind !== "archetype" && SPELLBOOK_CLASS_SLUGS.has(slug);
       const isSpontaneous = src.castingType === "spontaneous" && !(slug === "animist");
-      const isSpellbookArchetype = src.sourceKind === "archetype" && SPELLBOOK_CLASS_SLUGS.has(slug);
+      const isSpellbookArchetype = src.sourceKind === "archetype" && SPELLBOOK_ARCHETYPE_SLUGS.has(slug);
 
       let learnMode = "optional";
       let requiredTotal = 0;
@@ -3662,7 +3688,7 @@ function estimateMaxSpellRankAtLevel(src, level, deletedFeatSlugs = new Set()) {
   }
 
   const slug = String(src.classSlug || "").toLowerCase();
-  const cap = (slug === "magus" || slug === "summoner" || (slug === "animist" && src.castingType === "spontaneous")) ? 9 : 10;
+  const cap = (slug === "magus" || slug === "summoner" || (slug === "animist" && src.castingType === "prepared")) ? 9 : 10;
   return Math.min(cap, Math.ceil(level / 2));
 }
 

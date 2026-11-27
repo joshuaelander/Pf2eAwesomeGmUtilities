@@ -106,7 +106,7 @@ function buildFullCasterSlots(level, maxPerRank, { bonusPerRank = 0, hasTenthFea
 }
 
 /**
- * Animist Apparition spontaneous slots (1 per unlocked rank 1-9, plus 10th at L19 via Supreme Apparition).
+ * Animist Apparition spontaneous slots (1 per unlocked rank 1-9, plus 10th at L19 via Supreme Incarnation).
  */
 function buildAnimistApparitionSlots(level) {
   const slots = {};
@@ -114,7 +114,33 @@ function buildAnimistApparitionSlots(level) {
   for (let r = 1; r <= 9; r++) {
     slots[r] = r <= maxRank ? 1 : 0;
   }
-  slots[10] = 0; // 10th-rank slot is on Animist's Prepared entry (or shared supreme feature)
+  slots[10] = level >= 19 ? 1 : 0;
+  return slots;
+}
+
+/**
+ * Battle Harbinger (Cleric class archetype, Divine Mysteries) bounded spell slot progression.
+ */
+function buildBattleHarbingerSlots(level) {
+  const slots = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+  if (level <= 1) {
+    slots[1] = 1;
+  } else if (level === 2) {
+    slots[1] = 2;
+  } else if (level === 3) {
+    slots[1] = 2;
+    slots[2] = 1;
+  } else if (level === 4) {
+    slots[1] = 2;
+    slots[2] = 2;
+  } else if (level >= 20) {
+    slots[9] = 2;
+    slots[10] = 2;
+  } else {
+    const topRank = Math.min(9, Math.ceil(level / 2));
+    slots[topRank - 1] = 2;
+    slots[topRank] = 2;
+  }
   return slots;
 }
 
@@ -266,8 +292,7 @@ const CLASS_SPELLCASTING_DEFS = {
     baseSlotsPerRank: 2,
     cantrips: 2, // +2-4 apparition cantrips
     mode: "animist",
-    repertoireMatchesSlots: false,
-    extraTenthFeats: ["eternal-guide"]
+    repertoireMatchesSlots: false
   },
   magus: {
     className: "Magus",
@@ -507,6 +532,59 @@ const ARCHETYPE_SPELLCASTING_DEFS = {
     ability: "int",
     cantrips: 1,
     bounded: false
+  },
+  "hedge-mage": {
+    label: "Hedge Mage Archetype",
+    dedicationSlugs: ["hedge-mage-dedication"],
+    basicSlugs: ["basic-hedge-mage-spellcasting"],
+    expertSlugs: ["expert-hedge-mage-spellcasting"],
+    masterSlugs: ["master-hedge-mage-spellcasting"],
+    breadthSlugs: [],
+    castingType: "prepared",
+    tradition: null, // Chosen via skill: Arcana/Nature/Occultism/Religion
+    ability: null,   // INT or WIS
+    allowedAbilities: ["int", "wis"],
+    cantrips: 2,     // Keepsake holds 4 common cantrips; prepares 2 daily
+    bounded: false
+  },
+  "eldritch-archer": {
+    label: "Eldritch Archer Archetype",
+    dedicationSlugs: ["eldritch-archer-dedication"],
+    basicSlugs: ["basic-eldritch-archer-spellcasting"],
+    expertSlugs: ["expert-eldritch-archer-spellcasting"],
+    masterSlugs: ["master-eldritch-archer-spellcasting"],
+    breadthSlugs: [],
+    castingType: "spontaneous",
+    tradition: null,
+    ability: "cha",
+    cantrips: 1,
+    bounded: false
+  },
+  "beast-gunner": {
+    label: "Beast Gunner Archetype",
+    dedicationSlugs: ["beast-gunner-dedication"],
+    basicSlugs: ["basic-beast-gunner-spellcasting"],
+    expertSlugs: ["expert-beast-gunner-spellcasting"],
+    masterSlugs: ["master-beast-gunner-spellcasting"],
+    breadthSlugs: [],
+    castingType: "spontaneous",
+    tradition: null,
+    ability: "cha",
+    cantrips: 1,
+    bounded: false
+  },
+  "rivethun-involutionist": {
+    label: "Rivethun Involutionist Archetype",
+    dedicationSlugs: ["rivethun-involutionist-dedication"],
+    basicSlugs: ["basic-rivethun-involutionist-spellcasting"],
+    expertSlugs: ["expert-rivethun-involutionist-spellcasting"],
+    masterSlugs: ["master-rivethun-involutionist-spellcasting"],
+    breadthSlugs: [],
+    castingType: "spontaneous",
+    tradition: "divine",
+    ability: "wis",
+    cantrips: 2,
+    bounded: false
   }
 };
 
@@ -550,7 +628,12 @@ function hasWizardArcaneSchool(feats, featSlugs) {
   const isUnified = featSlugs.has("school-of-unified-magical-theory")
     || featSlugs.has("universalist")
     || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
-  const hasSchool = feats.some(f => /arcane school|school of /i.test(f.name || "") || getItemSlug(f).startsWith("school-of-"));
+  const hasSchool = featSlugs.has("runelord")
+    || featSlugs.has("runelord-dedication")
+    || feats.some(f =>
+      /arcane school|school of |thassilonian rune magic/i.test(f.name || "")
+      || getItemSlug(f).startsWith("school-of-")
+    );
   return hasSchool && !isUnified;
 }
 
@@ -1310,6 +1393,109 @@ function detectPsychicAbility(actor) {
 }
 
 /**
+ * Dynamically detects tradition & spellcasting key attribute from a spellcasting archetype's
+ * dedication feat (`flags.pf2e.rulesSelections`, `ChoiceSet` rules, item title, or `rollOptions`),
+ * including skill-to-tradition mappings (`arcana`->`arcane`, `nature`->`primal`, `occultism`->`occult`,
+ * `religion`->`divine`) and multi-ability choices (e.g. Hedge Mage INT or WIS).
+ */
+function detectArchetypeChoiceTraditionAndAbility(actor, featSlugsToCheck = [], allowedAbilities = null) {
+  const feats = actor.itemTypes?.feat || [];
+  const slugSet = new Set(featSlugsToCheck.map(normalizeSlug));
+  const skillToTrad = {
+    arcana: "arcane",
+    arcane: "arcane",
+    nature: "primal",
+    primal: "primal",
+    occultism: "occult",
+    occult: "occult",
+    religion: "divine",
+    divine: "divine"
+  };
+  const abilMap = {
+    int: "int",
+    intelligence: "int",
+    wis: "wis",
+    wisdom: "wis",
+    cha: "cha",
+    charisma: "cha"
+  };
+
+  let tradition = "";
+  let ability = "";
+
+  const inspectToken = (raw) => {
+    if (!raw) return;
+    const str = typeof raw === "string"
+      ? raw
+      : (typeof raw?.value === "string" ? raw.value : "");
+    if (!str) return;
+    const lower = str.toLowerCase().trim();
+    if (!tradition && skillToTrad[lower]) tradition = skillToTrad[lower];
+    if (!ability && abilMap[lower] && (!allowedAbilities || allowedAbilities.includes(abilMap[lower]))) {
+      ability = abilMap[lower];
+    }
+    if (!tradition) {
+      const tm = lower.match(/\b(arcane|divine|occult|primal|arcana|nature|occultism|religion)\b/);
+      if (tm && skillToTrad[tm[1]]) tradition = skillToTrad[tm[1]];
+    }
+    if (!ability) {
+      const am = lower.match(/\b(intelligence|wisdom|charisma|int|wis|cha)\b/);
+      if (am && abilMap[am[1]] && (!allowedAbilities || allowedAbilities.includes(abilMap[am[1]]))) {
+        ability = abilMap[am[1]];
+      }
+    }
+  };
+
+  for (const feat of feats) {
+    if (!slugSet.has(getItemSlug(feat))) continue;
+    const sels = feat.flags?.pf2e?.rulesSelections;
+    if (sels && typeof sels === "object") {
+      for (const val of Object.values(sels)) inspectToken(val);
+    }
+    const rules = Array.isArray(feat.system?.rules) ? feat.system.rules : [];
+    for (const r of rules) {
+      if (r?.key === "ChoiceSet") inspectToken(r.selection);
+    }
+    const paren = String(feat.name || "").match(/\(([^)]+)\)/);
+    if (paren) inspectToken(paren[1]);
+  }
+
+  if ((!tradition || !ability) && actor.rollOptions?.all) {
+    for (const slug of slugSet) {
+      const base = slug.replace(/-dedication$/, "");
+      for (const [k, v] of Object.entries(actor.rollOptions.all)) {
+        if (!v || !k.includes(base)) continue;
+        if (!tradition) {
+          const tm = k.match(/:(arcane|divine|occult|primal|arcana|nature|occultism|religion)(?:$|:)/i);
+          if (tm && skillToTrad[tm[1].toLowerCase()]) tradition = skillToTrad[tm[1].toLowerCase()];
+        }
+        if (!ability) {
+          const am = k.match(/:(int|wis|cha|intelligence|wisdom|charisma)(?:$|:)/i);
+          if (am && abilMap[am[1].toLowerCase()] && (!allowedAbilities || allowedAbilities.includes(abilMap[am[1].toLowerCase()]))) {
+            ability = abilMap[am[1].toLowerCase()];
+          }
+        }
+      }
+    }
+  }
+
+  if (!ability && Array.isArray(allowedAbilities) && allowedAbilities.length > 0) {
+    let bestAbil = allowedAbilities[0];
+    let bestMod = Number(actor.system?.abilities?.[bestAbil]?.mod ?? -Infinity);
+    for (const a of allowedAbilities.slice(1)) {
+      const m = Number(actor.system?.abilities?.[a]?.mod ?? -Infinity);
+      if (m > bestMod) {
+        bestMod = m;
+        bestAbil = a;
+      }
+    }
+    ability = bestAbil;
+  }
+
+  return { tradition, ability };
+}
+
+/**
  * Checks if a feat with any of the provided slugs exists on the actor.
  */
 function actorHasFeatSlug(actor, slugs) {
@@ -1362,6 +1548,8 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
   const featSlugs = new Set(feats.map(getItemSlug));
 
   const hasFlexibleCaster = featSlugs.has("flexible-spellcaster-dedication") || featSlugs.has("flexible-spellcaster");
+  const hasWellspringMage = featSlugs.has("wellspring-mage-dedication") || featSlugs.has("wellspring-magic");
+  const hasBattleHarbinger = featSlugs.has("battle-creed") || featSlugs.has("battle-harbinger-dedication");
 
   // Helper to construct a class spellcasting spec (Primary or Dual Class)
   const addClassCaster = (classSlug, sourceKind) => {
@@ -1388,7 +1576,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
 
     // Special case: Animist has TWO distinct spellcasting entries (Prepared Divine + Spontaneous Apparition)
     if (def.mode === "animist") {
-      const prepSlots = buildFullCasterSlots(level, 2, { hasTenthFeat });
+      const prepSlots = buildFullCasterSlots(level, 2, { includeTenth: false });
       prepSlots[0] = 2;
       sources.push({
         key: `class:${classSlug}:prepared:${sourceKind}`,
@@ -1430,14 +1618,15 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
         slots: appSlots,
         totalLeveledSlots: countTotalLeveledSlots(appSlots),
         slotsSummary: formatSlotsSummary(appSlots),
-        expectedSpellsNote: "Spontaneous repertoire from attuned Apparitions (all act as signature spells)",
+        expectedSpellsNote: "Spontaneous repertoire from attuned Apparitions (all act as signature spells; 10th-rank slot at Lv 19 via Supreme Incarnation)",
         repertoireExpected: null,
         signatureExpected: 0
       });
       return;
     }
 
-    // Standard Full Caster
+    // Standard Full Caster (plus Battle Harbinger Cleric bounded casting)
+    const isBattleHarbingerCleric = classSlug === "cleric" && hasBattleHarbinger;
     let cantrips = def.cantrips;
     let extraNote = "";
     let flexible = false;
@@ -1463,19 +1652,46 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       }
     }
 
-    const slots = buildFullCasterSlots(level, def.baseSlotsPerRank, {
-      bonusPerRank,
-      hasTenthFeat,
-      includeTenth: def.includeTenth !== false
-    });
+    const slots = isBattleHarbingerCleric
+      ? buildBattleHarbingerSlots(level)
+      : buildFullCasterSlots(level, def.baseSlotsPerRank, {
+          bonusPerRank,
+          hasTenthFeat,
+          includeTenth: def.includeTenth !== false
+        });
 
-    // Apply Flexible Spellcaster archetype adjustment for prepared full casters
-    if (def.castingType === "prepared" && hasFlexibleCaster) {
+    if (isBattleHarbingerCleric) {
+      extraNote = "Battle Harbinger (bounded spell slots + Battle Font)";
+    }
+
+    // Apply Flexible Spellcaster archetype adjustment for prepared full casters:
+    // Base slots cap at 2 per rank (do NOT advance 2 -> 3 at even levels; keep Lv 1 = 2 & Wizard school bonus)
+    // and reduce class cantrips by 2.
+    if (!isBattleHarbingerCleric && def.castingType === "prepared" && hasFlexibleCaster) {
       flexible = true;
+      for (let r = 1; r <= 9; r++) {
+        if (slots[r] <= 0) continue;
+        if (def.baseSlotsPerRank >= 3) {
+          slots[r] = 2 + bonusPerRank;
+        } else if (slots[r] > 1) {
+          slots[r] = Math.max(1, slots[r] - 1);
+        }
+      }
+      cantrips = Math.max(1, cantrips - 2);
+      extraNote = extraNote
+        ? `${extraNote}; Flexible Spellcaster (2 base slots/rank, -2 cantrips)`
+        : "Flexible Spellcaster (2 base slots/rank, -2 cantrips, flexible collection)";
+    }
+
+    // Apply Wellspring Mage archetype adjustment for spontaneous casters (-1 slot/rank, -1 cantrip)
+    if (def.castingType === "spontaneous" && hasWellspringMage) {
       for (let r = 1; r <= 9; r++) {
         if (slots[r] > 1) slots[r] = Math.max(1, slots[r] - 1);
       }
-      extraNote = extraNote ? `${extraNote}; Flexible Spellcaster (-1 slot/rank)` : "Flexible Spellcaster (-1 slot/rank, flexible collection)";
+      cantrips = Math.max(1, cantrips - 1);
+      extraNote = extraNote
+        ? `${extraNote}; Wellspring Mage (-1 slot/rank, -1 cantrip)`
+        : "Wellspring Mage (-1 slot/rank, -1 cantrip, temporary surges)";
     }
 
     // Set slot0 (cantrip preparation count for prepared casters; 0 for spontaneous)
@@ -1529,21 +1745,27 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     });
 
     // Cleric Divine Font (Remaster Player Core: 4 slots at Lv 1-4, 5 at Lv 5-14, 6 at Lv 15-20 at highest spell rank)
+    // Battle Harbinger replaces Healing/Harmful Font with Battle Font (Bless / Bane, plus Benediction / Malediction with Aura Enhancement)
     if (def.hasDivineFont) {
-      const fontRank = Math.min(10, Math.ceil(level / 2));
+      const fontRank = isBattleHarbingerCleric
+        ? (level >= 20 ? 10 : Math.min(9, Math.ceil(level / 2)))
+        : Math.min(10, Math.ceil(level / 2));
       const fontCount = getClericDivineFontCount(level);
       const fontSlots = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
       fontSlots[fontRank] = fontCount;
-      const fontChoice = detectClericDivineFontChoice(actor, feats, featSlugs);
-      const fontSpell = fontChoice === "harm" ? "Harm" : (fontChoice === "heal" ? "Heal" : "Heal / Harm");
+      const fontChoice = isBattleHarbingerCleric ? "" : detectClericDivineFontChoice(actor, feats, featSlugs);
+      const hasAuraEnhancement = isBattleHarbingerCleric && featSlugs.has("aura-enhancement");
+      const fontSpell = isBattleHarbingerCleric
+        ? (hasAuraEnhancement ? "Bless / Bane / Benediction / Malediction" : "Bless / Bane")
+        : (fontChoice === "harm" ? "Harm" : (fontChoice === "heal" ? "Heal" : "Heal / Harm"));
 
       sources.push({
         key: `class:cleric:divine-font:${sourceKind}`,
         classSlug: "cleric",
         sourceKind,
         sourceBadge: `${sourceBadge} · Font`,
-        title: `Cleric Divine Font (${fontSpell})`,
-        entryName: `Divine Font (${fontSpell})`,
+        title: isBattleHarbingerCleric ? "Cleric Battle Font" : `Cleric Divine Font (${fontSpell})`,
+        entryName: isBattleHarbingerCleric ? "Battle Font (Bless / Bane)" : `Divine Font (${fontSpell})`,
         castingType: "prepared",
         flexible: false,
         tradition: "divine",
@@ -1553,12 +1775,15 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
         slots: fontSlots,
         totalLeveledSlots: fontCount,
         slotsSummary: `R${fontRank}: ${fontCount} (${fontSpell})`,
-        expectedSpellsNote: fontChoice
-          ? `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} ${fontSpell} slot(s) per day (auto-prepared on Sync)`
-          : `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} Heal or Harm slot(s) per day — pick Healing or Harmful Font on Level 1 to auto-prepare`,
+        expectedSpellsNote: isBattleHarbingerCleric
+          ? `Battle Font grants ${fontCount} extra Rank ${fontRank} battle aura slot(s) per day (${fontSpell})`
+          : (fontChoice
+            ? `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} ${fontSpell} slot(s) per day (auto-prepared on Sync)`
+            : `Remaster Divine Font grants ${fontCount} extra Rank ${fontRank} Heal or Harm slot(s) per day — pick Healing or Harmful Font on Level 1 to auto-prepare`),
         repertoireExpected: null,
         signatureExpected: 0,
         isDivineFont: true,
+        isBattleFont: isBattleHarbingerCleric,
         divineFontChoice: fontChoice,
         divineFontRank: fontRank,
         divineFontCount: fontCount,
@@ -1672,6 +1897,17 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     detectedArchetypeKeys.add(archKey);
 
     let tradition = def.tradition;
+    let ability = def.ability;
+    if (!tradition || !ability) {
+      const choiceInfo = detectArchetypeChoiceTraditionAndAbility(
+        actor,
+        [...def.dedicationSlugs, ...def.basicSlugs],
+        def.allowedAbilities || null
+      );
+      if (!tradition && choiceInfo.tradition) tradition = choiceInfo.tradition;
+      if (!ability && choiceInfo.ability) ability = choiceInfo.ability;
+    }
+
     if (!tradition) {
       if (archKey === "sorcerer") tradition = detectDynamicTradition(actor, ["bloodline", "sorcerer"]);
       else if (archKey === "witch") tradition = detectDynamicTradition(actor, ["patron", "witch"]);
@@ -1679,14 +1915,14 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       else if (archKey === "cathartic-mage") tradition = detectDynamicTradition(actor, ["cathartic"]);
     }
 
-    let ability = def.ability;
     if (!ability && archKey === "psychic") {
       ability = detectPsychicAbility(actor);
     }
 
     const slots = buildArchetypeSlots(level, { hasBasic, hasExpert, hasMaster, hasBreadth });
+    const cantripCount = def.cantrips + (archKey === "psychic" && featSlugs.has("psi-development") ? 1 : 0);
 
-    slots[0] = def.castingType === "prepared" ? def.cantrips : 0;
+    slots[0] = def.castingType === "prepared" ? cantripCount : 0;
 
     const totalLeveledSlots = countTotalLeveledSlots(slots);
     const tierTags = [
@@ -1714,8 +1950,8 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
     }
 
     const expectedSpellsNote = totalLeveledSlots > 0
-      ? `Feats: ${tierTags.join(", ")} · ${def.cantrips} cantrips + ${totalLeveledSlots} leveled slot(s)${signatureExpected > 0 ? ` (${signatureExpected} signature)` : ""}`
-      : `Feats: ${tierTags.join(", ")} · ${def.cantrips} cantrip(s) (take Basic Spellcasting at Lv 4+ for leveled slots)`;
+      ? `Feats: ${tierTags.join(", ")} · ${cantripCount} cantrip${cantripCount === 1 ? "" : "s"} + ${totalLeveledSlots} leveled slot(s)${signatureExpected > 0 ? ` (${signatureExpected} signature)` : ""}`
+      : `Feats: ${tierTags.join(", ")} · ${cantripCount} cantrip${cantripCount === 1 ? "" : "s"} (take Basic Spellcasting at Lv 4+ for leveled slots)`;
 
     sources.push({
       key: `archetype:${archKey}`,
@@ -1729,7 +1965,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       tradition: tradition || "",
       ability: ability || "cha",
       traditionMissing: !tradition,
-      cantrips: def.cantrips,
+      cantrips: cantripCount,
       slots,
       totalLeveledSlots,
       slotsSummary: formatSlotsSummary(slots),
@@ -1763,10 +1999,29 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
   }
 
   for (const [archSlug, rec] of genericArchetypes.entries()) {
-    const desc = String(rec.sampleFeat?.system?.description?.value || "").toLowerCase();
-    const tradMatch = desc.match(/\b(arcane|divine|occult|primal)\b/);
-    const tradition = tradMatch ? tradMatch[1] : "";
-    const castingType = desc.includes("prepared") ? "prepared" : (desc.includes("innate") ? "innate" : "spontaneous");
+    const dedSlug = `${archSlug}-dedication`;
+    const dedFeat = findActorFeat(actor, f => getItemSlug(f) === dedSlug);
+    const combinedDesc = `${String(dedFeat?.system?.description?.value || "")} ${String(rec.sampleFeat?.system?.description?.value || "")}`.toLowerCase();
+    const choiceInfo = detectArchetypeChoiceTraditionAndAbility(actor, [dedSlug, getItemSlug(rec.sampleFeat)]);
+    const tradMatch = combinedDesc.match(/\b(arcane|divine|occult|primal)\b/);
+    const tradition = choiceInfo.tradition || (tradMatch ? tradMatch[1] : "");
+    const castingType = /\bprepared\b|\bprepare\s+(?:two|your|\d+)\s+(?:cantrips?|spells?)\b/i.test(combinedDesc)
+      ? "prepared"
+      : (/\binnate\b/i.test(combinedDesc) ? "innate" : "spontaneous");
+    let ability = choiceInfo.ability;
+    if (!ability) {
+      const abilCandidates = [];
+      if (/\bintelligence\b/i.test(combinedDesc)) abilCandidates.push("int");
+      if (/\bwisdom\b/i.test(combinedDesc)) abilCandidates.push("wis");
+      if (/\bcharisma\b/i.test(combinedDesc)) abilCandidates.push("cha");
+      if (abilCandidates.length > 0) {
+        ability = abilCandidates.reduce((best, cur) =>
+          Number(actor.system?.abilities?.[cur]?.mod ?? -Infinity) > Number(actor.system?.abilities?.[best]?.mod ?? -Infinity) ? cur : best
+        , abilCandidates[0]);
+      } else {
+        ability = tradition === "arcane" ? "int" : (tradition === "divine" || tradition === "primal" ? "wis" : "cha");
+      }
+    }
     const slots = buildArchetypeSlots(level, rec);
     slots[0] = castingType === "prepared" ? 2 : 0;
     const totalLeveledSlots = countTotalLeveledSlots(slots);
@@ -1783,7 +2038,7 @@ function detectExpectedSpellcastingSources(actor, level, dualInfo) {
       castingType,
       flexible: false,
       tradition,
-      ability: tradition === "arcane" ? "int" : (tradition === "divine" || tradition === "primal" ? "wis" : "cha"),
+      ability,
       traditionMissing: !tradition,
       cantrips: 2,
       slots,
@@ -1921,15 +2176,20 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
     });
   }
 
-  // 3. Bard: Composition Spells (Counter Performance + Muse / Composition Focus Spells)
+  // 3. Bard: Composition Spells (Counter Performance + Courageous Anthem + Muse / Composition Focus Feats)
+  matchFeats(["martial-performance", "courageous-advance", "courageous-assault", "courageous-onslaught", "harmonize", "melodious-spell", "triumphant-inspiration", "accompany", "inspirational-focus"]);
   const bardFocusFeats = matchFeats([
-    "composition-spells", "counter-performance", "lingering-composition", "hymn-of-healing",
-    "uplifting-overture", "dirge-of-doom", "house-of-imaginary-walls", "soothing-ballad",
-    "ode-to-ouroboros", "allegro", "fatal-aria", "symphony-of-the-unfettered-heart"
+    "composition-spells", "counter-performance", "courageous-anthem", "inspire-courage",
+    "lingering-composition", "hymn-of-healing", "uplifting-overture", "dirge-of-doom",
+    "house-of-imaginary-walls", "soothing-ballad", "ode-to-ouroboros", "allegro",
+    "fatal-aria", "symphony-of-the-unfettered-heart", "rallying-anthem", "song-of-strength",
+    "fortissimo-composition", "triple-time", "song-of-marching", "soothing-mists",
+    "inspire-defense", "inspire-heroics"
   ]);
   if (hasClassOrDual("bard") || featSlugs.has("composition-spells")) {
-    const bonusFeats = bardFocusFeats.filter(f => getItemSlug(f) !== "composition-spells" && getItemSlug(f) !== "counter-performance").length;
-    const expectedCount = 1 + bonusFeats;
+    const baseSkip = new Set(["composition-spells", "counter-performance", "courageous-anthem", "inspire-courage"]);
+    const bonusFeats = bardFocusFeats.filter(f => !baseSkip.has(getItemSlug(f))).length;
+    const expectedCount = 2 + bonusFeats; // Counter Performance + Courageous Anthem base
     pushFocusSource({
       key: `focus:bard:${classSourceKind("bard")}`,
       classSlug: "bard",
@@ -1965,10 +2225,33 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
     }
   }
 
-  // 5. Druid: Order Spells
-  matchFeats(["order-spells", "druidic-order", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape", "tempest-surge", "goodberry", "heal-animal"]);
+  // 5. Druid: Order Spells (Order Explorer does NOT grant an extra order spell until Order Magic is taken)
+  matchFeats([
+    "order-spells", "druidic-order", "order-explorer", "storm-born", "primal-focus", "primal-wellspring",
+    "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape",
+    "wind-caller", "storm-lord", "primal-summons", "impaling-briars", "healing-sprout"
+  ]);
+  for (const f of feats) {
+    const s = getItemSlug(f);
+    const d = String(f.system?.description?.value || "");
+    if (s.endsWith("-order") || /<(?:strong|b|h[1-6])[^>]*>\s*Order\s+Spell\s*[:<]/i.test(d)) {
+      coveredFeatIds.add(f.id);
+    }
+  }
   if (hasClassOrDual("druid") || featSlugs.has("order-spells")) {
-    const extraOrder = matchFeats(["order-magic", "advanced-elemental-spell"]).length;
+    const extraOrder = matchFeats([
+      "order-magic", "advanced-elemental-spell", "wind-caller", "storm-lord", "primal-summons", "impaling-briars", "healing-sprout"
+    ]).length;
+    // Untamed Form / Wild Shape grants an extra focus spell if taken via Order Explorer by a non-Untamed/Wild primary Druid
+    const orderExplorerIds = new Set(feats.filter(f => getItemSlug(f) === "order-explorer").map(f => f.id));
+    const hasPrimaryUntamed = feats.some(f => {
+      const s = getItemSlug(f);
+      if (s !== "untamed-order" && s !== "wild-order") return false;
+      const gBy = f.flags?.pf2e?.grantedBy?.id;
+      return !(gBy && orderExplorerIds.has(gBy));
+    });
+    const extraUntamedForm = !hasPrimaryUntamed && (featSlugs.has("untamed-form") || featSlugs.has("wild-shape")) ? 1 : 0;
+    const totalExpected = 1 + extraOrder + extraUntamedForm;
     pushFocusSource({
       key: `focus:druid:${classSourceKind("druid")}`,
       classSlug: "druid",
@@ -1978,9 +2261,9 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
       entryName: "Order Spells (Druid)",
       tradition: "primal",
       ability: "wis",
-      expectedFocusSpells: 1 + extraOrder,
+      expectedFocusSpells: totalExpected,
       matchKeywords: ["order", "druid"],
-      note: `Druid Order Focus Spells (Primal, WIS) — 1 initial order spell${extraOrder > 0 ? ` + ${extraOrder} additional` : ""}`
+      note: `Druid Order Focus Spells (Primal, WIS) — 1 initial order spell${(extraOrder + extraUntamedForm) > 0 ? ` + ${extraOrder + extraUntamedForm} additional` : ""}`
     });
   }
 
@@ -2276,6 +2559,17 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
       ability: "int",
       matchKeywords: ["conflux", "magus"],
       skipIfClass: "magus"
+    },
+    {
+      key: "focus:archetype:bard",
+      classSlug: "bard",
+      slugs: ["counter-perform", "anthemic-performance", "inspirational-performance"],
+      title: "Bard Archetype Composition Spells",
+      entryName: "Composition Spells (Bard Archetype)",
+      tradition: "occult",
+      ability: "cha",
+      matchKeywords: ["composition", "bard"],
+      skipIfClass: "bard"
     }
   ];
 
@@ -2305,7 +2599,7 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
 
   // --- C. Generic Fallback Scanner for ANY Other Focus-Spell-Granting Feat/Archetype ---
   // Catches Shadowdancer, Time Mage, Soul Warden, Beastmaster, Psychic focus feats, homebrew, etc.
-  const refocusOrPassiveExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant)(?:$|-)/;
+  const refocusOrPassiveExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant|order-explorer|martial-performance|storm-born|druidic-order)(?:$|-)|-(?:order|bloodline|mystery|patron|muse)$|^school-of-/;
   const focusGrantRegex = /(?:you\s+(?:gain|learn|receive)|grants?\s+you|you\s+can\s+cast)\s+(?:the\s+)?[^.<]{0,80}\b(?:focus\s+spell|focus\s+pool)\b/i;
 
   for (const feat of feats) {
@@ -2315,6 +2609,7 @@ function detectFocusSpellcastingSources(actor, level, dualInfo, primarySlug, fea
 
     const desc = String(feat.system?.description?.value || "");
     if (!focusGrantRegex.test(desc)) continue;
+    if (/(?:don't|do\s+not)\s+(?:gain|learn|receive)[^.<]{0,60}\b(?:focus|order|composition)\b/i.test(desc)) continue;
 
     const tradMatch = desc.match(/\b(arcane|divine|occult|primal)\b/i);
     const detectedTrad = tradMatch ? tradMatch[1].toLowerCase() : "";
@@ -3195,15 +3490,20 @@ function parseDirectFeatSpells(feat, actorQualifiers, { sectionPatterns = null, 
 
   const grantBeforeRe = /(?:you\s+(?:gain|learn|receive|know|add|can\s+cast)|grants?\s+you|familiar\s+learns?|cast\s+the|focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|granted\s+spell)\b/i;
   const grantAfterRe = /^\s*(?:\([^)]+\)\s*)?(?:focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|cantrip|spell)\b/i;
-  const refOnlyBeforeRe = /(?:instead\s+of|similar\s+to|as\s+if\s+casting|when\s+you\s+cast|if\s+you\s+cast|affecting|prerequisite)\s*$/i;
+  const refOnlyBeforeRe = /(?:instead\s+of|similar\s+to|as\s+if\s+casting|when\s+you\s+(?:cast|have)|if\s+you\s+(?:cast|have|later\s+gain)|while\s+you\s+have|affecting|prerequisite|don't\s+gain|do\s+not\s+gain|such\s+as|extend(?:s|ing)?)\s*(?:a|an|the|your|its)?\s*$/i;
+  const negOrCondBeforeRe = /(?:don't|do\s+not)\s+(?:gain|learn|receive)|if\s+you\s+(?:have|later\s+gain)\s+(?:a|an|the)|when\s+you\s+have\s+(?:a|an|the)/i;
 
   let filtered = allRefs.filter(r => {
-    if (refOnlyBeforeRe.test(r.beforeCtx.trim())) return false;
+    const beforeTrim = r.beforeCtx.trim();
+    if (refOnlyBeforeRe.test(beforeTrim) || negOrCondBeforeRe.test(beforeTrim)) return false;
     return grantBeforeRe.test(r.beforeCtx) || grantAfterRe.test(r.afterCtx);
   });
 
-  if (filtered.length === 0 && allowAllIfSingle && allRefs.length === 1 && !refOnlyBeforeRe.test(allRefs[0].beforeCtx.trim())) {
-    filtered = allRefs;
+  if (filtered.length === 0 && allowAllIfSingle && allRefs.length === 1) {
+    const b0 = allRefs[0].beforeCtx.trim();
+    if (!refOnlyBeforeRe.test(b0) && !negOrCondBeforeRe.test(b0)) {
+      filtered = allRefs;
+    }
   }
   if (filtered.length === 0) return { auto: [], choice: null };
   if (filtered.length === 1) return { auto: filtered, choice: null };
@@ -3454,8 +3754,9 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       }
     }
 
-    // Divine Font spell (Heal / Harm) resolved dynamically from Divine Font / Healing Font / Harmful Font
-    const fontChoice = detectClericDivineFontChoice(actor, feats);
+    // Divine Font spell (Heal / Harm) — skipped for Battle Harbinger (which uses Battle Font: Bless/Bane)
+    const isBattleHarbinger = featBySlug.has("battle-creed") || featBySlug.has("battle-harbinger-dedication");
+    const fontChoice = isBattleHarbinger ? "" : detectClericDivineFontChoice(actor, feats);
     if (fontChoice) {
       const desiredName = fontChoice === "harm" ? "harm" : "heal";
       const desiredTitle = fontChoice === "harm" ? "Harm" : "Heal";
@@ -3879,23 +4180,24 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       }
     }
   } else if (featBySlug.has("psychic-dedication")) {
-    const psyDed = featBySlug.get("psychic-dedication");
-    const direct = extractDirectRuleSpellUuids(psyDed);
-    for (const r of direct) {
-      pushAutoSpell({
-        uuid: r.uuid,
-        name: r.name,
-        img: r.img,
-        rank: 0,
-        isCantrip: true,
-        isFocus: false,
-        unlockLevel: inferFeatAcquiredLevel(psyDed, 2),
-        targetSourceKey: "archetype:psychic",
-        targetClassSlug: "psychic",
-        sourceLabel: psyDed.name,
-        tier: "psi",
-        countsTowardRepertoire: false
-      });
+    for (const psyArchFeat of [featBySlug.get("psychic-dedication"), featBySlug.get("psi-development")].filter(Boolean)) {
+      const direct = extractDirectRuleSpellUuids(psyArchFeat);
+      for (const r of direct) {
+        pushAutoSpell({
+          uuid: r.uuid,
+          name: r.name,
+          img: r.img,
+          rank: 0,
+          isCantrip: true,
+          isFocus: false,
+          unlockLevel: inferFeatAcquiredLevel(psyArchFeat, getItemSlug(psyArchFeat) === "psi-development" ? 6 : 2),
+          targetSourceKey: "archetype:psychic",
+          targetClassSlug: "psychic",
+          sourceLabel: psyArchFeat.name,
+          tier: "psi",
+          countsTowardRepertoire: false
+        });
+      }
     }
   }
 
@@ -4242,25 +4544,33 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
   }
 
   // Bard Composition Spells & Feats + Muse Granted Spell
+  // (Never include passive/modifier feats like Martial Performance, which only *mention* Song of Strength / Rallying Anthem!)
   if (hasClassOrDual("bard") || featBySlug.has("composition-spells")) {
     const kind = classKind("bard");
     const key = `focus:bard:${kind}`;
     const bardSpellKey = `class:bard:${kind}`;
+    const bardNonGrantExclusions = new Set([
+      "martial-performance", "courageous-advance", "courageous-assault", "courageous-onslaught",
+      "harmonize", "melodious-spell", "triumphant-inspiration", "accompany", "eclectic-skill",
+      "inspirational-focus", "warrior", "maestro", "enigma", "polymath", "zoophonia", "muses-whispers", "muse-s-whispers"
+    ]);
     const bardCompSlugs = new Set([
       "composition-spells", "counter-performance", "courageous-anthem", "inspire-courage",
       "lingering-composition", "hymn-of-healing", "uplifting-overture", "dirge-of-doom",
       "house-of-imaginary-walls", "soothing-ballad", "ode-to-ouroboros", "allegro",
       "fatal-aria", "symphony-of-the-unfettered-heart", "rallying-anthem", "song-of-strength",
       "fortissimo-composition", "triple-time", "song-of-marching", "soothing-mists",
-      "martial-performance", "inspire-defense", "inspire-heroics"
+      "inspire-defense", "inspire-heroics"
     ]);
-    // Also capture any Bard feat whose description grants a composition spell/cantrip dynamically,
+    const bardGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you)\s+(?:the\s+)?[^.<]{0,80}\b(?:composition\s+(?:spell|cantrip)|focus\s+spell)\b/i;
+    // Also capture any Bard feat whose description explicitly GRANTS a composition spell/cantrip dynamically,
     // plus any Bard Muse feature that grants a 1st-rank repertoire spell (e.g. Maestro -> Soothe, Enigma -> Sure Strike)
     for (const f of feats) {
+      const fSlug = getItemSlug(f);
       const desc = String(f.system?.description?.value || "");
       const hasBardTrait = Array.isArray(f.system?.traits?.value) && f.system.traits.value.includes("bard");
-      if (hasBardTrait && /(?:composition\s+(?:spell|cantrip)|focus\s+spell)/i.test(desc)) {
-        bardCompSlugs.add(getItemSlug(f));
+      if (hasBardTrait && !bardNonGrantExclusions.has(fSlug) && bardGrantRe.test(desc)) {
+        bardCompSlugs.add(fSlug);
       }
       if (hasClassOrDual("bard") && (hasBardTrait || /muse/i.test(String(f.name || "")))) {
         const grantedMuseHtml = extractNamedSectionHtml(desc, [/^granted\s+spell$/i, /^muse\s+spell$/i]);
@@ -4285,24 +4595,209 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       }
     }
     addDirectFocusFeats(bardCompSlugs, key, "bard");
+  } else if (featBySlug.has("counter-perform") || featBySlug.has("anthemic-performance") || featBySlug.has("inspirational-performance")) {
+    addDirectFocusFeats(
+      new Set(["counter-perform", "anthemic-performance", "inspirational-performance"]),
+      "focus:archetype:bard",
+      "bard"
+    );
   }
 
   // Druid Order Spells
+  // IMPORTANT: Order Explorer adds a second Druidic Order feature onto the sheet, but does NOT grant
+  // that order's initial focus spell until the Druid also takes the Order Magic feat!
   if (hasClassOrDual("druid") || featBySlug.has("order-spells")) {
     const key = `focus:druid:${classKind("druid")}`;
-    const druidSlugs = new Set([
-      "order-spells", "order-magic", "advanced-elemental-spell", "untamed-form", "wild-shape",
-      "tempest-surge", "goodberry", "cornucopia", "heal-animal", "wildfire", "crushing-ground",
-      "rising-surf", "pulmonary-steed", "storm-born"
-    ]);
-    for (const f of feats) {
-      const desc = String(f.system?.description?.value || "");
-      if (/<(?:strong|b|h[1-6])[^>]*>\s*Order\s+Spell\s*[:<]/i.test(desc)
-        || (f.system?.traits?.value?.includes("druid") && /\border\s+spell\b/i.test(desc))) {
-        druidSlugs.add(getItemSlug(f));
+    const orderExplorerFeats = feats.filter(f => getItemSlug(f) === "order-explorer");
+    const orderExplorerIds = new Set(orderExplorerFeats.map(f => f.id));
+    const orderMagicFeats = feats.filter(f => getItemSlug(f) === "order-magic");
+
+    // Collect any order slug/UUID explicitly selected inside Order Explorer's rulesSelections/ChoiceSets
+    const exploredOrderTokens = new Set();
+    for (const oe of orderExplorerFeats) {
+      const sels = oe.flags?.pf2e?.rulesSelections;
+      if (sels && typeof sels === "object") {
+        for (const val of Object.values(sels)) {
+          if (typeof val === "string" && val.trim()) {
+            exploredOrderTokens.add(val.trim().toLowerCase());
+            exploredOrderTokens.add(normalizeSlug(val));
+          }
+        }
+      }
+      for (const r of (Array.isArray(oe.system?.rules) ? oe.system.rules : [])) {
+        if (r?.key === "ChoiceSet" && typeof r.selection === "string" && r.selection.trim()) {
+          exploredOrderTokens.add(r.selection.trim().toLowerCase());
+          exploredOrderTokens.add(normalizeSlug(r.selection));
+        }
       }
     }
-    addDirectFocusFeats(druidSlugs, key, "druid", { sectionPatterns: [/^order\s+spell$/i] });
+
+    const isOrderFeature = (f) => {
+      const desc = String(f.system?.description?.value || "");
+      return /<(?:strong|b|h[1-6])[^>]*>\s*Order\s+Spell\s*[:<]/i.test(desc);
+    };
+
+    const allOrderFeatures = feats.filter(isOrderFeature);
+    const druidicOrderFeatIds = new Set(feats.filter(f => getItemSlug(f) === "druidic-order").map(f => f.id));
+    const hasPrimaryMarkedOrder = allOrderFeatures.some(f => druidicOrderFeatIds.has(f.flags?.pf2e?.grantedBy?.id));
+    const isExploredOrder = (f) => {
+      if (!isOrderFeature(f) || orderExplorerFeats.length === 0) return false;
+      const gBy = f.flags?.pf2e?.grantedBy?.id;
+      if (gBy && orderExplorerIds.has(gBy)) return true;
+      if (hasPrimaryMarkedOrder && (!gBy || !druidicOrderFeatIds.has(gBy))) return true;
+      const fSlug = getItemSlug(f);
+      const srcUuid = String(f._stats?.compendiumSource || f.flags?.core?.sourceId || "").toLowerCase();
+      if (exploredOrderTokens.has(fSlug) || (srcUuid && exploredOrderTokens.has(srcUuid))) return true;
+      // If multiple order features exist alongside Order Explorer, any order acquired at Lv 2+ is explored
+      if (allOrderFeatures.length > 1 && inferFeatAcquiredLevel(f, 1) >= 2) return true;
+      return false;
+    };
+
+    const exploredOrders = allOrderFeatures.filter(isExploredOrder);
+    const exploredOrderIdSet = new Set(exploredOrders.map(f => f.id));
+
+    const druidNonGrantExclusions = new Set([
+      "order-explorer", "storm-born", "primal-focus", "primal-wellspring", "ley-line-conduit", "order-magic"
+    ]);
+    const druidSlugs = new Set([
+      "order-spells", "advanced-elemental-spell", "untamed-form", "wild-shape",
+      "wind-caller", "storm-lord", "primal-summons", "impaling-briars", "healing-sprout"
+    ]);
+    const druidGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you)\s+(?:the\s+)?[^.<]{0,80}\border\s+spell\b/i;
+
+    for (const f of feats) {
+      if (exploredOrderIdSet.has(f.id)) continue;
+      const fSlug = getItemSlug(f);
+      if (druidNonGrantExclusions.has(fSlug)) continue;
+      const desc = String(f.system?.description?.value || "");
+      if (isOrderFeature(f)) {
+        druidSlugs.add(fSlug);
+      } else if (f.system?.traits?.value?.includes("druid") && druidGrantRe.test(desc) && !/(?:don't|do\s+not)\s+gain/i.test(desc)) {
+        druidSlugs.add(fSlug);
+      }
+    }
+
+    // Only unlock explored orders' initial Order Spells when the Druid actually has `Order Magic`!
+    if (orderMagicFeats.length > 0) {
+      let resolvedViaOrderMagic = 0;
+      const matchedExploredIds = new Set();
+
+      for (const om of orderMagicFeats) {
+        const directRefs = extractDirectRuleSpellUuids(om);
+        if (directRefs.length > 0) {
+          for (const r of directRefs) {
+            pushAutoSpell({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: r.isCantrip ? 0 : null,
+              isCantrip: Boolean(r.isCantrip),
+              isFocus: true,
+              unlockLevel: inferFeatAcquiredLevel(om, 4),
+              targetSourceKey: key,
+              targetClassSlug: "druid",
+              sourceLabel: om.name,
+              tier: "feat",
+              countsTowardRepertoire: false
+            });
+          }
+          resolvedViaOrderMagic++;
+          continue;
+        }
+        // Check if Order Magic's ChoiceSet / rulesSelections names a specific explored order
+        const omQuals = extractActorQualifiers(actor, om);
+        const targetOrder = exploredOrders.find(eo => {
+          if (matchedExploredIds.has(eo.id)) return false;
+          const eoSlug = getItemSlug(eo);
+          const eoBase = eoSlug.replace(/-order$/, "");
+          return omQuals.has(eoSlug) || (eoBase && omQuals.has(eoBase));
+        });
+        if (targetOrder) {
+          matchedExploredIds.add(targetOrder.id);
+          const orderSec = extractNamedSectionHtml(String(targetOrder.system?.description?.value || ""), [/^order\s+spell$/i]);
+          for (const r of extractSpellRefsFromText(orderSec)) {
+            pushAutoSpell({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: r.isCantrip ? 0 : null,
+              isCantrip: Boolean(r.isCantrip),
+              isFocus: true,
+              unlockLevel: inferFeatAcquiredLevel(om, 4),
+              targetSourceKey: key,
+              targetClassSlug: "druid",
+              sourceLabel: `${om.name} (${targetOrder.name})`,
+              tier: "order",
+              countsTowardRepertoire: false
+            });
+          }
+          resolvedViaOrderMagic++;
+        }
+      }
+
+      const remainingMagicPicks = Math.max(0, orderMagicFeats.length - resolvedViaOrderMagic);
+      const remainingExplored = exploredOrders.filter(eo => !matchedExploredIds.has(eo.id));
+      if (remainingMagicPicks > 0 && remainingExplored.length > 0) {
+        if (remainingExplored.length <= remainingMagicPicks) {
+          const omUnlockLvl = inferFeatAcquiredLevel(orderMagicFeats[0], 4);
+          for (const eo of remainingExplored) {
+            const orderSec = extractNamedSectionHtml(String(eo.system?.description?.value || ""), [/^order\s+spell$/i]);
+            for (const r of extractSpellRefsFromText(orderSec)) {
+              pushAutoSpell({
+                uuid: r.uuid,
+                name: r.name,
+                img: r.img,
+                rank: r.isCantrip ? 0 : null,
+                isCantrip: Boolean(r.isCantrip),
+                isFocus: true,
+                unlockLevel: omUnlockLvl,
+                targetSourceKey: key,
+                targetClassSlug: "druid",
+                sourceLabel: `Order Magic (${eo.name})`,
+                tier: "order",
+                countsTowardRepertoire: false
+              });
+            }
+          }
+        } else {
+          // Multiple explored orders, fewer Order Magic feats without ChoiceSet -> offer a 1-click choice!
+          const opts = [];
+          for (const eo of remainingExplored) {
+            const orderSec = extractNamedSectionHtml(String(eo.system?.description?.value || ""), [/^order\s+spell$/i]);
+            for (const r of extractSpellRefsFromText(orderSec)) {
+              opts.push({
+                uuid: r.uuid,
+                name: r.name,
+                img: r.img,
+                rank: r.isCantrip ? 0 : (r.baseRank || 1),
+                isCantrip: Boolean(r.isCantrip),
+                qualifier: eo.name
+              });
+            }
+          }
+          if (opts.length > 0) {
+            choiceGroups.push({
+              id: `${key}:order-magic`,
+              targetSourceKey: key,
+              targetClassSlug: "druid",
+              sourceLabel: "Order Magic",
+              rank: 1,
+              isCantrip: false,
+              isFocus: true,
+              isCurriculum: false,
+              unlockLevel: inferFeatAcquiredLevel(orderMagicFeats[0], 4),
+              pickCount: remainingMagicPicks,
+              label: `Order Magic — Choose ${remainingMagicPicks} Explored Order Spell${remainingMagicPicks === 1 ? "" : "s"}`,
+              options: opts
+            });
+          }
+        }
+      }
+    }
+
+    // Filter out explored orders before passing to addDirectFocusFeats
+    const nonExploredDruidSlugs = new Set(druidSlugs);
+    addDirectFocusFeats(nonExploredDruidSlugs, key, "druid", { sectionPatterns: [/^order\s+spell$/i] });
   } else if (featBySlug.has("order-spell") || plannedFeatLevelsBySlug?.has("order-spell")) {
     const orderSpellUnlock = getFeatUnlockLevel(["order-spell"]);
     const archDruidSlugs = new Set(["order-spell"]);
@@ -4398,13 +4893,15 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
   }
 
   // Generic Focus-Granting Feats (matches `focus:feat:<slug>` or folded focus feats)
-  const genericExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant)(?:$|-)/;
+  const genericExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant|order-explorer|martial-performance|storm-born|druidic-order)(?:$|-)|-(?:order|bloodline|mystery|patron|muse)$|^school-of-/;
   const genericGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you|you\s+can\s+cast)\s+(?:the\s+)?[^.<]{0,80}\b(?:focus\s+spell|focus\s+pool)\b/i;
   for (const f of feats) {
     const slug = getItemSlug(f);
     if (genericExclusions.test(slug)) continue;
     const desc = String(f.system?.description?.value || "");
+    if (/<(?:strong|b|h[1-6])[^>]*>\s*(?:Order|Bloodline|School|Revelation|Conflux|Vessel)\s+Spells?\s*[:<]/i.test(desc)) continue;
     if (!genericGrantRe.test(desc)) continue;
+    if (/(?:don't|do\s+not)\s+(?:gain|learn|receive)[^.<]{0,60}\b(?:focus|order|composition)\b/i.test(desc)) continue;
     // Skip if already captured under a specific class/archetype focus source
     const fRefs = parseDirectFeatSpells(f, extractActorQualifiers(actor, f));
     if (fRefs.auto.length === 0 && !fRefs.choice) continue;
