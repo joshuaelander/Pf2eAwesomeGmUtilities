@@ -8,7 +8,7 @@
  * ZERO overhead when disabled (default: OFF in Module Settings).
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
@@ -926,7 +926,7 @@ class PerformanceMonitorEngine {
   _isSelfProfilerUrl(url) {
     if (!url || typeof url !== "string") return false;
     const lower = url.toLowerCase();
-    return lower.includes(`/${MODULE_ID}/scripts/performance-monitor.js`) || lower.endsWith("/performance-monitor.js");
+    return lower.includes(`/${MODULE_ID}/scripts/tools/performance-monitor.js`) || lower.endsWith("/performance-monitor.js");
   }
 
   /**

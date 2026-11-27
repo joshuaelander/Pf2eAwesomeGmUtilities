@@ -16,7 +16,7 @@
  * `./spellcasting-rules.js` to keep this core completeness engine clean and modular.
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 import {
   ABILITY_LABELS,
   CASTING_TYPE_LABELS,

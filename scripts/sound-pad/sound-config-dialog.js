@@ -2,7 +2,7 @@
  * PF2e Awesome GM Utilities - Sound Pad Slot Configuration Dialog
  */
 
-import { MODULE_ID, COLOR_THEMES } from "./constants.js";
+import { MODULE_ID, COLOR_THEMES } from "../constants.js";
 import { audioController, volumeToSlider, sliderToVolume } from "./audio-controller.js";
 
 export class SoundConfigDialog {

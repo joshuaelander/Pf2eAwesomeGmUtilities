@@ -10,7 +10,7 @@ import {
   getReputationTier,
   NPC_ATTITUDES,
   getAttitudeInfo
-} from "./constants.js";
+} from "../constants.js";
 import { ResourceTrackerApp } from "./resource-tracker-app.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;

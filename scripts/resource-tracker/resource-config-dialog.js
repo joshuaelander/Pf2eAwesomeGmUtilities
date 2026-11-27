@@ -3,7 +3,7 @@
  * Modal dialog for creating and editing resource, clock, and affliction trackers.
  */
 
-import { MODULE_ID, COLOR_THEMES, DEFAULT_RESOURCE_PRESETS } from "./constants.js";
+import { MODULE_ID, COLOR_THEMES, DEFAULT_RESOURCE_PRESETS } from "../constants.js";
 
 export class ResourceConfigDialog {
   /**

@@ -4,7 +4,7 @@
  * and enhances journal/chat scene links to navigate/activate scenes instead of opening SceneConfig.
  */
 
-import { MODULE_ID, MAP_PIN_ICONS } from "./constants.js";
+import { MODULE_ID, MAP_PIN_ICONS } from "../constants.js";
 import { getSceneThumbnail } from "./scene-switcher.js";
 import { PartyPlacement } from "./party-placement.js";
 

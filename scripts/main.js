@@ -30,26 +30,26 @@ import {
   DEFAULT_SESSION_SCENES,
   DEFAULT_RESOURCE_TRACKERS
 } from "./constants.js";
-import { audioController } from "./audio-controller.js";
-import { SoundPadApp } from "./sound-pad-app.js";
-import { SceneSwitcherApp } from "./scene-switcher.js";
-import { ResourceTrackerApp } from "./resource-tracker-app.js";
-import { ResourceWidgetApp } from "./resource-widget-app.js";
-import { PartyPlacement } from "./party-placement.js";
-import { SceneLinks } from "./scene-links.js";
-import { JournalEditor, JournalTemplateDialog } from "./journal-editor.js";
-import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./performance-monitor.js";
-import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character-checker-app.js";
-import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character-checker-engine.js";
-import { LevelPlannerApp, registerSheetLevelUpPrompt } from "./level-planner-app.js";
+import { audioController } from "./sound-pad/audio-controller.js";
+import { SoundPadApp } from "./sound-pad/sound-pad-app.js";
+import { SceneSwitcherApp } from "./scenes/scene-switcher.js";
+import { ResourceTrackerApp } from "./resource-tracker/resource-tracker-app.js";
+import { ResourceWidgetApp } from "./resource-tracker/resource-widget-app.js";
+import { PartyPlacement } from "./scenes/party-placement.js";
+import { SceneLinks } from "./scenes/scene-links.js";
+import { JournalEditor, JournalTemplateDialog } from "./tools/journal-editor.js";
+import { performanceMonitor, PerformanceMonitorApp, PerformanceHudApp } from "./tools/performance-monitor.js";
+import { CharacterCheckerApp, registerCharacterSheetCheckerIntegration } from "./character/character-checker-app.js";
+import { analyzeCharacter, createOrSyncAllSpellcastingEntries } from "./character/character-checker-engine.js";
+import { LevelPlannerApp, registerSheetLevelUpPrompt } from "./character/level-planner-app.js";
 import {
   applyPlannedLevelUp,
   buildLevelRoadmap,
   inspectLevelRevert,
   isLevelPlannerEnabled,
   revertActorToLevel
-} from "./level-planner-engine.js";
-import { GmScreenApp } from "./gm-screen-app.js";
+} from "./character/level-planner-engine.js";
+import { GmScreenApp } from "./gm-screen/gm-screen-app.js";
 
 let soundPadInstance = null;
 let sceneSwitcherInstance = null;

@@ -15,7 +15,7 @@ import {
   getReputationTier,
   NPC_ATTITUDES,
   getAttitudeInfo
-} from "./constants.js";
+} from "../constants.js";
 import { ResourceConfigDialog } from "./resource-config-dialog.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;

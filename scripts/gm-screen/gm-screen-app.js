@@ -9,7 +9,7 @@
  *  - Interactive Counteract Rank evaluator & Encounter XP Threat Builder
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 import {
   ACCOMPLISHMENT_XP,
   COMBAT_ACTIONS,

@@ -4,7 +4,7 @@
  * and private GM sampling/preview mode.
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 
 /**
  * Converts a sound gain volume [0, 1] into a linear slider input value [0, 1]

@@ -10,7 +10,7 @@
  *     Multiclass / Free Archetype spellcasting feats.
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 import {
   ABILITY_LABELS,
   CASTING_TYPE_LABELS,

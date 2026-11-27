@@ -9,7 +9,7 @@
  *  - Direct tie-in with Character Completeness Checker
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 import {
   TRADITION_LABELS,
   analyzeCharacter,

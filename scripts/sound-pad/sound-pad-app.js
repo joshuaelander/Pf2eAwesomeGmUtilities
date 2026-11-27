@@ -4,7 +4,7 @@
  * and live volume management.
  */
 
-import { MODULE_ID, COLOR_THEMES, DEFAULT_BANKS } from "./constants.js";
+import { MODULE_ID, COLOR_THEMES, DEFAULT_BANKS } from "../constants.js";
 import { audioController, volumeToSlider } from "./audio-controller.js";
 import { SoundConfigDialog } from "./sound-config-dialog.js";
 

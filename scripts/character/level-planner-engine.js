@@ -13,7 +13,7 @@
  *    Rule Elements, ChoiceSets, Dual Class sync, and Spellcasting slot sync run cleanly.
  */
 
-import { MODULE_ID } from "./constants.js";
+import { MODULE_ID } from "../constants.js";
 import {
   SPELLBOOK_ARCHETYPE_SLUGS,
   SPELLBOOK_CLASS_SLUGS,

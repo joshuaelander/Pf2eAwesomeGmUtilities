@@ -4,7 +4,7 @@
  * and quick skill check tables directly in Foundry's ProseMirror journal editor.
  */
 
-import { MODULE_ID, JOURNAL_AP_TEMPLATES } from "./constants.js";
+import { MODULE_ID, JOURNAL_AP_TEMPLATES } from "../constants.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
