@@ -111,9 +111,62 @@ export function countTotalLeveledSlots(slots) {
 /* 2. CLASS ARCHETYPE & SUBCLASS RECOGNITION HELPERS                         */
 /* ------------------------------------------------------------------------- */
 
+const ELEMENTAL_NAMES = ["air", "earth", "fire", "metal", "water", "wood"];
+
+/**
+ * Official PF2e Rage of Elements Elemental Focus Spells (resolved dynamically against live
+ * `Elemental Magic` descriptions first, then live `pf2e.spells-srd` compendium index by name).
+ */
+const ELEMENTAL_FOCUS_SPELL_NAMES = {
+  air: { initial: "Updraft", advanced: "Powerful Inhalation" },
+  earth: { initial: "Crushing Ground", advanced: "Stone Lance" },
+  fire: { initial: "Wildfire", advanced: "Combustion" },
+  metal: { initial: "Serrate", advanced: "Repel Metal" },
+  water: { initial: "Rising Surf", advanced: "Pulverizing Cascade" },
+  wood: { initial: "Arms of Nature", advanced: "Wood Walk" }
+};
+
+const ELEMENTAL_SPELL_TO_ELEMENT = new Map(
+  Object.entries(ELEMENTAL_FOCUS_SPELL_NAMES).flatMap(([el, pair]) => [
+    [normalizeSlug(pair.initial), el],
+    [normalizeSlug(pair.advanced), el]
+  ])
+);
+
+/**
+ * Extracts a single PF2e element slug (`air`|`earth`|`fire`|`metal`|`water`|`wood`) from a raw
+ * string, slug, parenthetical label, elemental focus spell name, or Compendium UUID (via live index entry name).
+ */
+function extractSingleElementSlug(raw) {
+  if (!raw) return "";
+  let str = typeof raw === "string"
+    ? raw
+    : (typeof raw?.value === "string" ? raw.value : "");
+  if (!str) return "";
+  str = str.trim();
+  if (!str) return "";
+
+  if (str.startsWith("Compendium.") || str.startsWith("Item.")) {
+    const idxHit = lookupCompendiumIndexEntrySync(str);
+    const resolvedName = idxHit?.entry?.name
+      || (str.startsWith("Item.") ? game.items?.get?.(str.slice(5))?.name : "")
+      || "";
+    str = String(resolvedName || str.split(".").pop() || "");
+  }
+
+  const norm = normalizeSlug(str);
+  if (ELEMENTAL_NAMES.includes(norm)) return norm;
+  if (ELEMENTAL_SPELL_TO_ELEMENT.has(norm)) return ELEMENTAL_SPELL_TO_ELEMENT.get(norm);
+
+  const matched = ELEMENTAL_NAMES.filter(e =>
+    new RegExp(`(?:^|-|\\b)${e}(?:$|-|\\b)`, "i").test(norm)
+  );
+  return matched.length === 1 ? matched[0] : "";
+}
+
 /**
  * Matches Elementalist class-archetype features & dedication feats, including parenthetical
- * or suffixed variants such as "Elemental Philosophy (Fire)".
+ * or suffixed variants such as "Elemental Philosophy (Fire)" or "Elemental Magic (Metal)".
  */
 function isElementalistClassFeature(feat) {
   if (!feat) return false;
@@ -123,12 +176,14 @@ function isElementalistClassFeature(feat) {
     || slug === "elementalist-dedication"
     || slug === "elemental-magic"
     || slug === "elemental-philosophy"
-    || /^elemental-(?:magic|philosophy)-/.test(slug)
+    || slug === "elemental-school"
+    || slug === "school-of-the-elements"
+    || /^elemental-(?:magic|philosophy|school)-/.test(slug)
   ) {
     return true;
   }
   const name = String(feat.name || "");
-  return /^elemental\s+(?:magic|philosophy)\b|^elementalist(?:\s+dedication)?$/i.test(name);
+  return /^elemental\s+(?:magic|philosophy|school)\b|^elementalist(?:\s+dedication)?$/i.test(name);
 }
 
 /**
@@ -144,6 +199,224 @@ export function hasElementalistArchetype(feats, featSlugs) {
     return true;
   }
   return feats.some(isElementalistClassFeature);
+}
+
+/**
+ * Inspects an actor's live PF2e `Elemental Magic` / `Elemental Philosophy` / `Elementalist` items,
+ * ChoiceSets, `flags.pf2e.rulesSelections`, granted child features, and `actor.rollOptions.all`
+ * to determine:
+ *  - Whether the character has the Elementalist class archetype
+ *  - Their Elemental Philosophy (`inner-sea` 4-element vs `cycle` 5-element vs custom)
+ *  - Their chosen Wizard Elemental School (`air`|`earth`|`fire`|`metal`|`water`|`wood`) or Universalist override
+ *  - Whether a Storm Order Druid explicitly opted into the Updraft swap
+ */
+export function detectElementalistConfig(actor, feats = null, featSlugs = null) {
+  const allFeats = Array.isArray(feats) ? feats : (actor?.itemTypes?.feat || []);
+  const slugs = featSlugs instanceof Set ? featSlugs : new Set(allFeats.map(getItemSlug));
+  const hasElementalist = hasElementalistArchetype(allFeats, slugs);
+
+  if (!hasElementalist) {
+    return {
+      hasElementalist: false,
+      elementalFeatures: [],
+      wizardElement: "",
+      isWizardUnified: false,
+      philosophy: "",
+      allowedElements: [...ELEMENTAL_NAMES],
+      swappedToUpdraft: false
+    };
+  }
+
+  const baseElemFeatures = allFeats.filter(isElementalistClassFeature);
+  const baseElemIds = new Set(baseElemFeatures.map(f => f.id).filter(Boolean));
+  const grantedChildren = allFeats.filter(f =>
+    !baseElemIds.has(f.id)
+    && f.flags?.pf2e?.grantedBy?.id
+    && baseElemIds.has(f.flags.pf2e.grantedBy.id)
+  );
+  const elementalFeatures = [...baseElemFeatures, ...grantedChildren];
+
+  let wizardElement = "";
+  let isWizardUnified = false;
+  let philosophy = "";
+  let swappedToUpdraft = false;
+  const philosophyElements = new Set();
+
+  const inspectSelection = (key, rawVal) => {
+    if (!rawVal) return;
+    const keyLower = String(key || "").toLowerCase();
+    if (Array.isArray(rawVal)) {
+      for (const item of rawVal) {
+        const el = extractSingleElementSlug(item);
+        if (el) philosophyElements.add(el);
+      }
+      return;
+    }
+
+    const str = typeof rawVal === "string"
+      ? rawVal.trim()
+      : (typeof rawVal?.value === "string" ? rawVal.value.trim() : "");
+    if (!str) return;
+    const lower = str.toLowerCase();
+
+    if (/\bupdraft\b/i.test(lower)) swappedToUpdraft = true;
+    if (/unified[-_\s]?magical[-_\s]?theory|universalist/i.test(lower)) {
+      isWizardUnified = true;
+      return;
+    }
+    if (/inner[-_\s]?sea|four[-_\s]?element/i.test(lower)) {
+      philosophy = "inner-sea";
+      for (const e of ["air", "earth", "fire", "water"]) philosophyElements.add(e);
+      return;
+    }
+    if (/\bcycle\b|five[-_\s]?element|wu[-_\s]?xing|tian[-_\s]?xia/i.test(lower)) {
+      philosophy = "cycle";
+      for (const e of ["earth", "fire", "metal", "water", "wood"]) philosophyElements.add(e);
+      return;
+    }
+
+    // Do not mistake an Elemental Philosophy selection for a Wizard's single elemental school
+    const el = extractSingleElementSlug(str);
+    if (!el) return;
+    if (/philosoph/i.test(keyLower)) {
+      philosophyElements.add(el);
+    } else if (!wizardElement) {
+      wizardElement = el;
+    }
+  };
+
+  for (const feat of elementalFeatures) {
+    const sels = feat.flags?.pf2e?.rulesSelections;
+    if (sels && typeof sels === "object") {
+      for (const [k, v] of Object.entries(sels)) {
+        inspectSelection(k, v);
+      }
+    }
+
+    const rules = Array.isArray(feat.system?.rules) ? feat.system.rules : [];
+    for (const r of rules) {
+      if (r?.key === "ChoiceSet" && r.selection != null) {
+        inspectSelection(r.flag || r.rollOption || r.prompt || "", r.selection);
+      }
+    }
+
+    // Check parenthetical renamed feature title e.g. "Elemental Magic (Fire)" or "Elemental Magic (Metal)"
+    const parenMatches = String(feat.name || "").matchAll(/\(([^)]+)\)/g);
+    for (const pm of parenMatches) {
+      inspectSelection("title", pm[1]);
+    }
+
+    // Check granted child feature itself (e.g. a granted "School of Fire" / "Elemental School (Metal)" item)
+    if (grantedChildren.includes(feat)) {
+      inspectSelection("child", feat.name);
+      inspectSelection("child", getItemSlug(feat));
+    }
+  }
+
+  // Inspect live PF2e actor rollOptions (explicit school keys first, then single-element elemental-magic options)
+  const rollAll = actor?.rollOptions?.all || {};
+  const genericElemTokens = new Set();
+  for (const [k, v] of Object.entries(rollAll)) {
+    if (!v) continue;
+    const kLower = k.toLowerCase();
+
+    if (/elemental[-_]?(?:magic|philosophy)|elementalist/.test(kLower)) {
+      if (/unified[-_]?magical[-_]?theory|universalist/.test(kLower)) isWizardUnified = true;
+      if (/inner[-_]?sea|four[-_]?element/.test(kLower)) {
+        philosophy = "inner-sea";
+        for (const e of ["air", "earth", "fire", "water"]) philosophyElements.add(e);
+      } else if (/cycle|five[-_]?element|wu[-_]?xing/.test(kLower)) {
+        philosophy = "cycle";
+        for (const e of ["earth", "fire", "metal", "water", "wood"]) philosophyElements.add(e);
+      }
+      if (/updraft/.test(kLower)) swappedToUpdraft = true;
+    }
+
+    const schoolMatch = kLower.match(/(?:^|:)(?:arcane-school|elemental-school|wizard-school|school|elemental-magic:school):([a-z0-9-]+)$/);
+    if (schoolMatch) {
+      const tok = schoolMatch[1];
+      if (/unified-magical-theory|universalist/.test(tok)) {
+        isWizardUnified = true;
+      } else if (!wizardElement) {
+        const el = extractSingleElementSlug(tok);
+        if (el) wizardElement = el;
+      }
+    }
+
+    const genericMatch = kLower.match(/(?:^|:)(?:elemental-magic|elementalist|feature:elemental-magic):([a-z0-9-]+)$/);
+    if (genericMatch) {
+      const el = extractSingleElementSlug(genericMatch[1]);
+      if (el) genericElemTokens.add(el);
+    }
+  }
+
+  // Only treat generic elemental-magic:<el> roll options as the Wizard's school if exactly ONE element appeared
+  // (4 or 5 elements represent the Elemental Philosophy's allowed traits, not a single school!)
+  if (!wizardElement && !isWizardUnified && genericElemTokens.size === 1) {
+    wizardElement = Array.from(genericElemTokens)[0];
+  } else if (genericElemTokens.size > 1) {
+    for (const el of genericElemTokens) philosophyElements.add(el);
+  }
+
+  // If a Wizard explicitly selected an elemental school, that overrides Unified Magical Theory
+  if (wizardElement) {
+    isWizardUnified = false;
+  }
+
+  const allowedElements = philosophyElements.size > 0
+    ? ELEMENTAL_NAMES.filter(e => philosophyElements.has(e))
+    : [...ELEMENTAL_NAMES];
+
+  return {
+    hasElementalist: true,
+    elementalFeatures,
+    wizardElement,
+    isWizardUnified,
+    philosophy,
+    allowedElements,
+    swappedToUpdraft
+  };
+}
+
+/**
+ * Resolves the live PF2e focus spell metadata (`{ uuid, name, img, isFocus, baseRank }`) for a given
+ * element (`air`|`earth`|`fire`|`metal`|`water`|`wood`) and tier (`"initial"`|`"advanced"`).
+ * Inspects embedded `Elemental Magic` descriptions & rule UUIDs first, then resolves dynamically
+ * against Foundry's live `pf2e.spells-srd` compendium index by official spell name (zero hardcoded IDs).
+ */
+function resolveElementalFocusSpellMeta(element, tier = "initial", elementalFeatures = []) {
+  const el = normalizeSlug(element);
+  const spec = ELEMENTAL_FOCUS_SPELL_NAMES[el];
+  if (!spec) return null;
+  const spellTitle = tier === "advanced" ? spec.advanced : spec.initial;
+  const targetSlug = normalizeSlug(spellTitle);
+
+  for (const ef of elementalFeatures || []) {
+    // 1. Direct rule UUID match on Elemental Magic / child feature
+    const directRefs = extractDirectRuleSpellUuids(ef);
+    const directHit = directRefs.find(r => normalizeSlug(r.name) === targetSlug);
+    if (directHit) return { ...directHit, isFocus: true };
+
+    // 2. Per-element line/list-item match inside Elemental Magic's live HTML description
+    const desc = String(ef.system?.description?.value || "");
+    if (!desc.includes("@UUID[")) continue;
+    const allRefs = extractSpellRefsFromText(desc);
+    const namedHit = allRefs.find(r => normalizeSlug(r.name) === targetSlug);
+    if (namedHit) return { ...namedHit, isFocus: true };
+
+    const plain = htmlToPlainLines(desc);
+    const lineRe = new RegExp(`(?:^|[\\n•])\\s*${el}\\b[^\\n]*`, "gi");
+    let lm;
+    while ((lm = lineRe.exec(plain)) !== null) {
+      const lineRefs = extractSpellRefsFromText(lm[0]);
+      if (tier === "initial" && lineRefs[0]) return { ...lineRefs[0], isFocus: true };
+      if (tier === "advanced" && lineRefs[1]) return { ...lineRefs[1], isFocus: true };
+    }
+  }
+
+  // 3. Live PF2e spells-srd compendium index fallback by official spell name (zero hardcoded IDs)
+  const resolved = resolveSyncSpellMeta(`Compendium.pf2e.spells-srd.Item.${spellTitle}`, spellTitle);
+  return { ...resolved, name: resolved.name || spellTitle, isFocus: true };
 }
 
 /**
@@ -170,16 +443,24 @@ function resolveElementalistTradition(actor, dualInfo, primarySlug) {
 
 /**
  * Detects whether a Wizard has a specialized Arcane School (grants +1 curriculum slot/rank,
- * +1 curriculum cantrip, and School Focus Spells), including Runelord and Elementalist Wizards,
+ * +1 curriculum cantrip, and School Focus Spells), including Runelord and Elementalist Wizards
+ * (where Elemental Magic's chosen element overrides any un-deleted standard Arcane School),
  * while excluding Unified Magical Theory / Universalist Wizards.
  */
-export function hasWizardArcaneSchool(feats, featSlugs) {
+export function hasWizardArcaneSchool(feats, featSlugs, actor = null) {
+  const elemCfg = detectElementalistConfig(actor, feats, featSlugs);
   const isUnified = featSlugs.has("school-of-unified-magical-theory")
     || featSlugs.has("universalist")
     || feats.some(f => /unified magical theory|universalist/i.test(f.name || ""));
+
+  if (elemCfg.hasElementalist) {
+    if (elemCfg.wizardElement) return true;
+    if (elemCfg.isWizardUnified) return false;
+    return !isUnified;
+  }
+
   const hasSchool = featSlugs.has("runelord")
     || featSlugs.has("runelord-dedication")
-    || hasElementalistArchetype(feats, featSlugs)
     || feats.some(f =>
       /arcane school|school of |thassilonian rune magic/i.test(f.name || "")
       || getItemSlug(f).startsWith("school-of-")
@@ -993,7 +1274,8 @@ export function detectExpectedSpellcastingSources(actor, level, dualInfo) {
   const hasFlexibleCaster = featSlugs.has("flexible-spellcaster-dedication") || featSlugs.has("flexible-spellcaster");
   const hasWellspringMage = featSlugs.has("wellspring-mage-dedication") || featSlugs.has("wellspring-magic");
   const hasBattleHarbinger = featSlugs.has("battle-creed") || featSlugs.has("battle-harbinger-dedication");
-  const hasElementalist = hasElementalistArchetype(feats, featSlugs);
+  const elemCfg = detectElementalistConfig(actor, feats, featSlugs);
+  const hasElementalist = elemCfg.hasElementalist;
 
   // Helper to construct a class spellcasting spec (Primary or Dual Class)
   const addClassCaster = (classSlug, sourceKind) => {
@@ -1098,14 +1380,21 @@ export function detectExpectedSpellcastingSources(actor, level, dualInfo) {
 
     // Check Wizard Arcane School / Runelord / Elementalist bonus curriculum slot
     // (all specialized schools except Unified Magical Theory / Universalist)
-    const hasWizSchool = classSlug === "wizard" && hasWizardArcaneSchool(feats, featSlugs);
+    const hasWizSchool = classSlug === "wizard" && hasWizardArcaneSchool(feats, featSlugs, actor);
     if (hasWizSchool) {
       cantrips = 6; // 5 base + 1 curriculum cantrip
-      extraNote = isElementalistCaster
-        ? "Elementalist · Includes +1 elemental curriculum slot per rank & +1 cantrip (Elemental Spell List)"
-        : "Includes +1 Arcane School curriculum slot per rank & +1 cantrip";
+      if (isElementalistCaster) {
+        const elLabel = elemCfg.wizardElement ? capitalize(elemCfg.wizardElement) : "";
+        extraNote = elLabel
+          ? `Elementalist (${elLabel}) · Includes +1 ${elLabel} elemental curriculum slot per rank & +1 cantrip (Elemental Spell List)`
+          : "Elementalist · Includes +1 elemental curriculum slot per rank & +1 cantrip (Elemental Spell List)";
+      } else {
+        extraNote = "Includes +1 Arcane School curriculum slot per rank & +1 cantrip";
+      }
     } else if (isElementalistCaster) {
-      extraNote = "Elementalist (Elemental Spell List)";
+      extraNote = (classSlug === "wizard" && elemCfg.isWizardUnified)
+        ? "Elementalist (Unified Magical Theory · Elemental Spell List)"
+        : "Elementalist (Elemental Spell List)";
     }
 
     // Check Psychic Conscious Mind Psi Cantrips (+3 at Lv 1-5, +4 at Lv 6-9, +5 at Lv 10+)
@@ -1564,7 +1853,9 @@ export function detectFocusSpellcastingSources(actor, level, dualInfo, primarySl
   const focusRank = Math.min(10, Math.ceil(level / 2));
   const focusPoolMax = Number(actor.system?.resources?.focus?.max ?? 0);
   const emptySlots = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
-  const hasElementalist = hasElementalistArchetype(feats, featSlugs);
+  const elemCfg = detectElementalistConfig(actor, feats, featSlugs);
+  const hasElementalist = elemCfg.hasElementalist;
+  for (const ef of elemCfg.elementalFeatures) coveredFeatIds.add(ef.id);
 
   const matchFeats = (slugList) => {
     const set = new Set(slugList.map(normalizeSlug));
@@ -1821,30 +2112,30 @@ export function detectFocusSpellcastingSources(actor, level, dualInfo, primarySl
 
   // 9. Wizard: Arcane School / Elementalist Focus Spells (if specialized school, Elementalist, Runelord, or Hand of the Apprentice)
   if (hasClassOrDual("wizard")) {
-    const hasSpecializedSchool = hasWizardArcaneSchool(feats, featSlugs);
-    const wizFocusFeats = matchFeats(["hand-of-the-apprentice", "advanced-school-spell"]);
-    if (hasElementalist) {
-      for (const f of feats) {
-        if (isElementalistClassFeature(f)) coveredFeatIds.add(f.id);
-      }
-    }
+    const hasSpecializedSchool = hasWizardArcaneSchool(feats, featSlugs, actor);
+    const wizFocusFeats = matchFeats(
+      hasElementalist
+        ? ["hand-of-the-apprentice", "advanced-school-spell", "advanced-elemental-spell"]
+        : ["hand-of-the-apprentice", "advanced-school-spell"]
+    );
     const hasInitialSchoolSpell = hasSpecializedSchool || featSlugs.has("hand-of-the-apprentice");
     if (hasInitialSchoolSpell || wizFocusFeats.length > 0) {
       const expectedCount = (hasSpecializedSchool ? 1 : 0) + wizFocusFeats.length;
-      const isElemWiz = hasElementalist && !feats.some(f => getItemSlug(f).startsWith("school-of-"));
+      const isElemWiz = hasElementalist;
+      const elSuffix = isElemWiz && elemCfg.wizardElement ? ` (${capitalize(elemCfg.wizardElement)})` : "";
       pushFocusSource({
         key: `focus:wizard:${classSourceKind("wizard")}`,
         classSlug: "wizard",
         sourceKind: classSourceKind("wizard"),
         sourceBadge: classSourceBadge("wizard"),
-        title: isElemWiz ? "Elementalist Wizard Focus Spells" : "Wizard School Spells",
-        entryName: isElemWiz ? "Elemental School Spells (Wizard)" : "School Spells (Wizard)",
+        title: isElemWiz ? `Elementalist Wizard Focus Spells${elSuffix}` : "Wizard School Spells",
+        entryName: isElemWiz ? `Elemental School Spells${elSuffix} (Wizard)` : "School Spells (Wizard)",
         tradition: "arcane",
         ability: "int",
         expectedFocusSpells: Math.max(1, expectedCount),
         matchKeywords: isElemWiz ? ["elemental", "school", "wizard"] : ["school", "wizard"],
         note: isElemWiz
-          ? `Elementalist Wizard Focus Spells (Arcane, INT) — ${Math.max(1, expectedCount)} focus spell(s)`
+          ? `Elementalist Wizard Focus Spells${elSuffix} (Arcane, INT) — ${Math.max(1, expectedCount)} focus spell(s)`
           : `Wizard Arcane School Focus Spells (Arcane, INT) — ${Math.max(1, expectedCount)} focus spell(s)`
       });
     }
@@ -3093,7 +3384,11 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     }
   }
 
-  const hasElementalist = hasElementalistArchetype(feats, featSlugs);
+  const elemCfg = detectElementalistConfig(actor, feats, featSlugs);
+  const hasElementalist = elemCfg.hasElementalist;
+  const existingSpellSlugs = new Set(
+    (actor.itemTypes?.spell || []).map(sp => normalizeSlug(sp.slug || sp.system?.slug || sp.name)).filter(Boolean)
+  );
 
   const getFeatUnlockLevel = (slugList) => {
     for (const rawSlug of slugList) {
@@ -3376,27 +3671,88 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
 
       const focusHtml = extractNamedSectionHtml(desc, [/^bloodline\s+spells?$/i]);
       const tiers = parseTieredSpellSection(focusHtml);
+      const isElementalBloodline = getItemSlug(bloodlineFeat).includes("elemental")
+        || /\belemental\b/i.test(String(bloodlineFeat.name || ""));
+      const sorcElement = (isSorcClass && hasElementalist && isElementalBloodline)
+        ? (ELEMENTAL_NAMES.find(e => bQuals.has(e)) || elemCfg.wizardElement || "")
+        : "";
+
+      const pushSorcElementalistTier = (stdRefs, elemTier, unlockLvl) => {
+        const elemSwap = sorcElement
+          ? resolveElementalFocusSpellMeta(sorcElement, elemTier, elemCfg.elementalFeatures)
+          : null;
+        if (!elemSwap || !stdRefs || stdRefs.length === 0) {
+          if (stdRefs) {
+            pushTieredFocusRefs(stdRefs, {
+              targetSourceKey: sorcFocusKey,
+              targetClassSlug: "sorcerer",
+              sourceLabel: bloodlineFeat.name,
+              tier: elemTier,
+              unlockLevel: unlockLvl
+            });
+          }
+          return;
+        }
+
+        const stdRef = stdRefs[0];
+        const stdSlug = normalizeSlug(stdRef.name);
+        const elemSlug = normalizeSlug(elemSwap.name);
+        const hasElemOnSheet = existingSpellSlugs.has(elemSlug);
+        const hasStdOnSheet = existingSpellSlugs.has(stdSlug);
+
+        if (hasElemOnSheet && !hasStdOnSheet) {
+          pushAutoSpell({
+            uuid: elemSwap.uuid,
+            name: elemSwap.name,
+            img: elemSwap.img,
+            rank: null,
+            isCantrip: false,
+            isFocus: true,
+            unlockLevel: unlockLvl,
+            targetSourceKey: sorcFocusKey,
+            targetClassSlug: "sorcerer",
+            sourceLabel: `Elemental Magic (${capitalize(sorcElement)})`,
+            tier: elemTier,
+            countsTowardRepertoire: false
+          });
+        } else if (hasStdOnSheet || stdSlug === elemSlug) {
+          pushTieredFocusRefs(stdRefs, {
+            targetSourceKey: sorcFocusKey,
+            targetClassSlug: "sorcerer",
+            sourceLabel: bloodlineFeat.name,
+            tier: elemTier,
+            unlockLevel: unlockLvl
+          });
+        } else {
+          choiceGroups.push({
+            id: `${sorcFocusKey}:elementalist:${elemTier}`,
+            targetSourceKey: sorcFocusKey,
+            targetClassSlug: "sorcerer",
+            sourceLabel: `${bloodlineFeat.name} (Elementalist)`,
+            rank: 1,
+            isCantrip: false,
+            isFocus: true,
+            isCurriculum: false,
+            unlockLevel: unlockLvl,
+            pickCount: 1,
+            label: `${bloodlineFeat.name} (${capitalize(elemTier)}) — Standard or ${capitalize(sorcElement)} Swap`,
+            options: [
+              { uuid: stdRef.uuid, name: stdRef.name, img: stdRef.img, rank: stdRef.baseRank || 1, isCantrip: false, qualifier: "Bloodline" },
+              { uuid: elemSwap.uuid, name: elemSwap.name, img: elemSwap.img, rank: elemSwap.baseRank || 1, isCantrip: false, qualifier: `Elementalist (${capitalize(sorcElement)})` }
+            ]
+          });
+        }
+      };
+
       const initUnlock = isSorcClass
         ? { unlocked: true, level: 1 }
         : getFeatUnlockLevel(["basic-bloodline-spell"]);
       if (initUnlock.unlocked && tiers.initial) {
-        pushTieredFocusRefs(tiers.initial, {
-          targetSourceKey: sorcFocusKey,
-          targetClassSlug: "sorcerer",
-          sourceLabel: bloodlineFeat.name,
-          tier: "initial",
-          unlockLevel: initUnlock.level
-        });
+        pushSorcElementalistTier(tiers.initial, "initial", initUnlock.level);
       }
       const advUnlock = getFeatUnlockLevel(["advanced-bloodline"]);
       if (advUnlock.unlocked && tiers.advanced) {
-        pushTieredFocusRefs(tiers.advanced, {
-          targetSourceKey: sorcFocusKey,
-          targetClassSlug: "sorcerer",
-          sourceLabel: bloodlineFeat.name,
-          tier: "advanced",
-          unlockLevel: advUnlock.level
-        });
+        pushSorcElementalistTier(tiers.advanced, "advanced", advUnlock.level);
       }
       const greaterUnlock = getFeatUnlockLevel(["greater-bloodline"]);
       if (greaterUnlock.unlocked && tiers.greater) {
@@ -3419,12 +3775,16 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     const wizSpellKey = isWizClass ? `class:wizard:${kind}` : "archetype:wizard";
     const wizFocusKey = isWizClass ? `focus:wizard:${kind}` : "focus:archetype:wizard";
 
-    const schoolFeat = feats.find(f => {
-      const slug = getItemSlug(f);
-      if (slug.includes("unified-magical-theory") || slug.includes("universalist")) return false;
-      const desc = String(f.system?.description?.value || "");
-      return /<(?:strong|b|h[1-6])[^>]*>\s*(?:(?:Arcane\s+|Elemental\s+)?Curriculum|(?:Elemental\s+)?School\s+Spells?)\s*[:<]/i.test(desc);
-    });
+    // When a Wizard has `Elemental Magic`, it overrides any standard `School of ...` feature left on the sheet!
+    const isElementalistWizard = isWizClass && hasElementalist;
+    const schoolFeat = isElementalistWizard
+      ? null
+      : feats.find(f => {
+          const slug = getItemSlug(f);
+          if (slug.includes("unified-magical-theory") || slug.includes("universalist")) return false;
+          const desc = String(f.system?.description?.value || "");
+          return /<(?:strong|b|h[1-6])[^>]*>\s*(?:(?:Arcane\s+|Elemental\s+)?Curriculum|(?:Elemental\s+)?School\s+Spells?)\s*[:<]/i.test(desc);
+        });
 
     if (schoolFeat) {
       const desc = String(schoolFeat.system?.description?.value || "");
@@ -3470,21 +3830,21 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
       }
     }
 
-    // Elementalist Wizard fallback: inspect Elementalist / Elemental Magic / Elemental Philosophy features
-    // for direct rule spell UUIDs or focus spell sections when no standard School of ... feature exists
-    if (isWizClass && hasElementalist) {
-      const elemFeatures = feats.filter(f =>
-        f !== schoolFeat
-        && isElementalistClassFeature(f)
-        && getItemSlug(f) !== "elementalist-dedication"
-      );
-      for (const ef of elemFeatures) {
+    // Elementalist Wizard (Rage of Elements `Elemental Magic`):
+    // Maps the chosen elemental school (air/earth/fire/metal/water/wood) to its exact initial & advanced
+    // elemental focus spells, overriding any un-deleted standard Arcane School!
+    if (isElementalistWizard && !elemCfg.isWizardUnified) {
+      const elemWizardFeats = elemCfg.elementalFeatures.filter(f => getItemSlug(f) !== "elementalist-dedication");
+      const advUnlock = getFeatUnlockLevel(["advanced-school-spell", "advanced-elemental-spell"]);
+      let addedDirectFocus = false;
+
+      // 1. Honor any direct spell UUIDs already embedded in rulesSelections / GrantItem on Elemental Magic
+      for (const ef of elemWizardFeats) {
         const desc = String(ef.system?.description?.value || "");
-        const eQuals = extractActorQualifiers(actor, ef);
-        const directRefs = extractDirectRuleSpellUuids(ef);
-        for (const r of directRefs) {
+        for (const r of extractDirectRuleSpellUuids(ef)) {
           const treatAsFocus = r.isFocus === true
             || (r.isFocus == null && r.isCantrip !== true && /\b(?:focus|school)\s+spell\b/i.test(desc));
+          if (treatAsFocus) addedDirectFocus = true;
           pushAutoSpell({
             uuid: r.uuid,
             name: r.name,
@@ -3500,72 +3860,95 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
             countsTowardRepertoire: false
           });
         }
-        const focusSec = extractNamedSectionHtml(desc, [/^(?:elemental\s+)?(?:school|focus)\s+spells?$/i]);
-        let addedFromFocusSec = false;
-        if (focusSec) {
-          const tiers = parseTieredSpellSection(focusSec);
-          if (tiers.initial) {
-            addedFromFocusSec = true;
-            pushTieredFocusRefs(tiers.initial, {
-              targetSourceKey: wizFocusKey,
-              targetClassSlug: "wizard",
-              sourceLabel: ef.name,
-              tier: "initial",
-              unlockLevel: 1
-            });
-          }
-          const advUnlock = getFeatUnlockLevel(["advanced-school-spell"]);
-          if (advUnlock.unlocked && tiers.advanced) {
-            addedFromFocusSec = true;
-            pushTieredFocusRefs(tiers.advanced, {
-              targetSourceKey: wizFocusKey,
-              targetClassSlug: "wizard",
-              sourceLabel: ef.name,
-              tier: "advanced",
-              unlockLevel: advUnlock.level
-            });
-          }
-          // Handle untiered Focus/School Spell sections without explicit Initial/Advanced sub-labels
-          if (!addedFromFocusSec) {
-            const untieredRefs = extractSpellRefsFromText(focusSec);
-            if (untieredRefs.length > 0) {
-              addedFromFocusSec = true;
-              pushTieredFocusRefs(untieredRefs, {
-                targetSourceKey: wizFocusKey,
-                targetClassSlug: "wizard",
-                sourceLabel: ef.name,
-                tier: "initial",
-                unlockLevel: inferFeatAcquiredLevel(ef, 1)
-              });
-            }
-          }
+      }
+
+      // 2. Resolve exact Initial & Advanced Elemental Focus Spells for the chosen element (air/earth/fire/metal/water/wood)
+      if (elemCfg.wizardElement) {
+        const elLabel = capitalize(elemCfg.wizardElement);
+        const initMeta = resolveElementalFocusSpellMeta(elemCfg.wizardElement, "initial", elemWizardFeats);
+        if (initMeta) {
+          pushAutoSpell({
+            uuid: initMeta.uuid,
+            name: initMeta.name,
+            img: initMeta.img,
+            rank: null,
+            isCantrip: false,
+            isFocus: true,
+            unlockLevel: 1,
+            targetSourceKey: wizFocusKey,
+            targetClassSlug: "wizard",
+            sourceLabel: `Elemental Magic (${elLabel})`,
+            tier: "initial",
+            countsTowardRepertoire: false
+          });
         }
-        if (!addedFromFocusSec && directRefs.length === 0) {
-          const parsedFocus = parseDirectFeatSpells(ef, eQuals, { allowAllIfSingle: false });
-          for (const r of parsedFocus.auto) {
-            if (r.isFocus === false) continue;
+        if (advUnlock.unlocked) {
+          const advMeta = resolveElementalFocusSpellMeta(elemCfg.wizardElement, "advanced", elemWizardFeats);
+          if (advMeta) {
             pushAutoSpell({
-              uuid: r.uuid,
-              name: r.name,
-              img: r.img,
+              uuid: advMeta.uuid,
+              name: advMeta.name,
+              img: advMeta.img,
               rank: null,
               isCantrip: false,
               isFocus: true,
-              unlockLevel: inferFeatAcquiredLevel(ef, 1),
+              unlockLevel: advUnlock.level,
               targetSourceKey: wizFocusKey,
               targetClassSlug: "wizard",
-              sourceLabel: ef.name,
-              tier: "elementalist",
+              sourceLabel: `Elemental Magic (${elLabel} · Advanced)`,
+              tier: "advanced",
               countsTowardRepertoire: false
             });
           }
-          if (parsedFocus.auto.length === 0 && parsedFocus.choice?.length > 0) {
-            pushTieredFocusRefs(parsedFocus.choice, {
+        }
+      } else {
+        // 3. No single element selected yet -> offer clean 1-click choices across the philosophy's elements!
+        if (!addedDirectFocus) {
+          const initOpts = elemCfg.allowedElements
+            .map(el => {
+              const meta = resolveElementalFocusSpellMeta(el, "initial", elemWizardFeats);
+              return meta ? { uuid: meta.uuid, name: meta.name, img: meta.img, rank: 1, isCantrip: false, qualifier: capitalize(el) } : null;
+            })
+            .filter(Boolean);
+          if (initOpts.length > 0) {
+            choiceGroups.push({
+              id: `${wizFocusKey}:elementalist:initial`,
               targetSourceKey: wizFocusKey,
               targetClassSlug: "wizard",
-              sourceLabel: ef.name,
-              tier: "elementalist",
-              unlockLevel: inferFeatAcquiredLevel(ef, 1)
+              sourceLabel: "Elemental Magic",
+              rank: 1,
+              isCantrip: false,
+              isFocus: true,
+              isCurriculum: false,
+              unlockLevel: 1,
+              pickCount: 1,
+              label: "Elemental Magic — Choose Initial Elemental School Spell",
+              options: initOpts
+            });
+          }
+        }
+
+        if (advUnlock.unlocked) {
+          const advOpts = elemCfg.allowedElements
+            .map(el => {
+              const meta = resolveElementalFocusSpellMeta(el, "advanced", elemWizardFeats);
+              return meta ? { uuid: meta.uuid, name: meta.name, img: meta.img, rank: meta.baseRank || 3, isCantrip: false, qualifier: capitalize(el) } : null;
+            })
+            .filter(Boolean);
+          if (advOpts.length > 0) {
+            choiceGroups.push({
+              id: `${wizFocusKey}:elementalist:advanced`,
+              targetSourceKey: wizFocusKey,
+              targetClassSlug: "wizard",
+              sourceLabel: "Elemental Magic (Advanced)",
+              rank: 3,
+              isCantrip: false,
+              isFocus: true,
+              isCurriculum: false,
+              unlockLevel: advUnlock.level,
+              pickCount: 1,
+              label: "Elemental Magic — Choose Advanced Elemental School Spell",
+              options: advOpts
             });
           }
         }
@@ -4293,16 +4676,22 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     const exploredOrderIdSet = new Set(exploredOrders.map(f => f.id));
 
     const druidNonGrantExclusions = new Set([
-      "order-explorer", "storm-born", "primal-focus", "primal-wellspring", "ley-line-conduit", "order-magic"
+      "order-explorer", "storm-born", "primal-focus", "primal-wellspring", "ley-line-conduit", "order-magic", "advanced-elemental-spell"
     ]);
     const druidSlugs = new Set([
-      "order-spells", "advanced-elemental-spell", "untamed-form", "wild-shape",
+      "order-spells", "untamed-form", "wild-shape",
       "wind-caller", "storm-lord", "primal-summons", "impaling-briars", "healing-sprout"
     ]);
     const druidGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you)\s+(?:the\s+)?[^.<]{0,80}\border\s+spell\b/i;
 
+    // Elementalist Storm Order Druid may replace `Tempest Surge` with `Updraft` (if Air is in philosophy)
+    const primaryStormOrder = (hasElementalist && elemCfg.allowedElements.includes("air"))
+      ? allOrderFeatures.find(f => !exploredOrderIdSet.has(f.id) && getItemSlug(f) === "storm-order")
+      : null;
+
     for (const f of feats) {
       if (exploredOrderIdSet.has(f.id)) continue;
+      if (primaryStormOrder && f.id === primaryStormOrder.id) continue;
       const fSlug = getItemSlug(f);
       if (druidNonGrantExclusions.has(fSlug)) continue;
       const desc = String(f.system?.description?.value || "");
@@ -4310,6 +4699,146 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
         druidSlugs.add(fSlug);
       } else if (f.system?.traits?.value?.includes("druid") && druidGrantRe.test(desc) && !/(?:don't|do\s+not)\s+gain/i.test(desc)) {
         druidSlugs.add(fSlug);
+      }
+    }
+
+    if (primaryStormOrder) {
+      const stormSec = extractNamedSectionHtml(String(primaryStormOrder.system?.description?.value || ""), [/^order\s+spell$/i]);
+      const stormRef = extractSpellRefsFromText(stormSec)[0]
+        || resolveSyncSpellMeta("Compendium.pf2e.spells-srd.Item.Tempest Surge", "Tempest Surge");
+      const updraftRef = resolveElementalFocusSpellMeta("air", "initial", elemCfg.elementalFeatures);
+      const hasUpdraftOnSheet = updraftRef && existingSpellSlugs.has(normalizeSlug(updraftRef.name));
+      const hasTempestOnSheet = stormRef && existingSpellSlugs.has(normalizeSlug(stormRef.name));
+
+      if (updraftRef && (elemCfg.swappedToUpdraft || (hasUpdraftOnSheet && !hasTempestOnSheet))) {
+        pushAutoSpell({
+          uuid: updraftRef.uuid,
+          name: updraftRef.name,
+          img: updraftRef.img,
+          rank: null,
+          isCantrip: false,
+          isFocus: true,
+          unlockLevel: 1,
+          targetSourceKey: key,
+          targetClassSlug: "druid",
+          sourceLabel: "Storm Order (Elementalist · Air Swap)",
+          tier: "order",
+          countsTowardRepertoire: false
+        });
+      } else if (hasTempestOnSheet || !updraftRef) {
+        pushAutoSpell({
+          uuid: stormRef.uuid,
+          name: stormRef.name,
+          img: stormRef.img,
+          rank: null,
+          isCantrip: false,
+          isFocus: true,
+          unlockLevel: 1,
+          targetSourceKey: key,
+          targetClassSlug: "druid",
+          sourceLabel: primaryStormOrder.name,
+          tier: "order",
+          countsTowardRepertoire: false
+        });
+      } else {
+        choiceGroups.push({
+          id: `${key}:storm-elementalist-swap`,
+          targetSourceKey: key,
+          targetClassSlug: "druid",
+          sourceLabel: "Storm Order (Elementalist)",
+          rank: 1,
+          isCantrip: false,
+          isFocus: true,
+          isCurriculum: false,
+          unlockLevel: 1,
+          pickCount: 1,
+          label: "Storm Order (Elementalist) — Choose Initial Order Spell",
+          options: [
+            { uuid: stormRef.uuid, name: stormRef.name, img: stormRef.img, rank: 1, isCantrip: false, qualifier: "Storm Order" },
+            { uuid: updraftRef.uuid, name: updraftRef.name, img: updraftRef.img, rank: 1, isCantrip: false, qualifier: "Elementalist (Air)" }
+          ]
+        });
+      }
+    }
+
+    // Advanced Elemental Spell (Druid Lv 6): resolves strictly to the Druid's actual elemental order(s)
+    // (Flame -> Combustion, Stone -> Stone Lance, Storm -> Powerful Inhalation, Wave -> Pulverizing Cascade)
+    const advElemUnlock = getFeatUnlockLevel(["advanced-elemental-spell"]);
+    if (advElemUnlock.unlocked) {
+      const advElemFeat = advElemUnlock.feat;
+      const directRefs = advElemFeat ? extractDirectRuleSpellUuids(advElemFeat) : [];
+      if (directRefs.length > 0) {
+        for (const r of directRefs) {
+          pushAutoSpell({
+            uuid: r.uuid,
+            name: r.name,
+            img: r.img,
+            rank: null,
+            isCantrip: false,
+            isFocus: true,
+            unlockLevel: advElemUnlock.level,
+            targetSourceKey: key,
+            targetClassSlug: "druid",
+            sourceLabel: advElemFeat.name,
+            tier: "advanced",
+            countsTowardRepertoire: false
+          });
+        }
+      } else {
+        const druidOrderToElement = {
+          "flame-order": "fire",
+          "stone-order": "earth",
+          "storm-order": "air",
+          "wave-order": "water"
+        };
+        const matchedElements = [];
+        for (const ofeat of allOrderFeatures) {
+          const el = druidOrderToElement[getItemSlug(ofeat)];
+          if (el && !matchedElements.includes(el)) matchedElements.push(el);
+        }
+        if (matchedElements.length === 1) {
+          const advMeta = resolveElementalFocusSpellMeta(matchedElements[0], "advanced", elemCfg.elementalFeatures);
+          if (advMeta) {
+            pushAutoSpell({
+              uuid: advMeta.uuid,
+              name: advMeta.name,
+              img: advMeta.img,
+              rank: null,
+              isCantrip: false,
+              isFocus: true,
+              unlockLevel: advElemUnlock.level,
+              targetSourceKey: key,
+              targetClassSlug: "druid",
+              sourceLabel: advElemFeat?.name || "Advanced Elemental Spell",
+              tier: "advanced",
+              countsTowardRepertoire: false
+            });
+          }
+        } else {
+          const candEls = matchedElements.length > 1 ? matchedElements : ["air", "earth", "fire", "water"];
+          const advOpts = candEls
+            .map(el => {
+              const meta = resolveElementalFocusSpellMeta(el, "advanced", elemCfg.elementalFeatures);
+              return meta ? { uuid: meta.uuid, name: meta.name, img: meta.img, rank: meta.baseRank || 3, isCantrip: false, qualifier: capitalize(el) } : null;
+            })
+            .filter(Boolean);
+          if (advOpts.length > 0) {
+            choiceGroups.push({
+              id: `${key}:advanced-elemental-spell`,
+              targetSourceKey: key,
+              targetClassSlug: "druid",
+              sourceLabel: advElemFeat?.name || "Advanced Elemental Spell",
+              rank: 3,
+              isCantrip: false,
+              isFocus: true,
+              isCurriculum: false,
+              unlockLevel: advElemUnlock.level,
+              pickCount: 1,
+              label: "Advanced Elemental Spell — Choose Order Focus Spell",
+              options: advOpts
+            });
+          }
+        }
       }
     }
 
@@ -4531,12 +5060,13 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
   // Generic Focus-Granting Feats (matches `focus:feat:<slug>` or folded focus feats, incl. Elementalist focus feats)
   const genericExclusions = /(?:^|-)(?:focus|wellspring|refocus|desperate-prayer|psi-strikes|psychic-dedication|conscious-mind|subconscious-mind|mercy|affliction-mercy|cruelty|covenant|order-explorer|martial-performance|storm-born|druidic-order|elementalist-dedication|expanded-elemental-magic|elemental-familiar|burning-spell|dousing-spell|current-spell|rockslide-spell|reverberating-spell|wind-tossed-spell|redirect-elements|metabolize-element)(?:$|-)|-(?:order|bloodline|mystery|patron|muse)$|^school-of-/;
   const genericGrantRe = /(?:you\s+(?:gain|learn|receive)|grants?\s+you|you\s+can\s+cast)\s+(?:the\s+)?[^.<]{0,80}\b(?:focus\s+spell|focus\s+pool)\b/i;
+  const elementalistFeatureIds = new Set(elemCfg.elementalFeatures.map(ef => ef.id).filter(Boolean));
   const elementalistTradHint = hasElementalist
     ? resolveElementalistTradition(actor, dualInfo, primarySlug)
     : "";
 
   for (const f of feats) {
-    if (isElementalistClassFeature(f)) continue;
+    if (isElementalistClassFeature(f) || elementalistFeatureIds.has(f.id)) continue;
     const slug = getItemSlug(f);
     if (genericExclusions.test(slug)) continue;
     const desc = String(f.system?.description?.value || "");
