@@ -447,6 +447,16 @@ function registerSettings() {
     default: { left: 110, top: 14 }
   });
 
+  // PF2e GM Screen: Hidden Card IDs (Client preference, auto-saved from Customize drawer)
+  game.settings.register(MODULE_ID, "gmScreenHiddenCards", {
+    name: "GM Screen Hidden Cards",
+    hint: "Card IDs hidden by this GM in the PF2e GM Screen.",
+    scope: "client",
+    config: false,
+    type: Array,
+    default: []
+  });
+
   // Character Completeness Checker: Inline Character Sheet Guides
   game.settings.register(MODULE_ID, "showCharacterSheetGuides", {
     name: game.i18n.localize("PF2E_AWESOME_GM.Settings.ShowCharacterSheetGuides.Name"),

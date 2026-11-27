@@ -2,8 +2,10 @@
  * PF2e Awesome GM Utilities - Instant-Access PF2e GM Screen (ApplicationV2)
  *
  * Features:
- *  - Scannable single-glance Remaster PF2e reference tables (no clicking through journal links)
- *  - Live instant search across ALL tabs simultaneously
+ *  - Scannable single-glance Remaster PF2e reference tables & niche rules across 6 organized tabs
+ *  - Customizable card visibility (checkboxes per card saved persistently per GM client)
+ *  - Balanced 2-column masonry layout that auto-reflows with zero gaps when hiding/filtering cards
+ *  - Live instant search across ALL tabs simultaneously (surfaces hidden matches with a subtle tag)
  *  - Auto-synced Party Level highlighting (DC by Level, Earn Income, Treasure, Spell Ranks)
  *  - Live Quick DC Calculator with Adjustment chips & 1-click PF2e `@Check` chat prompt
  *  - Interactive Counteract Rank evaluator & Encounter XP Threat Builder
@@ -12,21 +14,43 @@
 import { MODULE_ID } from "../constants.js";
 import {
   ACCOMPLISHMENT_XP,
+  AFFLICTION_CORE_RULES,
+  ALCOHOL_STAGES,
   COMBAT_ACTIONS,
   COVER_RULES,
   CREATURE_XP_TABLE,
+  CURSE_RULES,
   DC_ADJUSTMENTS,
   DC_BY_LEVEL,
   DEGREES_OF_SUCCESS,
   DETECTION_STATES,
-  DYING_FALLING_RULES,
+  DISEASE_RULES,
+  DOWNTIME_NICHE_RULES,
+  DRUGS_ALCOHOL_RULES,
+  DYING_RECOVERY_RULES,
   EARN_INCOME_TABLE,
   EXPLORATION_ACTIVITIES,
+  FALLING_TERRAIN_RULES,
+  FLAT_CHECK_QUICK_RULES,
+  FLYING_RULES,
+  GM_SCREEN_CARDS,
+  GM_SCREEN_TABS,
+  HAZARDS_HAUNTS_RULES,
+  HERO_POINT_RULES,
+  INVISIBILITY_RULES,
+  LIGHT_VISION_RULES,
+  MOUNTED_COMBAT_RULES,
+  OBJECTS_ENVIRONMENT_RULES,
   PF2E_CONDITIONS,
+  POISON_RULES,
   QUICK_CHECK_SKILLS,
   RECALL_KNOWLEDGE_SKILLS,
   SIMPLE_DCS,
+  SOCIAL_ATTITUDE_RULES,
   SPELL_RANK_DCS,
+  STEALTH_SNEAKING_RULES,
+  SWIMMING_UNDERWATER_RULES,
+  TACTICAL_MISC_RULES,
   TRAVEL_SPEED_TABLE,
   TREASURE_BY_LEVEL,
   TREAT_WOUNDS_TABLE,
@@ -39,14 +63,27 @@ import {
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 const GM_SCREEN_TEMPLATE = `modules/${MODULE_ID}/templates/gm-screen.hbs`;
+const HIDDEN_CARDS_SETTING = "gmScreenHiddenCards";
+const VALID_CARD_IDS = new Set(GM_SCREEN_CARDS.map(c => c.id));
 
-const TABS = [
-  { id: "dcs", label: "DCs & Counteract", icon: "fa-solid fa-bullseye" },
-  { id: "combat", label: "Combat & Health", icon: "fa-solid fa-swords" },
-  { id: "skills", label: "Skills & Downtime", icon: "fa-solid fa-coins" },
-  { id: "conditions", label: "Conditions", icon: "fa-solid fa-biohazard" },
-  { id: "encounters", label: "Encounters & Loot", icon: "fa-solid fa-dragon" }
-];
+function loadHiddenCards() {
+  try {
+    const raw = game.settings?.get?.(MODULE_ID, HIDDEN_CARDS_SETTING);
+    if (Array.isArray(raw)) {
+      return new Set(raw.filter(id => typeof id === "string" && VALID_CARD_IDS.has(id)));
+    }
+  } catch { /* ignore if setting not registered yet */ }
+  return new Set();
+}
+
+async function saveHiddenCards(hiddenSet) {
+  try {
+    const clean = Array.from(hiddenSet).filter(id => VALID_CARD_IDS.has(id));
+    await game.settings?.set?.(MODULE_ID, HIDDEN_CARDS_SETTING, clean);
+  } catch (err) {
+    console.warn("PF2e Awesome GM Utilities | Failed saving GM Screen hidden cards:", err);
+  }
+}
 
 function detectPartyDefaults() {
   const party = game.actors?.party;
@@ -104,6 +141,8 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const defaults = detectPartyDefaults();
     this._activeTab = "dcs";
     this._searchQuery = "";
+    this._customizeOpen = false;
+    this._hiddenCards = loadHiddenCards();
     this._focusLevel = defaults.level;
     this._dcAdjustment = 0;
     this._simpleDcOverride = null; // { rank, dc } or null
@@ -129,15 +168,15 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       minimizable: true
     },
     position: {
-      width: 1040,
-      height: 740
+      width: 1080,
+      height: 760
     }
   };
 
   static PARTS = {
     main: {
       template: GM_SCREEN_TEMPLATE,
-      scrollable: [".pf2e-gs-body"]
+      scrollable: [".pf2e-gs-body", ".pf2e-gs-customize-scroll"]
     }
   };
 
@@ -152,6 +191,7 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (this.rendered) {
       this.close();
     } else {
+      this._hiddenCards = loadHiddenCards();
       this._syncFromPartyIfFresh();
       this.render({ force: true });
     }
@@ -174,7 +214,7 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const spellRank = Math.max(1, Math.min(10, Math.ceil(Math.max(1, lvl) / 2)));
     const spellRankDc = getSpellRankDc(spellRank);
 
-    // Split DC by Level into two side-by-side 13-row columns (0–12 and 13–25) so all 26 levels fit cleanly!
+    // Split DC by Level into two side-by-side 13-row columns (0–12 and 13–25)
     const dcRows = DC_BY_LEVEL.map(row => ({
       ...row,
       isActive: row.level === lvl,
@@ -207,7 +247,6 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }));
 
     const counteract = evaluateCounteract(this._counteractYourRank, this._counteractTargetRank);
-
     const totalEncounterXp = this._encounterEntries.reduce((sum, e) => sum + Number(e.xp || 0), 0);
     const encounterEval = evaluateEncounterBudget(this._partySize, totalEncounterXp);
 
@@ -217,10 +256,47 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       effectiveLevelLabel: `Lv ${lvl + c.offset}`
     }));
 
+    // Build per-tab Customize checkbox groups
+    const hiddenCardMap = {};
+    for (const id of this._hiddenCards) hiddenCardMap[id] = true;
+
+    const customizeGroups = GM_SCREEN_TABS.map(tab => {
+      const cards = GM_SCREEN_CARDS
+        .filter(c => c.tab === tab.id)
+        .map(c => ({
+          id: c.id,
+          label: c.label,
+          visible: !this._hiddenCards.has(c.id)
+        }));
+      const hiddenInTab = cards.filter(c => !c.visible).length;
+      return {
+        tabId: tab.id,
+        label: tab.label,
+        icon: tab.icon,
+        cards,
+        hiddenInTab,
+        allVisible: hiddenInTab === 0
+      };
+    });
+
+    const hiddenCardCount = this._hiddenCards.size;
+
     return {
       activeTab: this._activeTab,
-      tabs: TABS.map(t => ({ ...t, isActive: t.id === this._activeTab })),
+      tabs: GM_SCREEN_TABS.map(t => {
+        const grp = customizeGroups.find(g => g.tabId === t.id);
+        return {
+          ...t,
+          isActive: t.id === this._activeTab,
+          allHidden: Boolean(grp && grp.cards.length > 0 && grp.hiddenInTab === grp.cards.length)
+        };
+      }),
       searchQuery: this._searchQuery,
+      customizeOpen: this._customizeOpen,
+      customizeGroups,
+      hiddenCardMap,
+      hiddenCardCount,
+      hasHiddenCards: hiddenCardCount > 0,
       focusLevel: lvl,
       partyLevel: partyDefaults.level,
       isAtPartyLevel: lvl === partyDefaults.level,
@@ -249,14 +325,32 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       dcByLevelPaired,
       spellRankRows,
       degreesOfSuccess: DEGREES_OF_SUCCESS,
+      heroPointRules: HERO_POINT_RULES,
+      flatCheckQuickRules: FLAT_CHECK_QUICK_RULES,
       counteract,
       coverRules: COVER_RULES,
       detectionStates: DETECTION_STATES,
+      stealthSneakingRules: STEALTH_SNEAKING_RULES,
+      invisibilityRules: INVISIBILITY_RULES,
       combatActions: COMBAT_ACTIONS,
-      dyingFallingRules: DYING_FALLING_RULES,
+      dyingRecoveryRules: DYING_RECOVERY_RULES,
+      fallingTerrainRules: FALLING_TERRAIN_RULES,
+      mountedCombatRules: MOUNTED_COMBAT_RULES,
+      flyingRules: FLYING_RULES,
+      swimmingUnderwaterRules: SWIMMING_UNDERWATER_RULES,
+      tacticalMiscRules: TACTICAL_MISC_RULES,
+      afflictionCoreRules: AFFLICTION_CORE_RULES,
+      poisonRules: POISON_RULES,
+      diseaseRules: DISEASE_RULES,
+      curseRules: CURSE_RULES,
+      drugsAlcoholRules: DRUGS_ALCOHOL_RULES,
+      alcoholStages: ALCOHOL_STAGES,
+      hazardsHauntsRules: HAZARDS_HAUNTS_RULES,
       treatWoundsRows: TREAT_WOUNDS_TABLE,
       earnIncomeRows,
       recallKnowledgeSkills: RECALL_KNOWLEDGE_SKILLS,
+      socialAttitudeRules: SOCIAL_ATTITUDE_RULES,
+      downtimeNicheRules: DOWNTIME_NICHE_RULES,
       explorationActivities: EXPLORATION_ACTIVITIES,
       conditions: PF2E_CONDITIONS,
       encounterEval,
@@ -265,7 +359,9 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       creatureXpRows,
       treasureRows,
       travelSpeedRows: TRAVEL_SPEED_TABLE,
-      accomplishmentXp: ACCOMPLISHMENT_XP
+      accomplishmentXp: ACCOMPLISHMENT_XP,
+      lightVisionRules: LIGHT_VISION_RULES,
+      objectsEnvironmentRules: OBJECTS_ENVIRONMENT_RULES
     };
   }
 
@@ -286,14 +382,31 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     if (!this._onKeyDownBound) {
       this._onKeyDownBound = (e) => {
-        if (e.key !== "Escape" || !this.rendered) return;
-        const searchEl = this.element?.querySelector?.(".pf2e-gs-search");
+        if (e.key !== "Escape" || !this.rendered || this.minimized) return;
+        const winEl = this.element;
+        if (!winEl) return;
+        // Only handle Escape if this window has focus or is the topmost open ApplicationV2/window
+        const activeEl = winEl.ownerDocument?.activeElement;
+        const hasInternalFocus = Boolean(activeEl && winEl.contains(activeEl));
+        if (!hasInternalFocus) {
+          const myZ = Number(getComputedStyle(winEl).zIndex) || 0;
+          const higherOpen = Array.from(winEl.ownerDocument?.querySelectorAll?.(".application, .window-app") || [])
+            .some(other => other !== winEl && !other.classList.contains("minimized") && (Number(getComputedStyle(other).zIndex) || 0) > myZ);
+          if (higherOpen) return;
+        }
+        const inner = winEl.querySelector?.(".pf2e-gs-root");
+        const searchEl = inner?.querySelector?.(".pf2e-gs-search");
         if (this._searchQuery) {
           e.preventDefault();
           this._searchQuery = "";
           if (searchEl) searchEl.value = "";
-          const inner = this.element?.querySelector?.(".pf2e-gs-root");
           if (inner) this._applySearchFilter(inner);
+          return;
+        }
+        if (this._customizeOpen) {
+          e.preventDefault();
+          this._customizeOpen = false;
+          if (inner) this._syncCustomizeDrawerDom(inner);
           return;
         }
         e.preventDefault();
@@ -304,6 +417,7 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     this._bindDomEvents(root);
+    this._syncCustomizeDrawerDom(root);
     this._applySearchFilter(root);
   }
 
@@ -354,6 +468,22 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     }
 
+    // Customize card show/hide checkboxes (instant 0ms DOM toggle + persistent save!)
+    root.querySelectorAll(".pf2e-gs-cust-cb[data-card-id]").forEach(cb => {
+      cb.addEventListener("change", () => {
+        const cardId = cb.dataset.cardId;
+        if (!cardId || !VALID_CARD_IDS.has(cardId)) return;
+        if (cb.checked) {
+          this._hiddenCards.delete(cardId);
+        } else {
+          this._hiddenCards.add(cardId);
+        }
+        saveHiddenCards(this._hiddenCards);
+        this._syncCustomizeDrawerDom(root);
+        this._applySearchFilter(root);
+      });
+    });
+
     // Unified click delegation for all data-gs-action buttons & rows
     root.querySelectorAll("[data-gs-action]").forEach(el => {
       el.addEventListener("click", async (e) => {
@@ -365,28 +495,120 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
+  /**
+   * Synchronizes Customize drawer visibility, checkboxes, hidden count badges, and per-tab All/None buttons
+   * in 0ms without re-rendering or disturbing scroll position.
+   */
+  _syncCustomizeDrawerDom(root) {
+    const drawer = root.querySelector(".pf2e-gs-customize-drawer");
+    if (drawer) {
+      drawer.classList.toggle("is-open", this._customizeOpen);
+    }
+
+    const hiddenCount = this._hiddenCards.size;
+    const toggleBtn = root.querySelector('[data-gs-action="toggle-customize"]');
+    if (toggleBtn) {
+      toggleBtn.classList.toggle("is-active", this._customizeOpen);
+      toggleBtn.classList.toggle("pf2e-gs-btn-accent", hiddenCount > 0);
+      const lbl = toggleBtn.querySelector(".pf2e-gs-cust-btn-label");
+      if (lbl) {
+        lbl.textContent = hiddenCount > 0 ? `Customize (${hiddenCount} hidden)` : "Customize";
+      }
+    }
+
+    const showAllBtn = root.querySelector('[data-gs-action="show-all-cards"]');
+    if (showAllBtn) {
+      showAllBtn.style.display = hiddenCount > 0 ? "" : "none";
+    }
+
+    root.querySelectorAll(".pf2e-gs-cust-cb[data-card-id]").forEach(cb => {
+      cb.checked = !this._hiddenCards.has(cb.dataset.cardId);
+    });
+
+    // Update per-tab toggle button text & tab dimming when all cards on a tab are hidden
+    for (const tab of GM_SCREEN_TABS) {
+      const tabCards = GM_SCREEN_CARDS.filter(c => c.tab === tab.id);
+      const hiddenInTab = tabCards.filter(c => this._hiddenCards.has(c.id)).length;
+      const allVisible = hiddenInTab === 0;
+      const allHidden = tabCards.length > 0 && hiddenInTab === tabCards.length;
+
+      const tabToggle = root.querySelector(`[data-gs-action="toggle-tab-cards"][data-tab="${tab.id}"]`);
+      if (tabToggle) {
+        tabToggle.textContent = allVisible ? "Hide All" : "Show All";
+      }
+      const tabBtn = root.querySelector(`.pf2e-gs-tab[data-tab="${tab.id}"]`);
+      if (tabBtn) {
+        tabBtn.classList.toggle("is-all-hidden", allHidden);
+      }
+    }
+  }
+
+  /**
+   * Keeps 2-column masonry containers balanced (collapsing to 1 column when only 1 card is visible,
+   * or hiding completely when 0 cards are visible so there are never phantom vertical gaps).
+   */
+  _syncMasonryContainers(root) {
+    root.querySelectorAll(".pf2e-gs-masonry").forEach(masonry => {
+      const cards = Array.from(masonry.querySelectorAll(":scope > .pf2e-gs-card"));
+      const visibleCount = cards.filter(c => {
+        if (c.classList.contains("is-hidden")) return false;
+        if (c.classList.contains("is-user-hidden") && !c.classList.contains("is-search-override")) return false;
+        return true;
+      }).length;
+      masonry.style.display = visibleCount === 0 ? "none" : "";
+      masonry.classList.toggle("is-single", visibleCount === 1);
+    });
+  }
+
   _applySearchFilter(root) {
     const query = String(this._searchQuery || "").trim().toLowerCase();
     const clearBtn = root.querySelector(".pf2e-gs-search-clear");
     const banner = root.querySelector(".pf2e-gs-search-banner");
     const emptyEl = root.querySelector(".pf2e-gs-empty-search");
+    const emptyTabEl = root.querySelector(".pf2e-gs-empty-tab");
 
     if (clearBtn) clearBtn.style.display = query ? "" : "none";
+
+    // Always sync user-hidden class onto every card first
+    root.querySelectorAll(".pf2e-gs-card[data-gs-card]").forEach(card => {
+      const isUserHidden = this._hiddenCards.has(card.dataset.gsCard);
+      card.classList.toggle("is-user-hidden", isUserHidden);
+      card.classList.remove("is-search-override");
+    });
 
     const panels = root.querySelectorAll("[data-gs-panel]");
     if (!query) {
       if (banner) banner.style.display = "none";
       if (emptyEl) emptyEl.classList.remove("is-visible");
+
+      let visibleInActiveTab = 0;
       panels.forEach(p => {
-        p.style.display = p.dataset.gsPanel === this._activeTab ? "" : "none";
+        const isActive = p.dataset.gsPanel === this._activeTab;
+        p.style.display = isActive ? "" : "none";
+        if (isActive) {
+          visibleInActiveTab = Array.from(p.querySelectorAll(".pf2e-gs-card[data-gs-card]"))
+            .filter(c => !c.classList.contains("is-user-hidden"))
+            .length;
+        }
       });
+
       root.querySelectorAll(".pf2e-gs-card.is-hidden, [data-gs-row].is-hidden").forEach(el => {
         el.classList.remove("is-hidden");
       });
+      root.querySelectorAll(".pf2e-gs-table.is-empty-table").forEach(tbl => {
+        tbl.classList.remove("is-empty-table");
+      });
+
+      this._syncMasonryContainers(root);
+      if (emptyTabEl) {
+        emptyTabEl.classList.toggle("is-visible", visibleInActiveTab === 0);
+      }
       return;
     }
 
-    // Live cross-tab search: reveal all panels, filter cards & individual rows cleanly
+    if (emptyTabEl) emptyTabEl.classList.remove("is-visible");
+
+    // Live cross-tab search: reveal all matching cards (including hidden ones with a subtle pill!)
     const tokens = query.split(/\s+/).filter(Boolean);
     const matchesTokens = (text) => {
       const lower = String(text || "").toLowerCase();
@@ -400,16 +622,13 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
       cards.forEach(card => {
         const cardMeta = `${card.dataset.gsKeywords || ""} ${card.querySelector(".pf2e-gs-card-head")?.textContent || ""}`;
         const rows = card.querySelectorAll("[data-gs-row]");
+        let cardMatched = false;
 
         if (matchesTokens(cardMeta)) {
           card.classList.remove("is-hidden");
           rows.forEach(r => r.classList.remove("is-hidden"));
-          panelHasHit = true;
-          visibleCards++;
-          return;
-        }
-
-        if (rows.length > 0) {
+          cardMatched = true;
+        } else if (rows.length > 0) {
           let rowHits = 0;
           rows.forEach(r => {
             const hit = matchesTokens(`${r.dataset.gsKeywords || ""} ${r.textContent || ""}`);
@@ -417,21 +636,33 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
             if (hit) rowHits++;
           });
           card.classList.toggle("is-hidden", rowHits === 0);
-          if (rowHits > 0) {
-            panelHasHit = true;
-            visibleCards++;
-          }
+          cardMatched = rowHits > 0;
         } else {
           const hit = matchesTokens(card.textContent || "");
           card.classList.toggle("is-hidden", !hit);
-          if (hit) {
-            panelHasHit = true;
-            visibleCards++;
+          cardMatched = hit;
+        }
+
+        // Hide any table inside a mixed card (e.g. Alcohol Stages) when all its rows are filtered out
+        card.querySelectorAll(".pf2e-gs-table").forEach(tbl => {
+          const tblRows = tbl.querySelectorAll("tbody tr[data-gs-row]");
+          if (tblRows.length === 0) return;
+          const anyVisible = Array.from(tblRows).some(tr => !tr.classList.contains("is-hidden"));
+          tbl.classList.toggle("is-empty-table", !anyVisible);
+        });
+
+        if (cardMatched) {
+          if (card.classList.contains("is-user-hidden")) {
+            card.classList.add("is-search-override");
           }
+          panelHasHit = true;
+          visibleCards++;
         }
       });
       panel.style.display = panelHasHit ? "" : "none";
     });
+
+    this._syncMasonryContainers(root);
 
     if (banner) {
       banner.style.display = "";
@@ -444,11 +675,40 @@ export class GmScreenApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _handleAction(action, el, { root, refresh }) {
     switch (action) {
+      case "toggle-customize": {
+        this._customizeOpen = !this._customizeOpen;
+        this._syncCustomizeDrawerDom(root);
+        break;
+      }
+
+      case "show-all-cards": {
+        this._hiddenCards.clear();
+        await saveHiddenCards(this._hiddenCards);
+        this._syncCustomizeDrawerDom(root);
+        this._applySearchFilter(root);
+        ui.notifications?.info("Restored all PF2e GM Screen sections.");
+        break;
+      }
+
+      case "toggle-tab-cards": {
+        const tabId = el.dataset.tab;
+        const tabCards = GM_SCREEN_CARDS.filter(c => c.tab === tabId);
+        if (tabCards.length === 0) return;
+        const allVisible = tabCards.every(c => !this._hiddenCards.has(c.id));
+        for (const c of tabCards) {
+          if (allVisible) this._hiddenCards.add(c.id);
+          else this._hiddenCards.delete(c.id);
+        }
+        await saveHiddenCards(this._hiddenCards);
+        this._syncCustomizeDrawerDom(root);
+        this._applySearchFilter(root);
+        break;
+      }
+
       case "select-tab": {
         const tabId = el.dataset.tab;
         if (!tabId) return;
         this._activeTab = tabId;
-        // Clear active search if user intentionally clicks a tab
         if (this._searchQuery) {
           this._searchQuery = "";
           const searchEl = root.querySelector(".pf2e-gs-search");

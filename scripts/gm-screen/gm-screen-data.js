@@ -1,9 +1,78 @@
 /**
  * PF2e Awesome GM Utilities - PF2e Remaster Quick-Reference Data & Calculators
  *
- * Pure, self-contained Pathfinder 2e Remaster (Player Core / GM Core) reference tables
- * for the Instant-Access GM Screen. Zero Foundry mutations, zero external dependencies.
+ * Pure, self-contained Pathfinder 2e Remaster (Player Core / GM Core, plus Legacy GMG Drugs/Alcohol)
+ * reference tables and niche rules for the Instant-Access GM Screen.
+ * Zero Foundry mutations, zero external dependencies.
  */
+
+/* ------------------------------------------------------------------------- */
+/* 0. CUSTOMIZABLE CARD REGISTRY (SINGLE SOURCE OF TRUTH FOR SHOW / HIDE)    */
+/* ------------------------------------------------------------------------- */
+
+export const GM_SCREEN_TABS = [
+  { id: "dcs", label: "DCs & Core", icon: "fa-solid fa-bullseye" },
+  { id: "combat", label: "Combat & Tactics", icon: "fa-solid fa-swords" },
+  { id: "afflictions", label: "Afflictions & Hazards", icon: "fa-solid fa-skull-crossbones" },
+  { id: "skills", label: "Skills & Downtime", icon: "fa-solid fa-coins" },
+  { id: "conditions", label: "Conditions", icon: "fa-solid fa-biohazard" },
+  { id: "encounters", label: "Encounters & Loot", icon: "fa-solid fa-dragon" }
+];
+
+export const GM_SCREEN_CARDS = [
+  // Tab 1: DCs & Core
+  { id: "dc-calculator", tab: "dcs", label: "Quick DC Calculator & Simple DCs" },
+  { id: "dc-by-level", tab: "dcs", label: "DC by Level (0–25)" },
+  { id: "counteract", tab: "dcs", label: "Counteract Calculator & Rules" },
+  { id: "degrees-of-success", tab: "dcs", label: "Degrees of Success" },
+  { id: "hero-points", tab: "dcs", label: "Hero Points" },
+  { id: "flat-checks", tab: "dcs", label: "Key Flat Checks & Quick Reminders" },
+
+  // Tab 2: Combat & Tactics
+  { id: "combat-actions", tab: "combat", label: "Common Combat Actions" },
+  { id: "cover", tab: "combat", label: "Cover" },
+  { id: "detection", tab: "combat", label: "Concealment & Detection States" },
+  { id: "stealth-sneaking", tab: "combat", label: "Stealth, Hide, Sneak & Seek" },
+  { id: "invisibility", tab: "combat", label: "Invisibility Rules" },
+  { id: "dying-recovery", tab: "combat", label: "Dying, Wounded & Recovery" },
+  { id: "falling-terrain", tab: "combat", label: "Falling, Terrain & Suffocation" },
+  { id: "mounted-combat", tab: "combat", label: "Mounted Combat" },
+  { id: "flying-rules", tab: "combat", label: "Flying & Aerial Combat" },
+  { id: "swimming-underwater", tab: "combat", label: "Swimming & Underwater Combat" },
+  { id: "tactical-misc", tab: "combat", label: "Delay, Ready, Shield Block & Squeezing" },
+
+  // Tab 3: Afflictions & Hazards
+  { id: "afflictions-core", tab: "afflictions", label: "Afflictions Core Rules (Stages & Onset)" },
+  { id: "poison-rules", tab: "afflictions", label: "Poison Rules" },
+  { id: "disease-rules", tab: "afflictions", label: "Disease Rules" },
+  { id: "curse-rules", tab: "afflictions", label: "Curse Rules" },
+  { id: "drugs-alcohol", tab: "afflictions", label: "Drugs, Alcohol & Addiction" },
+  { id: "hazards-haunts", tab: "afflictions", label: "Hazards & Haunts (Simple & Complex)" },
+
+  // Tab 4: Skills & Downtime
+  { id: "earn-income", tab: "skills", label: "Earn Income (Per Day)" },
+  { id: "treat-wounds", tab: "skills", label: "Treat Wounds & Repair" },
+  { id: "recall-knowledge", tab: "skills", label: "Recall Knowledge (Remaster)" },
+  { id: "spell-rank-dcs", tab: "skills", label: "Spell Rank DCs & Learn a Spell" },
+  { id: "social-attitudes", tab: "skills", label: "NPC Attitudes & Social Checks" },
+  { id: "downtime-niche", tab: "skills", label: "Crafting, Identify Magic & Retraining" },
+  { id: "exploration-activities", tab: "skills", label: "Exploration Activities" },
+
+  // Tab 5: Conditions
+  { id: "conditions-list", tab: "conditions", label: "PF2e Remaster Conditions" },
+
+  // Tab 6: Encounters & Loot
+  { id: "encounter-builder", tab: "encounters", label: "Quick Encounter XP Calculator" },
+  { id: "treasure-by-level", tab: "encounters", label: "Party Treasure by Level" },
+  { id: "travel-speed", tab: "encounters", label: "Overland Travel Speed" },
+  { id: "accomplishment-xp", tab: "encounters", label: "Accomplishment XP Awards" },
+  { id: "light-vision", tab: "encounters", label: "Light, Vision & Senses" },
+  { id: "objects-environment", tab: "encounters", label: "Object Hardness, Doors & Environment" }
+];
+
+/* ------------------------------------------------------------------------- */
+/* 1. DCs, ADJUSTMENTS, DEGREES, HERO POINTS & FLAT CHECKS                   */
+/* ------------------------------------------------------------------------- */
 
 export const SIMPLE_DCS = [
   { rank: "Untrained", dc: 10, note: "Everyday task" },
@@ -50,9 +119,24 @@ export const SPELL_RANK_DCS = [
 
 export const DEGREES_OF_SUCCESS = [
   { degree: "Critical Success", cls: "is-crit-succ", rule: "Beat DC by 10+ (or Nat 20 upgrades degree by 1 step)." },
-  { degree: "Success", cls: "is-succ", rule: "Meet or exceed DC (DC to DC+9)." },
+  { degree: "Success", cls: "is-succ", rule: "Meet or exceed DC (DC to DC+9). Ties always go to the roller." },
   { degree: "Failure", cls: "is-fail", rule: "Below DC (DC-1 to DC-9)." },
   { degree: "Critical Failure", cls: "is-crit-fail", rule: "Miss DC by 10+ (or Nat 1 downgrades degree by 1 step)." }
+];
+
+export const HERO_POINT_RULES = [
+  { label: "Starting & Cap", text: "Each PC starts every session with 1 Hero Point (max 3; unspent points reset next session)." },
+  { label: "Awarding", text: "Award ~1 Hero Point per hour of play for clever tactics, heroism, or great roleplay." },
+  { label: "Reroll (1 Point)", text: "Spend 1 to reroll a check (Fortune effect; must use the 2nd result; cannot stack with other Fortune/Misfortune)." },
+  { label: "Heroic Recovery (All)", text: "Spend ALL remaining Hero Points (min 1) when your Dying value would increase to stabilize at 0 HP without gaining Wounded." }
+];
+
+export const FLAT_CHECK_QUICK_RULES = [
+  { dc: "DC 5", when: "Target Concealed; Manipulate while Grabbed; Auditory action while Deafened; Dazzled sight checks." },
+  { dc: "DC 5 + X", when: "Cast a Spell while Stupefied X (spell is lost/disrupted on Failure)." },
+  { dc: "DC 10 + X", when: "Recovery Check at start of turn while Dying X (Crit -2, Succ -1, Fail +1, Crit Fail +2)." },
+  { dc: "DC 11", when: "Target Hidden or Undetected (secret if Undetected); end Confused when taking damage." },
+  { dc: "DC 15", when: "End Persistent Damage at end of turn (drops to DC 10 with Assisted Recovery)." }
 ];
 
 export const QUICK_CHECK_SKILLS = [
@@ -79,59 +163,9 @@ export const QUICK_CHECK_SKILLS = [
   { slug: "flat", label: "Flat Check" }
 ];
 
-/** Player Core Table 4-2: Income Earned (per day) */
-export const EARN_INCOME_TABLE = [
-  { level: 0, label: "0", dc: 14, failed: "1 cp", trained: "5 cp", expert: "5 cp", master: "5 cp", legendary: "5 cp" },
-  { level: 1, label: "1", dc: 15, failed: "2 cp", trained: "2 sp", expert: "2 sp", master: "2 sp", legendary: "2 sp" },
-  { level: 2, label: "2", dc: 16, failed: "4 cp", trained: "3 sp", expert: "3 sp", master: "3 sp", legendary: "3 sp" },
-  { level: 3, label: "3", dc: 18, failed: "8 cp", trained: "5 sp", expert: "5 sp", master: "5 sp", legendary: "5 sp" },
-  { level: 4, label: "4", dc: 19, failed: "1 sp", trained: "7 sp", expert: "8 sp", master: "8 sp", legendary: "8 sp" },
-  { level: 5, label: "5", dc: 20, failed: "2 sp", trained: "9 sp", expert: "1 gp", master: "1 gp", legendary: "1 gp" },
-  { level: 6, label: "6", dc: 22, failed: "3 sp", trained: "1 gp, 5 sp", expert: "2 gp", master: "2 gp", legendary: "2 gp" },
-  { level: 7, label: "7", dc: 23, failed: "4 sp", trained: "2 gp", expert: "2 gp, 5 sp", master: "2 gp, 5 sp", legendary: "2 gp, 5 sp" },
-  { level: 8, label: "8", dc: 24, failed: "5 sp", trained: "2 gp, 5 sp", expert: "3 gp", master: "3 gp", legendary: "3 gp" },
-  { level: 9, label: "9", dc: 26, failed: "6 sp", trained: "3 gp", expert: "4 gp", master: "4 gp", legendary: "4 gp" },
-  { level: 10, label: "10", dc: 27, failed: "7 sp", trained: "4 gp", expert: "5 gp", master: "6 gp", legendary: "6 gp" },
-  { level: 11, label: "11", dc: 28, failed: "8 sp", trained: "5 gp", expert: "6 gp", master: "8 gp", legendary: "8 gp" },
-  { level: 12, label: "12", dc: 30, failed: "9 sp", trained: "6 gp", expert: "8 gp", master: "10 gp", legendary: "10 gp" },
-  { level: 13, label: "13", dc: 31, failed: "1 gp", trained: "7 gp", expert: "10 gp", master: "15 gp", legendary: "15 gp" },
-  { level: 14, label: "14", dc: 32, failed: "1 gp, 5 sp", trained: "8 gp", expert: "15 gp", master: "20 gp", legendary: "20 gp" },
-  { level: 15, label: "15", dc: 34, failed: "2 gp", trained: "10 gp", expert: "20 gp", master: "28 gp", legendary: "28 gp" },
-  { level: 16, label: "16", dc: 35, failed: "2 gp, 5 sp", trained: "13 gp", expert: "25 gp", master: "36 gp", legendary: "40 gp" },
-  { level: 17, label: "17", dc: 36, failed: "3 gp", trained: "15 gp", expert: "30 gp", master: "45 gp", legendary: "55 gp" },
-  { level: 18, label: "18", dc: 38, failed: "4 gp", trained: "20 gp", expert: "45 gp", master: "70 gp", legendary: "90 gp" },
-  { level: 19, label: "19", dc: 39, failed: "6 gp", trained: "30 gp", expert: "60 gp", master: "100 gp", legendary: "130 gp" },
-  { level: 20, label: "20", dc: 40, failed: "8 gp", trained: "40 gp", expert: "75 gp", master: "150 gp", legendary: "200 gp" },
-  { level: 21, label: "20 (Crit)", dc: 40, failed: "—", trained: "50 gp", expert: "90 gp", master: "175 gp", legendary: "300 gp" }
-];
-
-export const TREAT_WOUNDS_TABLE = [
-  { rank: "Trained", dc: 15, success: "2d8", critSuccess: "4d8", critFail: "1d8 dmg" },
-  { rank: "Expert", dc: 20, success: "2d8 + 10", critSuccess: "4d8 + 10", critFail: "1d8 dmg" },
-  { rank: "Master", dc: 30, success: "2d8 + 30", critSuccess: "4d8 + 30", critFail: "1d8 dmg" },
-  { rank: "Legendary", dc: 40, success: "2d8 + 50", critSuccess: "4d8 + 50", critFail: "1d8 dmg" }
-];
-
-export const RECALL_KNOWLEDGE_SKILLS = [
-  { skill: "Arcana", creatures: "Arcane, Beast, Construct, Dragon, Elemental" },
-  { skill: "Nature", creatures: "Animal, Beast, Fey, Fungus, Leshy, Plant" },
-  { skill: "Occultism", creatures: "Aberration, Astral, Dream, Ethereal, Occult, Spirit, Time" },
-  { skill: "Religion", creatures: "Celestial, Fiend, Monitor, Undead" },
-  { skill: "Society", creatures: "Humanoid (and settlements, history, politics)" },
-  { skill: "Lore (Specific)", creatures: "Applies Easy (-2) or Very Easy (-5) DC adjustment" }
-];
-
-export const EXPLORATION_ACTIVITIES = [
-  { name: "Avoid Notice", speed: "Half", summary: "Roll Stealth for initiative; may start Hidden/Undetected." },
-  { name: "Defend", speed: "Half", summary: "Raise a Shield before your first turn in combat." },
-  { name: "Detect Magic", speed: "Half", summary: "Cast Detect Magic regularly; sense magic within 30 ft." },
-  { name: "Follow the Expert", speed: "Normal", summary: "Gain +2/+3/+4 circ. bonus & add level to matching skill check." },
-  { name: "Hustle", speed: "Double", summary: "Move at 2× speed for Con mod × 10 min (min 10 min)." },
-  { name: "Investigate", speed: "Half", summary: "Use Recall Knowledge on clues and surroundings." },
-  { name: "Repeat a Spell", speed: "Half", summary: "Keep casting a 2-action or shorter spell (e.g. Shield, Guidance)." },
-  { name: "Scout", speed: "Half", summary: "Party gets +1 circumstance bonus to initiative rolls." },
-  { name: "Search", speed: "Half", summary: "Seek hidden doors, hazards, and traps (max 300 ft/min for traps)." }
-];
+/* ------------------------------------------------------------------------- */
+/* 2. COMBAT, STEALTH, INVISIBILITY, MOUNTED, FLYING & SWIMMING              */
+/* ------------------------------------------------------------------------- */
 
 export const COVER_RULES = [
   { type: "Lesser Cover", bonus: "+1 AC", notes: "Another creature in the way; cannot Take Cover or Hide." },
@@ -142,9 +176,26 @@ export const COVER_RULES = [
 export const DETECTION_STATES = [
   { state: "Observed", flatDc: "—", notes: "Clearly seen with a precise sense; no penalty." },
   { state: "Concealed", flatDc: "DC 5", notes: "Dim light, fog, mist. Targeted effects require Flat DC 5." },
-  { state: "Hidden", flatDc: "DC 11", notes: "Know square only (e.g. Invisible/Darkness). Off-Guard to it; Flat DC 11." },
+  { state: "Hidden", flatDc: "DC 11", notes: "Know square only (Invisible/Darkness). Off-Guard to it; Flat DC 11." },
   { state: "Undetected", flatDc: "DC 11*", notes: "Square unknown. Off-Guard to it; guess square + secret Flat DC 11." },
   { state: "Unnoticed", flatDc: "—", notes: "Completely unaware the creature is present at all." }
+];
+
+export const STEALTH_SNEAKING_RULES = [
+  { label: "Hide (1A, Secret)", text: "Needs Standard/Greater Cover or Concealment. Stealth (+2/+4 cover) vs Perception DC → become Hidden (still in known square)." },
+  { label: "Sneak (1A, Move, Secret)", text: "Must start Hidden/Undetected. Move up to ½ Speed; roll Stealth vs Perception DC at end (needs cover/concealment at destination)." },
+  { label: "Sneak Outcomes", text: "Succ: Undetected throughout move. Fail: Hidden (known square). Crit Fail: Observed (stays Hidden if impossible to see, e.g. Invisible)." },
+  { label: "Seek (1A, Conc., Secret)", text: "30-ft cone or 15-ft burst. Perception vs Stealth DC. Crit: Observed | Succ: Undetected → Hidden, Hidden → Observed." },
+  { label: "Point Out (1A)", text: "Point out a creature you observe; it becomes Hidden (not Undetected) to allies who can see/hear you." },
+  { label: "Breaking Stealth", text: "Any action other than Hide, Sneak, or Step makes you Observed — target stays Off-Guard for your triggering Strike." }
+];
+
+export const INVISIBILITY_RULES = [
+  { label: "Detection Baseline", text: "Undetected to sight-only foes; Hidden if pinpointed by an imprecise sense (hearing/scent) or a successful Seek." },
+  { label: "Combat Advantage", text: "Foes are Off-Guard (-2 AC) to you. Targeting you requires Flat DC 11 (or guessing your square + secret Flat DC 11 if Undetected)." },
+  { label: "Moving Invisibly", text: "Normal Stride reveals your square via sound (Hidden). Use Sneak (½ Speed) to stay Undetected; Crit Fail downgrades to Fail (Hidden)." },
+  { label: "Invisibility Spell", text: "Rank 2 ends right after a hostile action (target is still Off-Guard for that attack). Rank 4 lasts 1 min even while attacking." },
+  { label: "Counters", text: "See the Unseen (makes Invisible foes Concealed DC 5), Revealing Light (Dazzled + Concealed instead of Invisible), tremorsense/echolocation." }
 ];
 
 export const COMBAT_ACTIONS = [
@@ -234,34 +285,186 @@ export const COMBAT_ACTIONS = [
   }
 ];
 
-export const DYING_FALLING_RULES = [
-  {
-    title: "Dying & Recovery (Remaster)",
-    bullets: [
-      "Drop to 0 HP: Move initiative directly BEFORE the attacker. Gain Dying 1 (+ Wounded), or Dying 2 (+ Wounded) if crit or crit-failed save.",
-      "Recovery Check (start of turn while Dying): Flat DC = 10 + Dying value.",
-      "Crit Succ: Dying -2 | Succ: Dying -1 | Fail: Dying +1 | Crit Fail: Dying +2. At Dying 4 (or 4 - Doomed): Dead.",
-      "Stabilize / Regain HP: Losing Dying adds Wounded +1. Clear Wounded via Treat Wounds (or full HP + 10 min rest).",
-      "Heroic Recovery: Spend ALL remaining Hero Points (min 1) to stabilize at 0 HP without increasing Wounded."
-    ]
-  },
-  {
-    title: "Falling & Grab an Edge",
-    bullets: [
-      "Fall ≤ 5 ft: No damage. Fall > 5 ft: Bludgeoning damage = half distance fallen (max 750 at 1,500 ft). If you take damage, land Prone.",
-      "Into Water/Snow: Reduce effective fall by 20 ft (or 30 ft with DC 20–30 Athletics/Acrobatics dive).",
-      "Grab an Edge (Reaction): Reflex save vs Climb DC (Crit Succ: grab cleanly; Succ: grab, take half fall dmg if already fell; Crit Fail: +20 ft fall dmg)."
-    ]
-  },
-  {
-    title: "Movement, Flanking & Suffocation",
-    bullets: [
-      "Difficult Terrain: +5 ft per square. Greater Difficult Terrain: +10 ft. Cannot Step into difficult terrain.",
-      "Flanking: Two allies on opposite sides/corners within melee reach → target is Off-Guard (-2 circ. AC) to both.",
-      "Holding Breath: 5 + Con mod rounds (min 1); attacking/casting costs 1 extra round; crit hit loses 2 rounds. Out of air: Fort DC 20 (+1/round) or fall Unconscious & suffocate."
-    ]
-  }
+export const DYING_RECOVERY_RULES = [
+  { label: "Drop to 0 HP", text: "Move initiative directly BEFORE the attacker. Gain Dying 1 (+Wounded), or Dying 2 (+Wounded) on a crit or crit-failed save." },
+  { label: "Recovery Check", text: "Start of turn while Dying: Flat DC = 10 + Dying value. Crit Succ: -2 | Succ: -1 | Fail: +1 | Crit Fail: +2." },
+  { label: "Death Threshold", text: "Die at Dying 4 (reduced by Doomed: 4 - Doomed). Taking damage while Dying adds +1 (+2 on crit)." },
+  { label: "Stabilize & Wounded", text: "Losing Dying adds Wounded +1. Clear Wounded via Treat Wounds or reaching full HP + 10 min rest." }
 ];
+
+export const FALLING_TERRAIN_RULES = [
+  { label: "Falling Damage", text: "≤ 5 ft: 0 dmg. > 5 ft: bludgeoning dmg = ½ distance fallen (max 750 at 1,500 ft). If damaged, land Prone." },
+  { label: "Water / Snow", text: "Reduce effective fall by 20 ft, or 30 ft if you intentionally dive in (capped at water/snow depth)." },
+  { label: "Grab an Edge (R)", text: "Acrobatics or Reflex vs Climb DC. Crit: grab (even full hands), fall 30 ft shorter | Succ: grab (1 free hand), 20 ft shorter | Crit Fail: keep falling (+10 dmg/20 ft if fallen ≥ 20 ft)." },
+  { label: "Terrain & Flanking", text: "Difficult Terrain: +5 ft/sq (Greater: +10 ft; no Step). Flanking opposite sides/corners in melee reach → Off-Guard (-2 AC)." },
+  { label: "Holding Breath", text: "5 + Con mod rounds (min 1); attack/cast costs +1 rd, crit hit loses 2 rds. Out of air: auto-Unconscious & suffocate — Fort DC 20 (+5/rd): Fail 1d10 (+1d10/rd), Crit Fail death." }
+];
+
+export const MOUNTED_COMBAT_RULES = [
+  { label: "Requirements & Turn", text: "Mount must be willing & ≥ 1 size larger. Acts on your initiative; spend Command an Animal (1A) for it to take 2 actions (auto-pass with Ride feat / Companion)." },
+  { label: "Shared MAP", text: "You and your mount share a single Multiple Attack Penalty across both of your attacks." },
+  { label: "Space & Reach", text: "You occupy all squares of your mount. On a Large/Huge mount: 5-ft or 10-ft reach hits adjacent squares; 15-ft reach hits within 10 ft (also for flanking)." },
+  { label: "Targeting & Areas", text: "Attackers choose you or mount (any mount square counts for reach/range). Area effects hit both if spaces overlap." },
+  { label: "Mount / Dismount (1A)", text: "Move trait. Dismount into any adjacent square; if a moving mount falls/dies, Reflex DC 20 or fall Prone." }
+];
+
+export const FLYING_RULES = [
+  { label: "Must Fly Every Turn", text: "If airborne and you don't use a Fly action on your turn (even 0 ft to hover), you fall at the end of your turn!" },
+  { label: "Upward & Downward", text: "Moving upward (straight or diagonal) is difficult terrain (10 ft per 5 ft). Moving straight down moves 10 ft per 5 ft spent." },
+  { label: "No Step or Leap", text: "Ground movement actions like Step and Leap cannot be used while flying." },
+  { label: "Maneuver in Flight (1A)", text: "Trained Acrobatics for tricky stunts: steep ascent (DC 15), fly vs wind / sharp turn (DC 20), fly in storm / reverse (DC 25–30)." },
+  { label: "Arrest a Fall (Reaction)", text: "Requires Fly Speed. Acrobatics or Reflex DC 15 (higher in severe wind) to fall gently for 0 damage." }
+];
+
+export const SWIMMING_UNDERWATER_RULES = [
+  { label: "Swim Action (1A)", text: "Athletics: calm DC 10, choppy DC 15, storm DC 20, raging DC 25–30 (Crit: 10 ft, Succ: 5 ft; +5 ft per 20 ft Speed). Swim Speed auto-moves & gives +4 circ. in rough water." },
+  { label: "Underwater Off-Guard", text: "You are Off-Guard (-2 AC) underwater unless you have a Swim Speed." },
+  { label: "Melee & Ranged", text: "Melee bludgeoning/slashing take -2 circ. penalty (piercing unaffected). Ranged bludgeoning/slashing auto-miss; piercing range increments halved." },
+  { label: "Fire & Resistances", text: "Gain Resistance 5 to acid & fire. Cannot cast fire spells or use fire-trait actions underwater." },
+  { label: "Walking on Bottom", text: "Sinking and walking along the bottom counts as greater difficult terrain (+10 ft per square)." }
+];
+
+export const TACTICAL_MISC_RULES = [
+  { label: "Delay (Free, Start)", text: "Skip turn & re-enter after any creature (no reactions while delaying). Harmful start/end-of-turn effects trigger & buffs expire immediately; negative end-of-turn reductions (e.g. Frightened) wait until you act." },
+  { label: "Ready (2A, Conc.)", text: "Prepare one 1A/free action with a trigger (spent as your Reaction; carries your turn's MAP!)." },
+  { label: "Shield Block (R)", text: "Requires Raised Shield. Reduce physical damage by Hardness; both you and shield take remaining damage (Broken at ≤ ½ HP)." },
+  { label: "Squeeze / Stand / Crawl", text: "Squeeze (Acrobatics): 5 ft/min (Crit: 10 ft). Stand (1A, Move; triggers reactions). Crawl (1A, 5 ft while Prone)." }
+];
+
+/* ------------------------------------------------------------------------- */
+/* 3. AFFLICTIONS, POISONS, DISEASES, CURSES, DRUGS/ALCOHOL & HAZARDS        */
+/* ------------------------------------------------------------------------- */
+
+export const AFFLICTION_CORE_RULES = [
+  { label: "Initial Save", text: "Crit Succ / Succ: unaffected. Fail: Stage 1. Crit Fail: Stage 2." },
+  { label: "Onset Delay", text: "If an Onset is listed, wait that duration before applying Stage 1 (or Stage 2 on Crit Fail). No Onset = immediate!" },
+  { label: "Interval Saves", text: "Roll a new save at the end of each stage's interval: Crit Succ: Stage -2 | Succ: Stage -1 (<1 = cured) | Fail: Stage +1 | Crit Fail: Stage +2." },
+  { label: "Maximum Duration", text: "Ends automatically when max duration elapses (conditions tied directly to the affliction end with it)." },
+  { label: "Virulent Trait", text: "Requires 2 consecutive successes to drop stage by 1 (Crit Success reduces stage by 1 only)." },
+  { label: "Counteracting", text: "Affliction Counteract Rank = ⌈Level / 2⌉. Cleanse Affliction (Rank 2–4) treats or counteracts afflictions." }
+];
+
+export const POISON_RULES = [
+  { label: "Pacing & Traits", text: "Usually fast intervals (rounds/minutes) with a Maximum Duration. Fortitude save unless noted." },
+  { label: "Delivery Types", text: "Injury (needs piercing/slashing dmg), Contact (skin touch; has Onset), Ingested (eaten/drunk; has Onset), Inhaled (cloud; holding breath = +2 circ. Fort)." },
+  { label: "Multiple Exposures", text: "STACKS! Failing a save against the same poison you already have increases stage by +1 (+2 on Crit Fail) immediately (doesn't extend max duration)." },
+  { label: "Applying & Waste", text: "Usually 1–3 Interact actions. A Crit Fail Strike with an injury-poisoned weapon wastes the dose." },
+  { label: "Treat Poison (1A, Med.)", text: "Medicine vs Poison DC: Succ gives +2 circ. (+4 on Crit) to target's next save; Crit Fail imposes -2 circ. penalty." }
+];
+
+export const DISEASE_RULES = [
+  { label: "Pacing & Persistence", text: "Slow intervals (hours, days, or weeks) and usually no Maximum Duration — persists until cured by saves or magic." },
+  { label: "Multiple Exposures", text: "DOES NOT STACK! Re-exposure to a disease you already suffer from normally has no extra effect." },
+  { label: "Treat Disease (8h, Med.)", text: "Downtime Medicine vs Disease DC: Succ grants +2 circ. (+4 on Crit) to next save; Crit Fail imposes -2 circ. penalty." },
+  { label: "Long-Term Rest & Magic", text: "24-hr bed rest doubles HP recovery & speeds condition recovery (disease save bonuses come from Treat Disease/feats). Cleanse Affliction (Rank 3+) counteracts diseases." }
+];
+
+export const CURSE_RULES = [
+  { label: "Static vs Staged", text: "Magical afflictions (often Will or Fort save). Most apply a permanent static penalty until broken; severe curses may use Affliction stages." },
+  { label: "Breaking a Curse", text: "Medicine and rest cannot cure curses. Requires fulfilling the curse's specific break condition, a tailored ritual, or Cleanse Affliction (Rank 4+)." },
+  { label: "Cursed Items", text: "Cannot normally be discarded, unequipped, or uninvested until the curse is counteracted." },
+  { label: "Counteract Rank", text: "Rank = ⌈Curse Level / 2⌉ (or spell rank if inflicted by a spell)." }
+];
+
+export const DRUGS_ALCOHOL_RULES = [
+  { label: "Voluntary Failure", text: "A character can willingly fail their initial save against a drug/alcohol to gain its benefits (Legacy GMG guidelines)." },
+  { label: "Addiction (Disease)", text: "Each drug dose triggers a Fort save vs Addiction (tracked per drug). Relapsing can jump straight to your prior highest addiction stage." },
+  { label: "Alcohol Basics", text: "DC 12 Fort, Onset 10 min, 10 min/stage. Failing interval saves NEVER worsens stage — only drinking more advances it. Cannot Retch away Alcohol's Sickened!" }
+];
+
+export const ALCOHOL_STAGES = [
+  { stage: "Stg 1", effect: "+1 item bonus to saves vs fear" },
+  { stage: "Stg 2", effect: "Off-Guard, +1 item vs fear" },
+  { stage: "Stg 3", effect: "Clumsy 1, Off-Guard, Stupefied 2" },
+  { stage: "Stg 4", effect: "Clumsy 2, Sickened 2" },
+  { stage: "Stg 5", effect: "Clumsy 2, Sickened 2, Stupefied 2" },
+  { stage: "Stg 6–7", effect: "Stg 6: Unconscious (8 hr) · Stg 7: Death" }
+];
+
+export const HAZARDS_HAUNTS_RULES = [
+  { label: "Simple vs Complex", text: "Simple: 1 reaction when triggered, resolved in Exploration Mode (⅕ creature XP). Complex: triggers reaction, rolls Initiative (Stealth mod), runs Routine each round (full creature XP)." },
+  { label: "Detection & Stealth", text: "Secret Perception vs Stealth DC (Complex DC = 10 + Stealth mod). Min proficiency rank required for auto-detect; Searching grants checks; Detect Magic spots unranked magical hazards." },
+  { label: "Disabling (2A)", text: "Must detect first. Traps: Thievery · Environmental: Survival/Nature · Haunts: Religion/Occultism · Magical: Dispel Magic. Crit Fail normally triggers it!" },
+  { label: "Haunts", text: "Spiritual echoes bound to a site/object. Even if disabled or reduced to 0 HP, Haunts reset until their underlying unrest is resolved." },
+  { label: "Breaking Traps", text: "Physical hazards use AC, Hardness, HP, and Broken Threshold (BT = ½ HP; usually stops functioning when Broken). Check immunities (crit, precision, mental)." }
+];
+
+/* ------------------------------------------------------------------------- */
+/* 4. SKILLS, DOWNTIME, RECALL KNOWLEDGE, SOCIAL & EXPLORATION               */
+/* ------------------------------------------------------------------------- */
+
+/** Player Core Table 4-2: Income Earned (per day) */
+export const EARN_INCOME_TABLE = [
+  { level: 0, label: "0", dc: 14, failed: "1 cp", trained: "5 cp", expert: "5 cp", master: "5 cp", legendary: "5 cp" },
+  { level: 1, label: "1", dc: 15, failed: "2 cp", trained: "2 sp", expert: "2 sp", master: "2 sp", legendary: "2 sp" },
+  { level: 2, label: "2", dc: 16, failed: "4 cp", trained: "3 sp", expert: "3 sp", master: "3 sp", legendary: "3 sp" },
+  { level: 3, label: "3", dc: 18, failed: "8 cp", trained: "5 sp", expert: "5 sp", master: "5 sp", legendary: "5 sp" },
+  { level: 4, label: "4", dc: 19, failed: "1 sp", trained: "7 sp", expert: "8 sp", master: "8 sp", legendary: "8 sp" },
+  { level: 5, label: "5", dc: 20, failed: "2 sp", trained: "9 sp", expert: "1 gp", master: "1 gp", legendary: "1 gp" },
+  { level: 6, label: "6", dc: 22, failed: "3 sp", trained: "1 gp, 5 sp", expert: "2 gp", master: "2 gp", legendary: "2 gp" },
+  { level: 7, label: "7", dc: 23, failed: "4 sp", trained: "2 gp", expert: "2 gp, 5 sp", master: "2 gp, 5 sp", legendary: "2 gp, 5 sp" },
+  { level: 8, label: "8", dc: 24, failed: "5 sp", trained: "2 gp, 5 sp", expert: "3 gp", master: "3 gp", legendary: "3 gp" },
+  { level: 9, label: "9", dc: 26, failed: "6 sp", trained: "3 gp", expert: "4 gp", master: "4 gp", legendary: "4 gp" },
+  { level: 10, label: "10", dc: 27, failed: "7 sp", trained: "4 gp", expert: "5 gp", master: "6 gp", legendary: "6 gp" },
+  { level: 11, label: "11", dc: 28, failed: "8 sp", trained: "5 gp", expert: "6 gp", master: "8 gp", legendary: "8 gp" },
+  { level: 12, label: "12", dc: 30, failed: "9 sp", trained: "6 gp", expert: "8 gp", master: "10 gp", legendary: "10 gp" },
+  { level: 13, label: "13", dc: 31, failed: "1 gp", trained: "7 gp", expert: "10 gp", master: "15 gp", legendary: "15 gp" },
+  { level: 14, label: "14", dc: 32, failed: "1 gp, 5 sp", trained: "8 gp", expert: "15 gp", master: "20 gp", legendary: "20 gp" },
+  { level: 15, label: "15", dc: 34, failed: "2 gp", trained: "10 gp", expert: "20 gp", master: "28 gp", legendary: "28 gp" },
+  { level: 16, label: "16", dc: 35, failed: "2 gp, 5 sp", trained: "13 gp", expert: "25 gp", master: "36 gp", legendary: "40 gp" },
+  { level: 17, label: "17", dc: 36, failed: "3 gp", trained: "15 gp", expert: "30 gp", master: "45 gp", legendary: "55 gp" },
+  { level: 18, label: "18", dc: 38, failed: "4 gp", trained: "20 gp", expert: "45 gp", master: "70 gp", legendary: "90 gp" },
+  { level: 19, label: "19", dc: 39, failed: "6 gp", trained: "30 gp", expert: "60 gp", master: "100 gp", legendary: "130 gp" },
+  { level: 20, label: "20", dc: 40, failed: "8 gp", trained: "40 gp", expert: "75 gp", master: "150 gp", legendary: "200 gp" },
+  { level: 21, label: "20 (Crit)", dc: 40, failed: "—", trained: "50 gp", expert: "90 gp", master: "175 gp", legendary: "300 gp" }
+];
+
+export const TREAT_WOUNDS_TABLE = [
+  { rank: "Trained", dc: 15, success: "2d8", critSuccess: "4d8", critFail: "1d8 dmg" },
+  { rank: "Expert", dc: 20, success: "2d8 + 10", critSuccess: "4d8 + 10", critFail: "1d8 dmg" },
+  { rank: "Master", dc: 30, success: "2d8 + 30", critSuccess: "4d8 + 30", critFail: "1d8 dmg" },
+  { rank: "Legendary", dc: 40, success: "2d8 + 50", critSuccess: "4d8 + 50", critFail: "1d8 dmg" }
+];
+
+export const RECALL_KNOWLEDGE_SKILLS = [
+  { skill: "Arcana", creatures: "Arcane, Beast, Construct, Dragon, Elemental" },
+  { skill: "Nature", creatures: "Animal, Beast, Fey, Fungus, Leshy, Plant" },
+  { skill: "Occultism", creatures: "Aberration, Astral, Dream, Ethereal, Occult, Spirit, Time" },
+  { skill: "Religion", creatures: "Celestial, Fiend, Monitor, Undead" },
+  { skill: "Society", creatures: "Humanoid (and settlements, history, politics)" },
+  { skill: "Lore (Specific)", creatures: "Applies Easy (-2) or Very Easy (-5) DC adjustment" }
+];
+
+export const SOCIAL_ATTITUDE_RULES = [
+  { label: "5 NPC Attitudes", text: "Helpful → Friendly → Indifferent → Unfriendly → Hostile." },
+  { label: "Make an Impression", text: "1 min conversation, Diplomacy vs Will DC. Crit Succ: +2 steps | Succ: +1 step | Crit Fail: -1 step (for current encounter)." },
+  { label: "Request (1A)", text: "Diplomacy vs Will DC (Friendly/Helpful only). Crit: agrees cleanly | Succ: agrees with caveats | Crit Fail: refuses & drops 1 step." },
+  { label: "Coerce (1+ min)", text: "Intimidation vs Will DC. Compels cooperation briefly, then target shifts to Unfriendly afterward!" },
+  { label: "Lie (Deception)", text: "Secret Deception vs Perception DC (Sense Motive). Failed Lies usually prevent retrying the same lie." }
+];
+
+export const DOWNTIME_NICHE_RULES = [
+  { label: "Craft (Remaster)", text: "Setup = 2 days (1 day if you have the formula). Pay ½ price upfront, roll Crafting vs Item Lv DC. Finish by paying remaining ½ OR work extra days using Earn Income." },
+  { label: "Identify Magic (10 min)", text: "Secret Arcana/Nature/Occultism/Religion vs Item/Spell Lv DC. Crit: full properties & curse hints. Fail: cannot retry for 1 day." },
+  { label: "Retraining", text: "Feat / Skill / Swappable choice = 1 week of Downtime; major class feature (e.g. subclass) = 1 month (with teacher/tools as needed)." },
+  { label: "Subsist (Downtime)", text: "Society or Survival vs area DC. Succ: free modest living; Fail: Fatigued until fed; Crit Fail: -2 to Subsist for 1 week & starving risk." }
+];
+
+export const EXPLORATION_ACTIVITIES = [
+  { name: "Avoid Notice", speed: "Half", summary: "Roll Stealth for initiative; may start Hidden/Undetected." },
+  { name: "Defend", speed: "Half", summary: "Raise a Shield before your first turn in combat." },
+  { name: "Detect Magic", speed: "Half", summary: "Cast Detect Magic regularly; sense magic within 30 ft." },
+  { name: "Follow the Expert", speed: "Normal", summary: "Gain +2/+3/+4 circ. bonus & add level to matching skill check." },
+  { name: "Hustle", speed: "Double", summary: "Move at 2× speed for Con mod × 10 min (min 10 min)." },
+  { name: "Investigate", speed: "Half", summary: "Use Recall Knowledge on clues and surroundings." },
+  { name: "Repeat a Spell", speed: "Half", summary: "Keep casting a 2-action or shorter spell (e.g. Shield, Guidance)." },
+  { name: "Scout", speed: "Half", summary: "Party gets +1 circumstance bonus to initiative rolls." },
+  { name: "Search", speed: "Half", summary: "Seek hidden doors, hazards, and traps (max 300 ft/min for traps)." }
+];
+
+/* ------------------------------------------------------------------------- */
+/* 5. CONDITIONS (CLICK OPENS LIVE PF2e COMPENDIUM SHEET)                    */
+/* ------------------------------------------------------------------------- */
 
 /** Authoritative PF2e Remaster Conditions with crisp 1-line mechanics (clicks open live PF2e Condition sheet) */
 export const PF2E_CONDITIONS = [
@@ -300,6 +503,10 @@ export const PF2E_CONDITIONS = [
   { slug: "undetected", name: "Undetected", valued: false, summary: "Location unknown; foes are Off-Guard to you and must guess your square + secret Flat DC 11." },
   { slug: "wounded", name: "Wounded X", valued: true, summary: "If you gain Dying, increase Dying by +X. Cleared by Treat Wounds or reaching full HP + 10 min rest." }
 ];
+
+/* ------------------------------------------------------------------------- */
+/* 6. ENCOUNTERS, TREASURE, TRAVEL, LIGHT & ENVIRONMENT                      */
+/* ------------------------------------------------------------------------- */
 
 /** GM Core Table 2-6 & 2-7: Encounter Threat Budgets & Creature/Hazard XP */
 export const ENCOUNTER_BUDGETS = [
@@ -361,8 +568,22 @@ export const ACCOMPLISHMENT_XP = [
   { type: "Major Accomplishment", xp: "80 XP", note: "Resolve a major chapter or story arc." }
 ];
 
+export const LIGHT_VISION_RULES = [
+  { label: "Bright Light", text: "Normal vision sees clearly. Torch = 20 ft bright + 20 ft dim; Lantern = 30 ft bright + 30 ft dim." },
+  { label: "Dim Light", text: "Everything is Concealed (Flat DC 5) to normal vision. Ignored by Low-Light Vision and Darkvision." },
+  { label: "Darkness", text: "Creatures without Darkvision are Blinded (all targets Hidden DC 11, all terrain difficult)." },
+  { label: "Sense Tiers", text: "Precise (vision) → Observed | Imprecise (hearing, scent, tremorsense) → max Hidden (DC 11) | Vague (smell) → Undetected only." }
+];
+
+export const OBJECTS_ENVIRONMENT_RULES = [
+  { label: "Hardness / HP (BT)", text: "Thin Wood 3 / 12 (6) · Wood 5 / 20 (10) · Stone 7 / 28 (14) · Iron/Steel 9 / 36 (18) · Reinforced Door 10 / 40 (20)." },
+  { label: "Force Open (1A, Athl.)", text: "Simple door DC 15 · Sturdy/locked door DC 20–25 · Barred/iron/stone door DC 30+." },
+  { label: "Temperature Effects", text: "Severe Cold/Heat: Fatigued after 4 hr + minor dmg/hr. Extreme: Fatigued after 4 hr + minor dmg/10 min. Incredible: Fatigued after 2 hr + moderate dmg/min." },
+  { label: "Bulk & Encumbrance", text: "Encumbered above 5 + Str mod Bulk (Clumsy 1, -10 ft Speed). Max carry = 10 + Str mod Bulk. 10 Light = 1 Bulk." }
+];
+
 /* ------------------------------------------------------------------------- */
-/* PURE MATH HELPERS                                                         */
+/* 7. PURE MATH HELPERS                                                      */
 /* ------------------------------------------------------------------------- */
 
 export function getLevelDc(level) {
