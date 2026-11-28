@@ -601,7 +601,7 @@ function evaluateSkillRulePredicate(predicate, actor, level, baseClassBgSet) {
         const reqRank = Number(skRankMatch[2]);
         const srcRank = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
         const preRank = Math.max(baseClassBgSet.has(slug) ? 1 : 0, srcRank);
-        return preRank >= reqRank;
+        return reqRank === 0 ? preRank === 0 : preRank >= reqRank;
       }
       if (hasRollOpts) return Boolean(rollOpts[term]);
       return true;
@@ -648,16 +648,135 @@ function stripHtmlToPlainText(html) {
 }
 
 /**
+ * Collects merged Rule Element ChoiceSet selections from both legacy (`flags.pf2e.rulesSelections`),
+ * modern PF2e v7/v8 (`flags.system.rulesSelections`), and inline `ChoiceSet.selection` entries.
+ */
+function getItemRuleSelectionsMap(item) {
+  const merged = {};
+  const ingest = (obj) => {
+    if (!obj || typeof obj !== "object") return;
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined && v !== null && v !== "") merged[k] = v;
+    }
+  };
+  ingest(item?.flags?.pf2e?.rulesSelections);
+  ingest(item?.flags?.system?.rulesSelections);
+
+  const rules = Array.isArray(item?.system?.rules) ? item.system.rules : [];
+  for (const r of rules) {
+    if (r?.key !== "ChoiceSet" || r.selection === undefined || r.selection === null || r.selection === "") continue;
+    const fl = typeof r.flag === "string" && r.flag.trim()
+      ? r.flag.trim()
+      : normalizeSlug(item?.slug || item?.system?.slug || item?.name || "").replace(/-([a-z0-9])/g, (_, ch) => ch.toUpperCase());
+    if (fl && !(fl in merged)) merged[fl] = r.selection;
+  }
+  return merged;
+}
+
+/**
+ * Extracts trained core skills from a subclass / class-feature description when Foundry PF2e
+ * does not automate that subclass's skill grant via an `ActiveEffectLike` rule (e.g. Druid Orders'
+ * `Order Skill`, Sorcerer `Bloodline Skills`, Gunslinger `Way Skill`, Oracle `Mystery Skill`,
+ * Witch `Patron Skill`, Rogue Rackets, Investigator Methodologies, Swashbuckler Styles).
+ * Returns `{ fixed: string[], choicePools: string[][] }`.
+ */
+function extractClassFeatureTrainedSkillsFromDescription(rawHtml, plainDesc, level = 1) {
+  const fixed = [];
+  const choicePools = [];
+  const seenFixed = new Set();
+
+  const pushClauseSkills = (clauseText) => {
+    if (!clauseText) return;
+    const clean = String(clauseText)
+      .split(/\b(?:instead|rather|when|while|for\s+the\s+purpose|with|if\s+you|which|that|as\s+well\s+as|and\s+you|and\s+gain|and\s+can|plus\s+a\s+number)\b/i)[0]
+      .trim();
+    if (!clean) return;
+    // Skip deity-skill references (handled authoritatively via `actor.deity.system.skill`)
+    if (/\bdeity'?s\b|\bdivine\s+skill\b/i.test(clean)) return;
+
+    // Handle "Society and your choice of Arcana, Nature, Occultism, or Religion" (e.g. Mastermind Rogue)
+    const splitAndChoice = clean.split(/\band\s+(?:your\s+choice\s+of|one\s+of(?:\s+the\s+following)?|either)\b/i);
+    if (splitAndChoice.length === 2) {
+      pushClauseSkills(splitAndChoice[0]);
+      const optSkills = CORE_SKILL_SLUGS.filter(s => new RegExp(`\\b${s}\\b`, "i").test(splitAndChoice[1]));
+      if (optSkills.length > 0) choicePools.push(optSkills);
+      return;
+    }
+
+    const mentioned = CORE_SKILL_SLUGS.filter(s => new RegExp(`\\b${s}\\b`, "i").test(clean));
+    if (mentioned.length === 0) return;
+
+    const isChoice = mentioned.length > 1 && (
+      /\b(?:your\s+choice|choose|one\s+of|either)\b/i.test(clean)
+      || (/\bor\b/i.test(clean) && !/\band\b/i.test(clean))
+    );
+    if (isChoice) {
+      choicePools.push(mentioned);
+    } else {
+      for (const s of mentioned) {
+        if (!seenFixed.has(s)) {
+          seenFixed.add(s);
+          fixed.push(s);
+        }
+      }
+    }
+  };
+
+  // 1. Standardized Paizo subclass statblock headers: `<strong>Order Skill</strong> Athletics`,
+  //    `<strong>Bloodline Skills</strong> Arcana, Intimidation`, `<strong>Way Skill</strong> Stealth`, etc.
+  //    Handles mixed lists like "Arcana, Diplomacy or Intimidation" (1 fixed + 1 choice) separately from
+  //    Oxford-comma single choices like "Arcana, Nature, Occultism, or Religion" (`, or`).
+  const html = String(rawHtml || "");
+  const headerRe = /<(?:strong|b)[^>]*>\s*(?:Order|Bloodline|Patron|Mystery|Way|Trained|Racket|Methodology|Style|Instinct|Doctrine|Muse|Practice|Eidolon)\s+Skills?\s*[:<]?\s*<\/(?:strong|b)>\s*([^<.;\n]+)/gi;
+  let hm;
+  let foundHeader = false;
+  while ((hm = headerRe.exec(html)) !== null) {
+    foundHeader = true;
+    const rawHeaderVal = String(hm[1] || "").trim();
+    if (rawHeaderVal.includes(",") && !/,\s*(?:or|and)\b/i.test(rawHeaderVal)) {
+      for (const seg of rawHeaderVal.split(/\s*,\s*/)) {
+        pushClauseSkills(seg);
+      }
+    } else {
+      pushClauseSkills(rawHeaderVal);
+    }
+  }
+  if (foundHeader && (fixed.length > 0 || choicePools.length > 0)) {
+    return { fixed, choicePools };
+  }
+
+  // 2. Explicit trained-skill prose on class features without a bold header (e.g. Rogue Rackets,
+  //    Investigator Methodologies, Swashbuckler Styles)
+  if (!plainDesc) return { fixed, choicePools };
+  const sentences = plainDesc.split(/(?<=[.!?;])\s+/);
+  for (const sentence of sentences) {
+    if (!/\btrained\s+in\b/i.test(sentence)) continue;
+    const lvlGate = sentence.match(/\bat\s+(\d+)(?:st|nd|rd|th)\s+level\b/i);
+    if (lvlGate && level < Number(lvlGate[1])) continue;
+    const m = sentence.match(/\byou(?:'re|\s+are|\s+become)\s+trained\s+in\s+([^.;]+)/i);
+    if (!m) continue;
+    // Check ONLY the prefix immediately before the grant match so single-sentence overlap rules
+    // ("You become trained in Crafting, or if you're already trained in Crafting...") aren't skipped!
+    const prefix = sentence.slice(Math.max(0, m.index - 45), m.index);
+    if (/\b(?:if|when|while|unless|as\s+long\s+as|because|once|prerequisites?|already)\b/i.test(prefix)) continue;
+    pushClauseSkills(m[1]);
+  }
+
+  return { fixed, choicePools };
+}
+
+/**
  * Dynamically inspects all embedded PF2e items (feats, archetype dedications, class features,
- * heritages, ancestries) to detect:
- *  1. Auto-trained core skills (`ActiveEffectLike` rank 1+)
+ * heritages, ancestries, deity) to detect:
+ *  1. Auto-trained core skills (`ActiveEffectLike` rank 1+, supporting both `flags.pf2e` and PF2e v8 `flags.system`)
  *  2. Auto-upgraded skill ranks (`ActiveEffectLike` rank 2/3/4, level-scaling `ternary` formulas
  *     like Acrobat Dedication / Inventor Crafting, Medic Dedication Expert Medicine at Lv 2, etc.)
- *  3. Description-based fallback for archetype/dedication early rank upgrades lacking RE automation
- *  4. Trained-skill overlap replacements from Ancestry Lore feats & Dedications
+ *  3. Description-based fallback for subclass/class-feature trained skills lacking RE automation
+ *     (e.g. Druid Orders, Sorcerer Bloodlines, Oracle Mysteries, Witch Patrons, Gunslinger Ways, Rogue Rackets)
+ *  4. Trained-skill overlap replacements from Class Features, Ancestry Lore feats & Dedications
  *  5. Free-choice skill feats (`Skill Mastery` +2 increases, unautomated `Skill Training` +1 trained)
  */
-function collectItemSkillGrants(actor, level, baseClassBgSet) {
+function collectItemSkillGrants(actor, level, baseClassBgSet, { deityGrantedSlugs = new Set() } = {}) {
   const autoTrainedSlugs = new Set();
   const autoMinRankBySkill = {};
   const autoAddDeltaBySkill = {};
@@ -687,17 +806,38 @@ function collectItemSkillGrants(actor, level, baseClassBgSet) {
     }
   };
 
-  const inspectableTypes = new Set(["feat", "heritage", "ancestry", "class", "background"]);
+  // Identify Druid `Order Explorer` feat IDs so secondary explored orders (which explicitly do NOT
+  // grant their Order Skill per PF2e rules) are never double-counted as extra trained skills.
+  const orderExplorerIds = new Set(
+    (actor.itemTypes?.feat || [])
+      .filter(f => getItemSlug(f) === "order-explorer")
+      .map(f => f.id)
+      .filter(Boolean)
+  );
+
+  const inspectableTypes = new Set(["feat", "heritage", "ancestry", "class", "background", "deity"]);
 
   for (const item of actor.items || []) {
     if (!inspectableTypes.has(item.type)) continue;
 
+    // Skip secondary Druidic Orders granted by Order Explorer (no trained skill granted)
+    const grantedById = item.flags?.pf2e?.grantedBy?.id || item.flags?.system?.grantedBy?.id;
+    if (grantedById && orderExplorerIds.has(grantedById)) continue;
+
     const itemSlug = getItemSlug(item);
     const itemName = item.name || capitalize(itemSlug);
     const itemLevel = Math.max(1, Number(item.system?.level?.value ?? 1));
+    const isClassFeature = item.type === "feat" && item.system?.category === "classfeature";
     const rules = Array.isArray(item.system?.rules) ? item.system.rules : [];
-    const selections = item.flags?.pf2e?.rulesSelections || {};
-    const plainDesc = stripHtmlToPlainText(item.system?.description?.value);
+    const selections = getItemRuleSelectionsMap(item);
+    const rawDesc = String(item.system?.description?.value || "");
+    const plainDesc = stripHtmlToPlainText(rawDesc);
+    const isDeityContainer = item.type === "deity"
+      || (isClassFeature && (
+        itemSlug === "deity"
+        || itemSlug === "deity-and-cause"
+        || /\bdeity'?s\s+(?:listed\s+)?skill\b|\bskill\s+listed\s+for\s+your\s+deity\b/i.test(plainDesc)
+      ));
     const prereqText = (Array.isArray(item.system?.prerequisites?.value) ? item.system.prerequisites.value : [])
       .map(p => (typeof p === "string" ? p : (p?.value || "")))
       .join(" ")
@@ -733,13 +873,17 @@ function collectItemSkillGrants(actor, level, baseClassBgSet) {
     const itemResolvedTrainedSlugs = new Set();
     const itemResolvedUpgradeSlugs = new Set();
     const itemPendingGrants = [];
+    let unresolvedTrainedTemplateCount = 0;
 
     // Pass 1: PF2e ActiveEffectLike Rule Elements targeting `system.skills.<slug>.rank`
+    // (supports both legacy `flags.pf2e.rulesSelections` and PF2e v7/v8 `flags.system.rulesSelections`)
     for (const rule of rules) {
       if (rule?.key !== "ActiveEffectLike" || typeof rule.path !== "string") continue;
 
-      const hadTemplate = /\{item\|flags\.pf2e\.rulesSelections\.[^}]+\}/.test(rule.path);
-      const resolvedPath = rule.path.replace(/\{item\|flags\.pf2e\.rulesSelections\.([^}]+)\}/g, (_, k) => {
+      const templateRe = /\{item\|flags\.(?:pf2e|system)\.rulesSelections\.([^}]+)\}/g;
+      const hadTemplate = templateRe.test(rule.path);
+      templateRe.lastIndex = 0;
+      const resolvedPath = rule.path.replace(templateRe, (_, k) => {
         const sel = selections[k];
         if (typeof sel === "string") return sel;
         if (sel && typeof sel === "object" && typeof sel.value === "string") return sel.value;
@@ -747,7 +891,16 @@ function collectItemSkillGrants(actor, level, baseClassBgSet) {
       });
 
       const m = resolvedPath.match(/^system\.skills\.([a-z]+)\.rank$/i);
-      if (!m) continue;
+      if (!m) {
+        // Track unresolved ChoiceSet-driven trained skill rules on classes/classfeatures (e.g. unpicked choice)
+        if (hadTemplate && /^system\.skills\.\.rank$/i.test(resolvedPath) && (item.type === "class" || isClassFeature)) {
+          if (evaluateSkillRulePredicate(rule.predicate, actor, level, baseClassBgSet)) {
+            const rv = evaluateSkillRuleRankValue(rule.value, level, itemLevel);
+            if (rv === null || rv === 1) unresolvedTrainedTemplateCount++;
+          }
+        }
+        continue;
+      }
       const slug = normalizeSkillSlug(m[1]);
       if (!CORE_SKILL_SLUGS.includes(slug)) continue;
 
@@ -756,7 +909,6 @@ function collectItemSkillGrants(actor, level, baseClassBgSet) {
       const mode = String(rule.mode || "upgrade").toLowerCase();
       let grantedRank = evaluateSkillRuleRankValue(rule.value, level, itemLevel);
       const srcRank = Number(actor._source?.system?.skills?.[slug]?.rank ?? 0);
-      const effRank = Number(actor.system?.skills?.[slug]?.rank ?? 0);
 
       if (mode === "add") {
         const delta = Math.max(1, grantedRank ?? 1);
@@ -795,25 +947,71 @@ function collectItemSkillGrants(actor, level, baseClassBgSet) {
       itemResolvedTrainedSlugs.add(slug);
       if (grantedRank >= 2) itemResolvedUpgradeSlugs.add(slug);
 
-      // Detect Trained-skill overlap replacement on feats (e.g. Elven Lore / Dedications granting a static Trained skill already known)
+      // Detect Trained-skill overlap replacement on Class Features, Ancestry Lore feats & Dedications
+      // (skip redundant Deity item/feature rules already accounted for via `deityGrantedSlugs`, and
+      // skip only when an automated overlap-replacement ChoiceSet on this same item already resolved `slug`)
+      const isRedundantDeityGrant = isDeityContainer && deityGrantedSlugs.has(slug);
+      const hasAutomatedReplacementChoice = !isClassFeature
+        ? Array.from(resolvedChoiceSkillSlugs).some(s => s !== slug)
+        : rules.some(r =>
+          r?.key === "ChoiceSet"
+          && Array.isArray(r.predicate)
+          && JSON.stringify(r.predicate).toLowerCase().includes(`skill:${slug}:rank`)
+          && Array.from(resolvedChoiceSkillSlugs).some(s => s !== slug)
+        );
       if (
         item.type === "feat"
         && grantedRank === 1
         && !isUpgradeOnly
         && !upgradedOnThisItem.has(slug)
         && !hadTemplate
+        && !isRedundantDeityGrant
         && seenTrainedSources.has(slug)
-        && !Array.from(resolvedChoiceSkillSlugs).some(s => s !== slug)
+        && !hasAutomatedReplacementChoice
       ) {
         const isAncestryLoreFeat = /-lore$/.test(itemSlug) && itemSlug !== "additional-lore";
         const descGrantsReplacement = /(?:already\s+trained|would\s+automatically\s+become\s+trained)[\s\S]{0,180}?(?:skill\s+of\s+your\s+choice|another\s+skill)/i.test(plainDesc);
-        if (isAncestryLoreFeat || descGrantsReplacement) {
+        if (isClassFeature || isAncestryLoreFeat || descGrantsReplacement) {
           featOverlapReplacements++;
         }
       }
 
       if (!isUpgradeOnly) {
         seenTrainedSources.add(slug);
+      }
+    }
+
+    if (unresolvedTrainedTemplateCount > 0 && !isDeityContainer) {
+      featBonusTrained += unresolvedTrainedTemplateCount;
+      featBonusTrainedSources.push({ source: itemName, count: unresolvedTrainedTemplateCount });
+    }
+
+    // Pass 1B: Data-driven description fallback for Class Features / Subclasses lacking ActiveEffectLike
+    // automation (e.g. Druid Orders, Sorcerer Bloodlines, Oracle Mysteries, Witch Patrons, Gunslinger Ways,
+    // Rogue Rackets, Investigator Methodologies, Swashbuckler Styles).
+    if (isClassFeature && !isDeityContainer && itemResolvedTrainedSlugs.size === 0 && unresolvedTrainedTemplateCount === 0 && (rawDesc || plainDesc)) {
+      const descTrained = extractClassFeatureTrainedSkillsFromDescription(rawDesc, plainDesc, level);
+      for (const slug of descTrained.fixed) {
+        if (seenTrainedSources.has(slug)) {
+          featOverlapReplacements++;
+        } else {
+          recordAutoRank(slug, 1, itemName);
+          seenTrainedSources.add(slug);
+        }
+        itemResolvedTrainedSlugs.add(slug);
+      }
+      for (const pool of descTrained.choicePools) {
+        const untrainedInPool = pool.filter(s => !seenTrainedSources.has(s));
+        if (untrainedInPool.length === 0) {
+          // Every option in the subclass choice pool is already trained -> +1 overlap replacement
+          featOverlapReplacements++;
+        } else {
+          // Prefer whichever option in the choice pool is actually trained on the live sheet
+          const pickedLive = untrainedInPool.find(s => Number(actor.system?.skills?.[s]?.rank ?? 0) >= 1) || untrainedInPool[0];
+          recordAutoRank(pickedLive, 1, itemName);
+          seenTrainedSources.add(pickedLive);
+          itemResolvedTrainedSlugs.add(pickedLive);
+        }
       }
     }
 
@@ -948,13 +1146,63 @@ function analyzeSkills(actor, level, dualInfo, overrides = null) {
 
   const bgLores = Array.isArray(bgSys.trainedSkills?.lore) ? bgSys.trainedSkills.lore.filter(Boolean) : [];
 
-  // Overlaps among Primary Class + Dual Class + Background grant 1 free replacement trained skill each
-  const allClassBgRaw = [...primaryAutoSkills, ...dualAutoSkills, ...bgAutoSkills];
+  // Deity skill grant for Cleric, Champion, or any class feature explicitly granting your deity's listed skill
+  const primarySlug = actor.class ? getItemSlug(actor.class) : "";
+  const dualSlug = dualInfo?.slug || "";
+  const grantsDeitySkill = primarySlug === "cleric"
+    || primarySlug === "champion"
+    || dualSlug === "cleric"
+    || dualSlug === "champion"
+    || (actor.itemTypes?.feat || []).some(f =>
+      f.system?.category === "classfeature"
+      && /\bdeity'?s\s+(?:listed\s+)?skill\b|\bskill\s+listed\s+for\s+your\s+deity\b/i.test(stripHtmlToPlainText(f.system?.description?.value))
+    );
+
+  const deityAutoSkills = [];
+  const deityGrantedSlugs = new Set();
+  let pendingDeitySkillCount = 0;
+  if (grantsDeitySkill) {
+    const rawDeitySkill = actor.deity?.system?.skill;
+    const deityPool = (Array.isArray(rawDeitySkill) ? rawDeitySkill : (typeof rawDeitySkill === "string" ? [rawDeitySkill] : []))
+      .map(normalizeSkillSlug)
+      .filter(s => CORE_SKILL_SLUGS.includes(s));
+
+    if (deityPool.length === 1) {
+      deityAutoSkills.push(deityPool[0]);
+      deityGrantedSlugs.add(deityPool[0]);
+    } else if (deityPool.length > 1) {
+      // Multi-skill deity (e.g. Norgorber: Deception or Thievery) grants choice of ONE skill
+      const preSet = new Set([...primaryAutoSkills, ...dualAutoSkills, ...bgAutoSkills]);
+      // Prefer an explicit ChoiceSet selection on the Deity item or Deity class feature if present
+      const deityFeat = (actor.itemTypes?.feat || []).find(f => {
+        const sl = getItemSlug(f);
+        return f.system?.category === "classfeature" && (sl === "deity" || sl === "deity-and-cause");
+      });
+      const deitySels = { ...getItemRuleSelectionsMap(actor.deity), ...getItemRuleSelectionsMap(deityFeat) };
+      let picked = Object.values(deitySels)
+        .map(v => normalizeSkillSlug(typeof v === "string" ? v : v?.value))
+        .find(s => deityPool.includes(s));
+      if (!picked) {
+        const nonOverlap = deityPool.filter(s => !preSet.has(s));
+        picked = nonOverlap.find(s => Number(actor.system?.skills?.[s]?.rank ?? 0) >= 1)
+          || nonOverlap[0]
+          || deityPool[0];
+      }
+      deityAutoSkills.push(picked);
+      for (const ds of deityPool) deityGrantedSlugs.add(ds);
+    } else {
+      // Cleric/Champion without a Deity selected yet still has +1 Deity Skill in their class budget
+      pendingDeitySkillCount = 1;
+    }
+  }
+
+  // Overlaps among Primary Class + Dual Class + Background + Deity Skill grant 1 free replacement trained skill each
+  const allClassBgRaw = [...primaryAutoSkills, ...dualAutoSkills, ...bgAutoSkills, ...deityAutoSkills];
   const uniqueClassBgSet = new Set(allClassBgRaw);
   const baseOverlapReplacements = Math.max(0, allClassBgRaw.length - uniqueClassBgSet.size);
 
   // Detect skills, rank auto-upgrades (Medic/Acrobat/Inventor/etc.), overlaps & bonus feats from embedded items
-  const itemGrants = collectItemSkillGrants(actor, level, uniqueClassBgSet);
+  const itemGrants = collectItemSkillGrants(actor, level, uniqueClassBgSet, { deityGrantedSlugs });
   const overlapReplacements = baseOverlapReplacements + itemGrants.featOverlapReplacements;
   const autoTrainedSet = new Set([...uniqueClassBgSet, ...itemGrants.autoTrainedSlugs]);
 
@@ -1061,7 +1309,7 @@ function analyzeSkills(actor, level, dualInfo, overrides = null) {
 
   const expectedTrainedRaw = Math.max(
     0,
-    autoTrainedSet.size + overlapReplacements + additionalFromClassAndInt + itemGrants.featBonusTrained + gmBonusTrained
+    autoTrainedSet.size + overlapReplacements + additionalFromClassAndInt + pendingDeitySkillCount + itemGrants.featBonusTrained + gmBonusTrained
   );
 
   // 3. Lore skills (Background lore, Additional Lore feats, GM-awarded Bonus Lores, extra manual Lores)
@@ -1100,7 +1348,10 @@ function analyzeSkills(actor, level, dualInfo, overrides = null) {
   let featLoreCount = 0;
   let manualLoreIncreasesSpent = 0;
 
-  // Feats that auto-grant a Lore item (Additional Lore, Esoteric Lore, Bardic Lore, Ancestry Lore feats like Elven Lore, etc.)
+  // Feats that auto-grant a Lore item (Additional Lore, Esoteric Lore, Bardic Lore, Ancestry Lore feats like Goblin/Elven Lore, etc.)
+  // Important: in Foundry PF2e, Ancestry Lore feats like "Goblin Lore" often use GrantItem to embed
+  // an "Additional Lore" child feat (flags.pf2e.grantedBy.id === parent.id). Never double-count the
+  // parent container AND its granted Additional Lore child (or a Background that already counted its Lore)!
   const loreGrantingFeatSlugs = new Set([
     "additional-lore",
     "bardic-lore",
@@ -1109,20 +1360,66 @@ function analyzeSkills(actor, level, dualInfo, overrides = null) {
     "loremaster-dedication",
     "gnome-obsession"
   ]);
+  const loreCandidateFeats = [];
   for (const feat of actor.itemTypes?.feat || []) {
     const slug = getItemSlug(feat);
     const isAncestryLoreFeat = feat.system?.category === "ancestry" && /-lore$/.test(slug);
     const hasLoreRule = Array.isArray(feat.system?.rules)
-      && feat.system.rules.some(r => r?.key === "Lore" || (r?.key === "GrantItem" && typeof r?.uuid === "string" && /\blore\b/i.test(r.uuid)));
+      && feat.system.rules.some(r =>
+        (r?.key === "Lore" || (r?.key === "GrantItem" && typeof r?.uuid === "string" && /\blore\b/i.test(r.uuid)))
+        && evaluateSkillRulePredicate(r.predicate, actor, level, uniqueClassBgSet)
+      );
     if (loreGrantingFeatSlugs.has(slug) || isAncestryLoreFeat || hasLoreRule) {
-      featLoreCount++;
+      loreCandidateFeats.push(feat);
     }
+  }
+  const grantedLoreChildParentIds = new Set(
+    loreCandidateFeats
+      .map(f => f.flags?.pf2e?.grantedBy?.id || f.flags?.system?.grantedBy?.id)
+      .filter(Boolean)
+  );
+  // Also collect normalized Lore keys owned by `Additional Lore` feats (handles imports where `grantedBy` was stripped,
+  // e.g. `Goblin Lore` + `Additional Lore (Goblin Lore)` without a `grantedBy` link!)
+  const additionalLoreKeys = new Set();
+  for (const f of loreCandidateFeats) {
+    if (getItemSlug(f) !== "additional-lore") continue;
+    const sels = getItemRuleSelectionsMap(f);
+    for (const v of Object.values(sels)) {
+      const k = normalizeLoreKey(typeof v === "string" ? v : v?.value);
+      if (k) additionalLoreKeys.add(k);
+    }
+    const paren = String(f.name || "").match(/\(([^)]+)\)/);
+    if (paren) {
+      const k = normalizeLoreKey(paren[1]);
+      if (k) additionalLoreKeys.add(k);
+    }
+  }
+  const normalizeAncestryLoreRoot = (key) => String(key || "")
+    .replace(/\belven\b/g, "elf")
+    .replace(/\bdwarven\b/g, "dwarf")
+    .replace(/\bgnomish\b/g, "gnome")
+    .trim();
+  const bgItemId = actor.background?.id || null;
+  for (const feat of loreCandidateFeats) {
+    // Skip a parent feat (e.g. Goblin Lore / Elven Lore) when its granted Additional Lore child is already being counted
+    if (grantedLoreChildParentIds.has(feat.id)) continue;
+    const slug = getItemSlug(feat);
+    const isAncestryLoreFeat = feat.system?.category === "ancestry" && /-lore$/.test(slug);
+    if (isAncestryLoreFeat) {
+      const ancKey = normalizeLoreKey(feat.name || slug.replace(/-/g, " "));
+      const ancRoot = normalizeAncestryLoreRoot(ancKey);
+      if ((ancKey && additionalLoreKeys.has(ancKey)) || (ancRoot && additionalLoreKeys.has(ancRoot))) continue;
+    }
+    // Skip an Additional Lore granted directly by Background when Background Lore was already counted
+    const gBy = feat.flags?.pf2e?.grantedBy?.id || feat.flags?.system?.grantedBy?.id;
+    if (bgItemId && expectedBgLoreCount > 0 && gBy === bgItemId) continue;
+    featLoreCount++;
   }
 
   // Count Lore items with PF2e grantedBy flag or auto-scaling Lore feat match
   const grantedLoreIds = new Set();
   for (const lore of loreItems) {
-    if (lore.flags?.pf2e?.grantedBy?.id) grantedLoreIds.add(lore.id);
+    if (lore.flags?.pf2e?.grantedBy?.id || lore.flags?.system?.grantedBy?.id) grantedLoreIds.add(lore.id);
     const loreKey = normalizeLoreKey(lore.name);
     const isAutoScalingLore = grantedLoreIds.has(lore.id)
       || (loreKey && itemGrants.autoScalingLoreKeys.has(loreKey));
@@ -1161,6 +1458,7 @@ function analyzeSkills(actor, level, dualInfo, overrides = null) {
   if (overlapReplacements > 0) formulaParts.push(`+${overlapReplacements} Overlap Bonus`);
   if (actor.class) formulaParts.push(`+${effectiveClassAdd} ${classAddSource}`);
   if (intMod !== 0) formulaParts.push(`${intMod > 0 ? "+" : ""}${intMod} INT`);
+  if (pendingDeitySkillCount > 0) formulaParts.push(`+${pendingDeitySkillCount} Deity Skill`);
   if (itemGrants.featBonusTrained > 0) formulaParts.push(`+${itemGrants.featBonusTrained} Feat Bonus`);
   if (gmBonusTrained !== 0) formulaParts.push(`${gmBonusTrained > 0 ? "+" : ""}${gmBonusTrained} GM Bonus`);
   const formulaText = formulaParts.join(" ") || "Select a Class & Background";
