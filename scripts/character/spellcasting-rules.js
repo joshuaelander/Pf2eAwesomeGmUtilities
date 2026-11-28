@@ -2225,7 +2225,7 @@ export function detectFocusSpellcastingSources(actor, level, dualInfo, primarySl
 
   // 14. Ranger: Warden Spells (opt-in via Ranger class feats)
   const rangerWardenSlugs = [
-    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden",
+    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden", "peerless-warden",
     "gravity-weapon", "heal-companion", "magic-hide", "snare-hopping", "animal-feature",
     "soothing-mist", "terrain-transposition", "ephemeral-tracking", "enlarge-companion",
     "hunters-vision", "hunter-s-vision"
@@ -3307,16 +3307,34 @@ function parseDirectFeatSpells(feat, actorQualifiers, { sectionPatterns = null, 
   const allRefs = extractSpellRefsFromText(targetHtml);
   if (allRefs.length === 0) return { auto: [], choice: null };
 
-  const grantBeforeRe = /(?:you\s+(?:gain|learn|receive|know|add|can\s+cast)|grants?\s+you|familiar\s+learns?|cast\s+the|focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|granted\s+spell)\b/i;
-  const grantAfterRe = /^\s*(?:\([^)]+\)\s*)?(?:focus\s+spell|devotion\s+spell|composition\s+(?:spell|cantrip)|conflux\s+spell|order\s+spell|hex(?:\s+cantrip)?|warden\s+spell|qi\s+spell|ki\s+spell|link\s+spell|vessel\s+spell|grave\s+spell|school\s+spell|bloodline\s+spell|revelation\s+spell|cantrip|spell)\b/i;
+  const plain = htmlToPlainLines(targetHtml);
+  const grantBeforeRe = /(?:you\s+(?:gain|learn|receive|know|add|can\s+cast)|grants?\s+you|familiar\s+learns?|cast\s+the|choice\s+of|choose\s+(?:one|a|an)|focus\s+spells?|devotion\s+spells?|composition\s+(?:spells?|cantrips?)|conflux\s+spells?|order\s+spells?|hex(?:es|\s+cantrips?)?|warden\s+spells?|qi\s+spells?|ki\s+spells?|link\s+spells?|vessel\s+spells?|grave\s+spells?|school\s+spells?|bloodline\s+spells?|revelation\s+spells?|granted\s+spells?)\b/i;
+  const grantAfterRe = /^\s*(?:\([^)]+\)\s*)?(?:focus\s+spells?|devotion\s+spells?|composition\s+(?:spells?|cantrips?)|conflux\s+spells?|order\s+spells?|hex(?:\s+cantrips?)?|warden\s+spells?|qi\s+spells?|ki\s+spells?|link\s+spells?|vessel\s+spells?|grave\s+spells?|school\s+spells?|bloodline\s+spells?|revelation\s+spells?|cantrips?|spells?)\b/i;
   const refOnlyBeforeRe = /(?:instead\s+of|similar\s+to|as\s+if\s+casting|when\s+you\s+(?:cast|have)|if\s+you\s+(?:cast|have|later\s+gain)|while\s+you\s+have|affecting|prerequisite|don't\s+gain|do\s+not\s+gain|such\s+as|extend(?:s|ing)?)\s*(?:a|an|the|your|its)?\s*$/i;
   const negOrCondBeforeRe = /(?:don't|do\s+not)\s+(?:gain|learn|receive)|if\s+you\s+(?:have|later\s+gain)\s+(?:a|an|the)|when\s+you\s+have\s+(?:a|an|the)/i;
+  // Matches pure list separators between consecutive spell refs (e.g. `, `, `, or `, ` or `, `; `, bullet lines, or `(qual), `)
+  const listSepRe = /^\s*(?:\([^)]+\)\s*)?(?:(?:[,;•\n]|\bor\b|\band\b)\s*)+(?:the\s+)?$/i;
 
-  let filtered = allRefs.filter(r => {
+  // Keep refs whose immediate context indicates a spell grant PLUS any contiguous list siblings
+  // (e.g. "gain your choice of one warden spell: @UUID[A], @UUID[B], @UUID[C], or @UUID[D]")
+  // so multi-option choice lists never collapse to only their first spell!
+  let filtered = [];
+  for (const r of allRefs) {
     const beforeTrim = r.beforeCtx.trim();
-    if (refOnlyBeforeRe.test(beforeTrim) || negOrCondBeforeRe.test(beforeTrim)) return false;
-    return grantBeforeRe.test(r.beforeCtx) || grantAfterRe.test(r.afterCtx);
-  });
+    if (refOnlyBeforeRe.test(beforeTrim) || negOrCondBeforeRe.test(beforeTrim)) continue;
+    const directGrant = grantBeforeRe.test(r.beforeCtx) || grantAfterRe.test(r.afterCtx);
+    let listContinuation = false;
+    if (!directGrant && filtered.length > 0) {
+      const prev = filtered[filtered.length - 1];
+      if (r.index >= prev.endIndex && (r.index - prev.endIndex) <= 100) {
+        const gap = plain.slice(prev.endIndex, r.index);
+        if (listSepRe.test(gap)) listContinuation = true;
+      }
+    }
+    if (directGrant || listContinuation) {
+      filtered.push(r);
+    }
+  }
 
   if (filtered.length === 0 && allowAllIfSingle && allRefs.length === 1) {
     const b0 = allRefs[0].beforeCtx.trim();
@@ -3327,19 +3345,31 @@ function parseDirectFeatSpells(feat, actorQualifiers, { sectionPatterns = null, 
   if (filtered.length === 0) return { auto: [], choice: null };
   if (filtered.length === 1) return { auto: filtered, choice: null };
 
-  // Check if multiple spells represent an unresolved "choose A or B" choice
-  const plain = htmlToPlainLines(targetHtml);
+  // Check if multiple spells represent a "choose one" choice (supports multi-paragraph feats like
+  // Initiate/Advanced Warden where "gain your choice of one warden spell..." precedes a period/Refocus
+  // paragraph and a comma/bulleted spell list, as well as Oxford-comma A, B, C, or D lists).
   const firstRef = filtered[0];
-  const secondRef = filtered[1];
-  const between = plain.slice(firstRef.endIndex, secondRef.index);
-  const isChoiceWording = /\b(?:choose|either|one\s+of|select)\b/i.test(firstRef.beforeCtx)
-    || (/\bor\b/i.test(between) && !/\band\b/i.test(between));
+  const fullLead = plain.slice(0, firstRef.index);
+  // Build pure separator text across all refs (excluding spell names themselves) so words inside spell names never mislead
+  let separatorsText = "";
+  for (let i = 0; i < filtered.length - 1; i++) {
+    separatorsText += ` ${plain.slice(filtered[i].endIndex, filtered[i + 1].index)} `;
+  }
+  const hasStrongChoiceLead = /\b(?:choos(?:e|ing)|your\s+choice|choice\s+of|either|one\s+of|select\s+(?:one|a|an)|pick\s+(?:one|a|an)|from\s+the\s+(?:following|[a-z-]+\s+){1,3}(?:spells?|cantrips?)|(?:gain|learn|receive)\s+(?:one|a\s+single)\s+(?:[a-z-]+\s+){0,3}(?:spell|cantrip))\b/i.test(fullLead);
+  const hasSingleSpellLead = /\b(?:gain|learn|receive)\s+(?:one|an?)\s+(?:[a-z-]+\s+){0,3}(?:spell|cantrip)\b/i.test(fullLead);
+  const hasOrWithoutAnd = /\bor\b/i.test(separatorsText) && !/\band\b/i.test(separatorsText);
+  const hasAndBetweenSpells = /\band\b/i.test(separatorsText) && !/\bor\b/i.test(separatorsText);
+  const isChoiceWording = hasStrongChoiceLead
+    || hasOrWithoutAnd
+    || (hasSingleSpellLead && (!hasAndBetweenSpells || filtered.length >= 3));
 
   if (isChoiceWording) {
-    // Try disambiguating via actor qualifiers (e.g. ChoiceSet selection slug matching a spell name!)
+    // Only auto-disambiguate when a parenthetical qualifier matches the actor OR this specific feat's own
+    // ChoiceSet / name explicitly selects one of the listed spells (never from an unrelated feat).
+    const featLocalQuals = extractActorQualifiers(null, feat);
     const matched = filtered.filter(r =>
-      qualifierMatchesActor(r.qualifier, actorQualifiers)
-      || actorQualifiers.has(normalizeSlug(r.name))
+      (r.qualifier && qualifierMatchesActor(r.qualifier, actorQualifiers))
+      || featLocalQuals.has(normalizeSlug(r.name))
     );
     if (matched.length === 1) return { auto: matched, choice: null };
     return { auto: [], choice: filtered };
@@ -3360,7 +3390,7 @@ function parseDirectFeatSpells(feat, actorQualifiers, { sectionPatterns = null, 
  * @param {{ plannedFeatLevelsBySlug?: Map<string, number> }} [options]
  * @returns {{ autoSpells: object[], choiceGroups: object[], hasDeferredDomain: boolean }}
  */
-export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { plannedFeatLevelsBySlug = null } = {}) {
+export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { plannedFeatLevelsBySlug = null, plannedFeatDocs = null } = {}) {
   const autoSpells = [];
   const choiceGroups = [];
   let hasDeferredDomain = false;
@@ -3370,6 +3400,7 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
   }
 
   const feats = actor.itemTypes?.feat || [];
+  const plannedFeatsList = Array.isArray(plannedFeatDocs) ? plannedFeatDocs : [];
   const primarySlug = actor.class ? getItemSlug(actor.class) : "";
   const hasClassOrDual = (clsSlug) => primarySlug === clsSlug || dualInfo?.slug === clsSlug;
   const classKind = (clsSlug) => (dualInfo?.slug === clsSlug && primarySlug !== clsSlug ? "dual" : "primary");
@@ -4464,20 +4495,30 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
   }
 
   // --- 9. DIRECT FOCUS-GRANTING FEATS & FEATURES (Champion, Bard, Cleric Domains, Druid, Summoner, Necromancer, Monk, Ranger, Archetypes & Generic) ---
-  const addDirectFocusFeats = (slugSet, targetSourceKey, targetClassSlug, { sectionPatterns = null } = {}) => {
-    const matched = feats.filter(f => slugSet.has(getItemSlug(f)));
+  const handledDirectFocusFeatIds = new Set();
+  const addDirectFocusFeats = (slugSet, targetSourceKey, targetClassSlug, { sectionPatterns = null, fallbackTradition = "" } = {}) => {
+    const matchedLive = feats
+      .filter(f => slugSet.has(getItemSlug(f)))
+      .map(f => ({ feat: f, unlockLevel: inferFeatAcquiredLevel(f, 1), isPlanned: false }));
+    const matchedPlanned = plannedFeatsList
+      .filter(pf => pf?.doc && slugSet.has(getItemSlug(pf.doc)))
+      .map(pf => ({ feat: pf.doc, unlockLevel: Math.max(1, Math.min(20, Number(pf.level || 1))), isPlanned: true }));
+    const matched = [...matchedLive, ...matchedPlanned];
     const resolvedFromSpecific = new Set();
 
-    // Process specific feats first (e.g. `lay-on-hands` before generic `devotion-spells`!)
+    // Process specific feats first (e.g. `lay-on-hands` before generic class-feature container `devotion-spells`!)
+    const containerFocusRe = /^(?:devotion-spells|composition-spells|order-spells|link-spells|grave-spells|warden-spells)$/;
     const ordered = [...matched].sort((a, b) => {
-      const aGen = /^(?:devotion-spells|composition-spells|order-spells|link-spells|grave-spells|qi-spells|warden-spells|initiate-warden|advanced-warden|masterful-warden)$/.test(getItemSlug(a)) ? 1 : 0;
-      const bGen = /^(?:devotion-spells|composition-spells|order-spells|link-spells|grave-spells|qi-spells|warden-spells|initiate-warden|advanced-warden|masterful-warden)$/.test(getItemSlug(b)) ? 1 : 0;
-      return aGen - bGen;
+      const aGen = containerFocusRe.test(getItemSlug(a.feat)) ? 1 : 0;
+      const bGen = containerFocusRe.test(getItemSlug(b.feat)) ? 1 : 0;
+      return (aGen - bGen) || (a.unlockLevel - b.unlockLevel);
     });
 
-    for (const f of ordered) {
+    for (const entry of ordered) {
+      const f = entry.feat;
+      if (!entry.isPlanned && f?.id) handledDirectFocusFeatIds.add(f.id);
       const slug = getItemSlug(f);
-      const uLvl = inferFeatAcquiredLevel(f, 1);
+      const uLvl = entry.unlockLevel;
       const fQuals = extractActorQualifiers(actor, f);
       const parsed = parseDirectFeatSpells(f, fQuals, { sectionPatterns });
 
@@ -4496,34 +4537,51 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
             targetClassSlug,
             sourceLabel: f.name,
             tier: "feat",
-            countsTowardRepertoire: false
+            countsTowardRepertoire: false,
+            fallbackTradition
           });
         }
       } else if (parsed.choice && parsed.choice.length > 0) {
-        // Skip redundant generic choice if a specific sub-feat already resolved one of its options!
-        const alreadySatisfied = parsed.choice.some(opt => resolvedFromSpecific.has(opt.uuid.toLowerCase()));
+        // Only suppress redundant generic class-feature containers (e.g. `devotion-spells`) when a specific sub-feat
+        // already resolved one of their options — never suppress standalone repeatable choice feats like Initiate Warden!
+        const isContainerFeature = containerFocusRe.test(slug);
+        const alreadySatisfied = !entry.isPlanned && isContainerFeature
+          && parsed.choice.some(opt => resolvedFromSpecific.has(opt.uuid.toLowerCase()));
         if (!alreadySatisfied) {
-          choiceGroups.push({
-            id: `${targetSourceKey}:feat:${slug}`,
-            targetSourceKey,
-            targetClassSlug,
-            sourceLabel: f.name,
-            rank: 1,
-            isCantrip: false,
-            isFocus: true,
-            isCurriculum: false,
-            unlockLevel: uLvl,
-            pickCount: 1,
-            label: `${f.name} — Choose Focus Spell`,
-            options: parsed.choice.map(r => ({
-              uuid: r.uuid,
-              name: r.name,
-              img: r.img,
-              rank: r.isCantrip ? 0 : (r.baseRank || 1),
-              isCantrip: Boolean(r.isCantrip),
-              qualifier: r.qualifier || ""
-            }))
-          });
+          const groupId = entry.isPlanned
+            ? `${targetSourceKey}:feat:${slug}:lv${uLvl}`
+            : `${targetSourceKey}:feat:${slug}`;
+          // If the same repeatable choice feat (e.g. Initiate Warden) is taken multiple times,
+          // merge into one group with incremented pickCount so knowing 1 spell doesn't falsely satisfy both!
+          const existingGroup = choiceGroups.find(g => g.id === groupId && g.targetSourceKey === targetSourceKey) || null;
+          if (existingGroup) {
+            existingGroup.pickCount = (existingGroup.pickCount || 1) + 1;
+            existingGroup.unlockLevel = Math.min(existingGroup.unlockLevel || uLvl, uLvl);
+            existingGroup.label = `${f.name} — Choose ${existingGroup.pickCount} Focus Spells`;
+          } else {
+            choiceGroups.push({
+              id: groupId,
+              targetSourceKey,
+              targetClassSlug,
+              sourceLabel: f.name,
+              rank: 1,
+              isCantrip: false,
+              isFocus: true,
+              isCurriculum: false,
+              unlockLevel: uLvl,
+              pickCount: 1,
+              label: `${f.name} — Choose Focus Spell`,
+              fallbackTradition,
+              options: parsed.choice.map(r => ({
+                uuid: r.uuid,
+                name: r.name,
+                img: r.img,
+                rank: r.isCantrip ? 0 : (r.baseRank || 1),
+                isCantrip: Boolean(r.isCantrip),
+                qualifier: r.qualifier || ""
+              }))
+            });
+          }
         }
       }
     }
@@ -5023,33 +5081,33 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     "harmonize-self", "abundant-step", "wind-jump", "quivering-palm", "ki-blast", "qi-blast",
     "ki-form", "qi-form", "wronged-monks-wrath", "medusas-wrath", "ki-cutting-sight", "golden-body"
   ]);
-  for (const f of feats) {
+  for (const f of [...feats, ...plannedFeatsList.map(p => p?.doc).filter(Boolean)]) {
     const desc = String(f.system?.description?.value || "");
     if (f.system?.traits?.value?.includes("monk") && /\b(?:qi|ki)\s+spell\b/i.test(desc)) {
       monkQiSlugs.add(getItemSlug(f));
     }
   }
-  if (feats.some(f => monkQiSlugs.has(getItemSlug(f)))) {
+  if (feats.some(f => monkQiSlugs.has(getItemSlug(f))) || plannedFeatsList.some(p => p?.doc && monkQiSlugs.has(getItemSlug(p.doc)))) {
     const key = hasClassOrDual("monk") ? `focus:monk:${classKind("monk")}` : "focus:archetype:monk";
     addDirectFocusFeats(monkQiSlugs, key, "monk");
   }
 
   // Ranger Warden Spells
   const rangerWardenSlugs = new Set([
-    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden",
+    "warden-spells", "initiate-warden", "advanced-warden", "masterful-warden", "peerless-warden",
     "gravity-weapon", "heal-companion", "magic-hide", "snare-hopping", "animal-feature",
     "soothing-mist", "terrain-transposition", "ephemeral-tracking", "enlarge-companion",
     "hunters-vision", "hunter-s-vision"
   ]);
-  for (const f of feats) {
+  for (const f of [...feats, ...plannedFeatsList.map(p => p?.doc).filter(Boolean)]) {
     const desc = String(f.system?.description?.value || "");
     if (f.system?.traits?.value?.includes("ranger") && /\bwarden\s+spell\b/i.test(desc)) {
       rangerWardenSlugs.add(getItemSlug(f));
     }
   }
-  if (feats.some(f => rangerWardenSlugs.has(getItemSlug(f)))) {
+  if (feats.some(f => rangerWardenSlugs.has(getItemSlug(f))) || plannedFeatsList.some(p => p?.doc && rangerWardenSlugs.has(getItemSlug(p.doc)))) {
     const key = hasClassOrDual("ranger") ? `focus:ranger:${classKind("ranger")}` : "focus:archetype:ranger";
-    addDirectFocusFeats(rangerWardenSlugs, key, "ranger");
+    addDirectFocusFeats(rangerWardenSlugs, key, "ranger", { fallbackTradition: "primal" });
   }
 
   // Blessed One Dedication
@@ -5066,6 +5124,7 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
     : "";
 
   for (const f of feats) {
+    if (f?.id && handledDirectFocusFeatIds.has(f.id)) continue;
     if (isElementalistClassFeature(f) || elementalistFeatureIds.has(f.id)) continue;
     const slug = getItemSlug(f);
     if (genericExclusions.test(slug)) continue;
@@ -5103,30 +5162,43 @@ export function collectActorGrantedSpellsProgression(actor, dualInfo = null, { p
         });
       }
     } else if (fRefs.choice?.length > 0) {
-      const choiceAlreadyCovered = fRefs.choice.some(opt => Array.from(autoKeySet).some(k => k.endsWith(`|${opt.uuid.toLowerCase()}`)));
-      if (!choiceAlreadyCovered) {
-        choiceGroups.push({
-          id: `${targetKey}:choice`,
-          targetSourceKey: targetKey,
-          targetClassSlug: slug,
-          sourceLabel: f.name,
-          rank: 1,
-          isCantrip: false,
-          isFocus: true,
-          isCurriculum: false,
-          unlockLevel: uLvl,
-          pickCount: 1,
-          label: `${f.name} — Choose Focus Spell`,
-          fallbackTradition: detectedTrad,
-          options: fRefs.choice.map(r => ({
-            uuid: r.uuid,
-            name: r.name,
-            img: r.img,
-            rank: r.isCantrip ? 0 : (r.baseRank || 1),
-            isCantrip: Boolean(r.isCantrip),
-            qualifier: r.qualifier || ""
-          }))
-        });
+      const choiceAlreadyInAuto = fRefs.choice.some(opt => Array.from(autoKeySet).some(k => k.endsWith(`|${opt.uuid.toLowerCase()}`)));
+      const choiceAlreadyInGroup = choiceGroups.some(g =>
+        g.isFocus
+        && g.id !== `${targetKey}:choice`
+        && (g.options || []).some(o => fRefs.choice.some(opt => opt.uuid.toLowerCase() === String(o.uuid || "").toLowerCase()))
+      );
+      if (!choiceAlreadyInAuto && !choiceAlreadyInGroup) {
+        const genericId = `${targetKey}:choice`;
+        const existingGeneric = choiceGroups.find(g => g.id === genericId);
+        if (existingGeneric) {
+          existingGeneric.pickCount = (existingGeneric.pickCount || 1) + 1;
+          existingGeneric.unlockLevel = Math.min(existingGeneric.unlockLevel || uLvl, uLvl);
+          existingGeneric.label = `${f.name} — Choose ${existingGeneric.pickCount} Focus Spells`;
+        } else {
+          choiceGroups.push({
+            id: genericId,
+            targetSourceKey: targetKey,
+            targetClassSlug: slug,
+            sourceLabel: f.name,
+            rank: 1,
+            isCantrip: false,
+            isFocus: true,
+            isCurriculum: false,
+            unlockLevel: uLvl,
+            pickCount: 1,
+            label: `${f.name} — Choose Focus Spell`,
+            fallbackTradition: detectedTrad,
+            options: fRefs.choice.map(r => ({
+              uuid: r.uuid,
+              name: r.name,
+              img: r.img,
+              rank: r.isCantrip ? 0 : (r.baseRank || 1),
+              isCantrip: Boolean(r.isCantrip),
+              qualifier: r.qualifier || ""
+            }))
+          });
+        }
       }
     }
   }

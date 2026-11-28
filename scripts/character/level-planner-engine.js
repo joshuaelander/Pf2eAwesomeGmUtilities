@@ -55,6 +55,8 @@ let _featIndexCache = null;
 let _spellIndexCache = null;
 let _formulaIndexCache = null;
 const _coreBuildIndexCache = new Map();
+/** Lightweight per-UUID item metadata cache (rules, traits, description) for future class features & planned feats */
+const _plannerItemMetaCache = new Map();
 
 /** Tracks actor IDs currently being updated by Level Planner itself so sheet auto-prompt never misfires */
 const _plannerUpdatingActors = new Set();
@@ -180,6 +182,38 @@ function getAvailableLanguageChoices(excludeSlugs = new Set()) {
   }
   options.sort((a, b) => a.label.localeCompare(b.label));
   return options;
+}
+
+export async function clearPlannedFeatChoice(actor, levelNum, slotKey, choiceFlag) {
+  if (!actor || actor.type !== "character" || !slotKey || !choiceFlag) return false;
+  if (!game.user?.isGM && !actor.isOwner) return false;
+  const key = String(levelNum);
+  const ForcedDeletion = foundry.data.operators.ForcedDeletion;
+  const delOp = globalThis._del ?? (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+
+  await actor.update({
+    [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}.choices.${choiceFlag}`]: delOp
+  });
+  return true;
+}
+
+export async function setPlannedFeatSnapshot(actor, levelNum, slotKey, snapshot) {
+  if (!actor || actor.type !== "character" || !slotKey || !snapshot) return false;
+  if (!game.user?.isGM && !actor.isOwner) return false;
+  const key = String(levelNum);
+  const existing = actor.getFlag?.(MODULE_ID, PLAN_FLAG_KEY)?.levels?.[key]?.feats?.[slotKey];
+  // Clear stale nested sub-choices when replacing an existing feat in the same slot
+  if (existing?.choices && existing.uuid !== snapshot.uuid) {
+    const ForcedDeletion = foundry.data.operators.ForcedDeletion;
+    const delOp = globalThis._del ?? (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+    await actor.update({
+      [`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${key}.feats.${slotKey}.choices`]: delOp
+    });
+  }
+  await updatePlannedLevelData(actor, levelNum, (entry) => {
+    entry.feats[slotKey] = snapshot;
+  });
+  return true;
 }
 
 export async function clearPlannedFeat(actor, levelNum, slotKey) {
@@ -1161,6 +1195,915 @@ function computeSpellMilestonesByLevel(baseReport) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* 2B. DATA-DRIVEN RULE PROJECTION & FEAT CHOICESET ENGINE (ZERO HARDCODING) */
+/* ------------------------------------------------------------------------- */
+
+function slugToCamelCase(raw) {
+  const s = normalizeSlug(raw);
+  return s ? s.replace(/-([a-z0-9])/g, (_, ch) => ch.toUpperCase()) : "";
+}
+
+function getChoiceSetFlag(rule, itemSlugOrName, ruleIndex = 0) {
+  if (typeof rule?.flag === "string" && rule.flag.trim()) return rule.flag.trim();
+  const camel = slugToCamelCase(itemSlugOrName);
+  return camel || `choice${ruleIndex}`;
+}
+
+function isLikelyCompendiumOrItemUuid(val) {
+  return typeof val === "string" && /^(?:Compendium\.[^.]+\.[^.]+\.|Item\.)/i.test(val.trim());
+}
+
+function extractCompactItemMeta(doc, fallbackUuid = "") {
+  if (!doc) return null;
+  const uuid = doc.uuid || fallbackUuid || "";
+  const slug = normalizeSlug(doc.slug || doc.system?.slug || doc.name);
+  const traits = Array.isArray(doc.system?.traits?.value)
+    ? doc.system.traits.value.map(normalizeSlug).filter(Boolean)
+    : [];
+  const rules = Array.isArray(doc.system?.rules) ? foundry.utils.deepClone(doc.system.rules) : [];
+  const desc = String(doc.system?.description?.value || "");
+  const level = Number(doc.system?.level?.value ?? 0);
+  const category = String(doc.system?.category || "");
+  return {
+    uuid,
+    name: String(doc.name || ""),
+    slug,
+    img: doc.img || "systems/pf2e/icons/default-icons/feat.svg",
+    level: Number.isFinite(level) ? level : 0,
+    category,
+    traits,
+    rules,
+    description: desc,
+    // Minimal PF2e doc-compatible shape so `collectActorGrantedSpellsProgression` can read planned focus feats seamlessly
+    system: {
+      slug,
+      category,
+      level: { value: Number.isFinite(level) ? level : 0 },
+      traits: { value: traits },
+      description: { value: desc },
+      rules
+    }
+  };
+}
+
+/**
+ * Fetches & caches lightweight metadata (`rules`, `traits`, `description`) for a single item UUID.
+ */
+export async function warmPlannerItemMeta(uuid) {
+  if (!uuid || typeof uuid !== "string") return null;
+  const clean = uuid.trim();
+  if (!clean) return null;
+  if (_plannerItemMetaCache.has(clean)) return _plannerItemMetaCache.get(clean);
+  try {
+    const doc = await fromUuid(clean);
+    const meta = extractCompactItemMeta(doc, clean);
+    _plannerItemMetaCache.set(clean, meta);
+    return meta;
+  } catch {
+    _plannerItemMetaCache.set(clean, null);
+    return null;
+  }
+}
+
+/**
+ * Lazily preloads `system.rules` for the actor's future class features + planned future feats
+ * (and their nested sub-choice UUIDs) so `buildLevelRoadmap` stays 100% synchronous while
+ * projecting class-feature proficiencies and feat ChoiceSets with zero hardcoded tables.
+ */
+export async function preloadPlannerProjectionData(actor, { effectiveCurrentLevel = null } = {}) {
+  if (!actor || actor.type !== "character") return;
+
+  const variants = getActiveVariantRules();
+  const dualInfo = getActorDualClassInfo(actor, variants);
+  const plan = getActorLevelPlan(actor);
+  const liveLevel = Number.isFinite(effectiveCurrentLevel)
+    ? Math.max(0, Math.min(20, Number(effectiveCurrentLevel)))
+    : Math.max(1, Math.min(20, Number(actor.level ?? actor.system?.details?.level?.value ?? 1)));
+  const uuidsToLoad = new Set();
+  const allRelevantUuids = new Set();
+
+  const queueUuid = (u) => {
+    if (typeof u !== "string" || !u.trim()) return;
+    const clean = u.trim();
+    allRelevantUuids.add(clean);
+    if (!_plannerItemMetaCache.has(clean)) {
+      uuidsToLoad.add(clean);
+    }
+  };
+
+  // 1. Future class features from Primary & Dual Class `system.items` (~8-15 per class)
+  const queueClassItems = (itemsMap) => {
+    if (!itemsMap || typeof itemsMap !== "object") return;
+    for (const entry of Object.values(itemsMap)) {
+      if (!entry?.uuid) continue;
+      const lvl = Number(entry.level ?? 1);
+      if (lvl > liveLevel) queueUuid(entry.uuid);
+    }
+  };
+  queueClassItems(actor.class?.system?.items);
+  queueClassItems(dualInfo?.system?.items);
+
+  // 2. Planned future feats & any already-selected nested sub-choice feat UUIDs
+  for (let l = liveLevel + 1; l <= 20; l++) {
+    const lpFeats = plan.levels[String(l)]?.feats;
+    if (!lpFeats || typeof lpFeats !== "object") continue;
+    for (const fSnap of Object.values(lpFeats)) {
+      if (fSnap?.uuid) queueUuid(fSnap.uuid);
+      if (fSnap?.choices && typeof fSnap.choices === "object") {
+        for (const ch of Object.values(fSnap.choices)) {
+          if (ch?.value && isLikelyCompendiumOrItemUuid(ch.value)) queueUuid(ch.value);
+        }
+      }
+    }
+  }
+
+  if (uuidsToLoad.size > 0) {
+    await Promise.allSettled(Array.from(uuidsToLoad).map(u => warmPlannerItemMeta(u)));
+  }
+
+  // Second tiny pass: warm any uncached static UUID options inside ChoiceSet rules & static GrantItem UUIDs
+  const secondaryUuids = new Set();
+  for (const u of allRelevantUuids) {
+    const meta = _plannerItemMetaCache.get(u);
+    if (!meta?.rules) continue;
+    for (const r of meta.rules) {
+      if (r?.key === "GrantItem" && isLikelyCompendiumOrItemUuid(r.uuid) && !r.uuid.includes("{") && !_plannerItemMetaCache.has(r.uuid.trim())) {
+        secondaryUuids.add(r.uuid.trim());
+      }
+      if (r?.key === "ChoiceSet" && Array.isArray(r.choices)) {
+        for (const opt of r.choices) {
+          if (isLikelyCompendiumOrItemUuid(opt?.value) && !_plannerItemMetaCache.has(opt.value.trim())) {
+            secondaryUuids.add(opt.value.trim());
+          }
+        }
+      }
+    }
+  }
+  if (secondaryUuids.size > 0) {
+    await Promise.allSettled(Array.from(secondaryUuids).map(u => warmPlannerItemMeta(u)));
+  }
+}
+
+function splitTopLevelCommas(str) {
+  const args = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      args.push(str.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  const tail = str.slice(start).trim();
+  if (tail) args.push(tail);
+  return args;
+}
+
+/**
+ * Safely evaluates PF2e numeric / bracket / ternary / floor / ceil / arithmetic Rule Element
+ * formulas (e.g. `ternary(gte(@actor.level,4),floor(@actor.level/2),1)`) with zero `eval()`.
+ */
+function evalPf2eNumericExpr(rawVal, { actorLevel = 1, itemLevel = 1 } = {}) {
+  if (typeof rawVal === "number" && Number.isFinite(rawVal)) return rawVal;
+  if (rawVal && typeof rawVal === "object") {
+    if (Array.isArray(rawVal.brackets)) {
+      for (const b of rawVal.brackets) {
+        const start = b?.start != null ? Number(b.start) : -Infinity;
+        const end = b?.end != null ? Number(b.end) : Infinity;
+        if (actorLevel >= start && actorLevel <= end) {
+          return evalPf2eNumericExpr(b.value, { actorLevel, itemLevel });
+        }
+      }
+      return null;
+    }
+    if ("value" in rawVal) return evalPf2eNumericExpr(rawVal.value, { actorLevel, itemLevel });
+    return null;
+  }
+  if (typeof rawVal !== "string") return null;
+  const trimmed = rawVal.trim();
+  if (!trimmed) return null;
+  const directNum = Number(trimmed);
+  if (Number.isFinite(directNum)) return directNum;
+
+  const substituted = trimmed
+    .replace(/\{actor\|(?:system\.details\.)?level(?:\.value)?\}/gi, String(actorLevel))
+    .replace(/\{item\|(?:system\.)?level(?:\.value)?\}/gi, String(itemLevel))
+    .replace(/@actor\.system\.details\.level\.value\b/gi, String(actorLevel))
+    .replace(/@actor\.level\b/gi, String(actorLevel))
+    .replace(/@item\.system\.level\.value\b/gi, String(itemLevel))
+    .replace(/@item\.level\b/gi, String(itemLevel));
+
+  const evalNode = (expr, depth = 0) => {
+    if (depth > 14) return null;
+    let s = String(expr || "").trim();
+    if (!s) return null;
+
+    // Strip matching outer parentheses
+    while (s.startsWith("(") && s.endsWith(")")) {
+      let d = 0;
+      let wraps = true;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === "(") d++;
+        else if (s[i] === ")") d--;
+        if (d === 0 && i < s.length - 1) {
+          wraps = false;
+          break;
+        }
+      }
+      if (!wraps) break;
+      s = s.slice(1, -1).trim();
+    }
+
+    const asNum = Number(s);
+    if (s !== "" && Number.isFinite(asNum)) return asNum;
+
+    // Top-level binary + / - (rightmost outside parens, skipping unary leading sign)
+    let paren = 0;
+    for (let i = s.length - 1; i >= 1; i--) {
+      const ch = s[i];
+      if (ch === ")") paren++;
+      else if (ch === "(") paren--;
+      else if (paren === 0 && (ch === "+" || ch === "-")) {
+        const prev = s.slice(0, i).trim();
+        if (prev && !/[+\-*/(,]$/.test(prev)) {
+          const lhs = evalNode(prev, depth + 1);
+          const rhs = evalNode(s.slice(i + 1), depth + 1);
+          if (lhs === null || rhs === null) return null;
+          return ch === "+" ? lhs + rhs : lhs - rhs;
+        }
+      }
+    }
+
+    // Top-level binary * / /
+    paren = 0;
+    for (let i = s.length - 1; i >= 1; i--) {
+      const ch = s[i];
+      if (ch === ")") paren++;
+      else if (ch === "(") paren--;
+      else if (paren === 0 && (ch === "*" || ch === "/")) {
+        const lhs = evalNode(s.slice(0, i), depth + 1);
+        const rhs = evalNode(s.slice(i + 1), depth + 1);
+        if (lhs === null || rhs === null) return null;
+        if (ch === "/") return rhs === 0 ? null : lhs / rhs;
+        return lhs * rhs;
+      }
+    }
+
+    // Function calls: ternary, gte, gt, lte, lt, eq, min, max, floor, ceil, round
+    const fnMatch = s.match(/^([a-z]+)\(([\s\S]*)\)$/i);
+    if (!fnMatch) return null;
+    const fn = fnMatch[1].toLowerCase();
+    const args = splitTopLevelCommas(fnMatch[2]);
+
+    if (fn === "ternary" && args.length === 3) {
+      const cond = evalNode(args[0], depth + 1);
+      return cond === null ? null : (cond ? evalNode(args[1], depth + 1) : evalNode(args[2], depth + 1));
+    }
+    if ((fn === "gte" || fn === "gt" || fn === "lte" || fn === "lt" || fn === "eq") && args.length === 2) {
+      const a = evalNode(args[0], depth + 1);
+      const b = evalNode(args[1], depth + 1);
+      if (a === null || b === null) return null;
+      if (fn === "gte") return a >= b ? 1 : 0;
+      if (fn === "gt") return a > b ? 1 : 0;
+      if (fn === "lte") return a <= b ? 1 : 0;
+      if (fn === "lt") return a < b ? 1 : 0;
+      return a === b ? 1 : 0;
+    }
+    if ((fn === "min" || fn === "max") && args.length >= 1) {
+      const vals = args.map(a => evalNode(a, depth + 1));
+      return vals.some(v => v === null) ? null : (fn === "min" ? Math.min(...vals) : Math.max(...vals));
+    }
+    if ((fn === "floor" || fn === "ceil" || fn === "round") && args.length === 1) {
+      const v = evalNode(args[0], depth + 1);
+      if (v === null) return null;
+      return fn === "floor" ? Math.floor(v) : (fn === "ceil" ? Math.ceil(v) : Math.round(v));
+    }
+    return null;
+  };
+
+  return evalNode(substituted);
+}
+
+/**
+ * Checks level-gated statements in a PF2e Rule Element predicate (e.g. `{ gte: ["self:level", 17] }`)
+ * so level-scaling upgrades fire only at or after their exact target level.
+ */
+function passesLevelPredicate(predicate, evalLevel, selectionsMap = null) {
+  if (!Array.isArray(predicate) || predicate.length === 0) return true;
+  const evalStmt = (stmt) => {
+    if (typeof stmt === "string") {
+      const lvlExact = stmt.match(/^(?:self|actor):level:(\d+)$/i);
+      if (lvlExact) return evalLevel === Number(lvlExact[1]);
+      return true;
+    }
+    if (!stmt || typeof stmt !== "object") return true;
+    if ("not" in stmt) {
+      // Only negate if inner statement is level-based (avoid negating unknown runtime roll options!)
+      const inner = stmt.not;
+      if (typeof inner === "string" && /^(?:self|actor):level:/i.test(inner)) return !evalStmt(inner);
+      if (inner && typeof inner === "object" && Object.keys(inner).some(k => ["gte", "gt", "lte", "lt", "eq"].includes(k))) {
+        const pair = Object.values(inner)[0];
+        if (Array.isArray(pair) && /^(?:self|actor):level$/i.test(String(pair[0] || ""))) return !evalStmt(inner);
+      }
+      return true;
+    }
+    if (Array.isArray(stmt.or)) return stmt.or.some(evalStmt);
+    if (Array.isArray(stmt.and)) return stmt.and.every(evalStmt);
+    for (const op of ["gte", "gt", "lte", "lt", "eq"]) {
+      if (Array.isArray(stmt[op]) && stmt[op].length === 2) {
+        const lhs = String(stmt[op][0] || "");
+        const rhsRaw = stmt[op][1];
+        if (/^(?:self|actor):level$/i.test(lhs)) {
+          const rhs = Number(rhsRaw);
+          if (!Number.isFinite(rhs)) return true;
+          if (op === "gte") return evalLevel >= rhs;
+          if (op === "gt") return evalLevel > rhs;
+          if (op === "lte") return evalLevel <= rhs;
+          if (op === "lt") return evalLevel < rhs;
+          return evalLevel === rhs;
+        }
+        // Check flag-gated ChoiceSet predicates if selectionsMap is available
+        const flagMatch = lhs.match(/^(?:item:)?flag:([a-z0-9_-]+)$/i);
+        if (flagMatch && selectionsMap && flagMatch[1] in selectionsMap) {
+          return String(selectionsMap[flagMatch[1]]) === String(rhsRaw);
+        }
+      }
+    }
+    return true;
+  };
+  return predicate.every(evalStmt);
+}
+
+/**
+ * Applies PF2e `ActiveEffectLike` proficiency upgrades & cached `GrantItem` rules from a feat/classfeature
+ * onto a running Level Planner projection state (`projState`). Zero hardcoded class tables!
+ */
+function applyRulesToPrereqState(rules, selectionsMap, evalLevel, projState, itemLevel = 1, { depth = 0, upgradeOnly = false, skipGrantItem = false } = {}) {
+  if (!Array.isArray(rules) || rules.length === 0 || depth > 2) return;
+
+  const resolvePlaceholders = (raw) => {
+    if (typeof raw !== "string" || !raw.includes("{")) return raw;
+    return raw.replace(/\{item\|flags\.(?:pf2e|system)\.rulesSelections\.([^}]+)\}/gi, (_, flagName) => {
+      const v = selectionsMap?.[flagName];
+      return v !== undefined && v !== null ? String(v) : "";
+    });
+  };
+
+  const applyRankMode = (cur, target, mode) => {
+    const cleanTarget = Math.max(0, Math.min(4, Math.trunc(target)));
+    if (mode === "override") return cleanTarget;
+    if (mode === "add") return Math.max(0, Math.min(4, cur + Math.trunc(target)));
+    // Default ("upgrade"): only raise rank, never downgrade
+    return Math.max(cur, cleanTarget);
+  };
+
+  for (const r of rules) {
+    if (!r || typeof r !== "object") continue;
+    if (!passesLevelPredicate(r.predicate, evalLevel, selectionsMap)) continue;
+
+    if (r.key === "ActiveEffectLike" && typeof r.path === "string") {
+      const resolvedPath = resolvePlaceholders(r.path).trim();
+      if (!resolvedPath || resolvedPath.includes("{")) continue;
+      const mode = String(r.mode || "upgrade").toLowerCase();
+      if (mode !== "upgrade" && mode !== "override" && mode !== "add") continue;
+      // On multi-level re-evaluation passes (live/earlier-planned items), only apply idempotent `"upgrade"` rules
+      // so `"add"` never compounds every level and `"override"` never clobbers later planned Skill Increases!
+      if (upgradeOnly && mode !== "upgrade") continue;
+
+      const rawVal = typeof r.value === "string" ? resolvePlaceholders(r.value) : r.value;
+      const numVal = evalPf2eNumericExpr(rawVal, { actorLevel: evalLevel, itemLevel });
+      if (numVal === null || !Number.isFinite(numVal)) continue;
+
+      if (/^system\.(?:attributes\.)?perception\.rank$/i.test(resolvedPath)) {
+        projState.perceptionRank = applyRankMode(projState.perceptionRank, numVal, mode);
+        continue;
+      }
+      const saveM = resolvedPath.match(/^system\.(?:proficiencies\.)?saves\.(fortitude|reflex|will)\.rank$/i);
+      if (saveM) {
+        const k = saveM[1].toLowerCase();
+        projState.saveRanks[k] = applyRankMode(projState.saveRanks[k] || 0, numVal, mode);
+        continue;
+      }
+      const defM = resolvedPath.match(/^system\.proficiencies\.defenses\.(unarmored|light|medium|heavy)\.rank$/i);
+      if (defM) {
+        const k = defM[1].toLowerCase();
+        projState.armorRanks[k] = applyRankMode(projState.armorRanks[k] || 0, numVal, mode);
+        continue;
+      }
+      const atkM = resolvedPath.match(/^system\.proficiencies\.attacks\.(unarmed|simple|martial|advanced)\.rank$/i);
+      if (atkM) {
+        const k = atkM[1].toLowerCase();
+        projState.weaponRanks[k] = applyRankMode(projState.weaponRanks[k] || 0, numVal, mode);
+        continue;
+      }
+      const skillM = resolvedPath.match(/^system\.skills\.([a-z-]+)\.rank$/i);
+      if (skillM) {
+        const k = skillM[1].toLowerCase();
+        if (CORE_SKILL_SLUGS.includes(k)) {
+          projState.skillRanks[k] = applyRankMode(projState.skillRanks[k] || 0, numVal, mode);
+        }
+        continue;
+      }
+    }
+
+    if (!skipGrantItem && r.key === "GrantItem" && typeof r.uuid === "string") {
+      const resolvedUuid = resolvePlaceholders(r.uuid).trim();
+      if (!resolvedUuid || resolvedUuid.includes("{")) continue;
+      const grantedMeta = _plannerItemMetaCache.get(resolvedUuid);
+      if (grantedMeta) {
+        projState.recordKnownFeatName?.(grantedMeta.name);
+        applyRulesToPrereqState(grantedMeta.rules, {}, evalLevel, projState, grantedMeta.level || evalLevel, {
+          depth: depth + 1,
+          upgradeOnly
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Infers planned spellcasting tradition or focus pool unlocks from a planned feat's cached metadata
+ * so later levels' prerequisite checks (e.g. "ability to cast arcane spells", "focus pool") see them.
+ */
+function applyPlannedSpellcastingProjection(meta, projState) {
+  if (!meta) return;
+  const desc = String(meta.description || "");
+  if (!desc) return;
+  const plain = desc.replace(/<[^>]+>/g, " ");
+  if (/(?:don't|do\s+not)\s+(?:gain|receive)[^.]{0,50}\b(?:focus|spellcasting)\b/i.test(plain)) return;
+
+  const tradM = plain.match(/\b(?:cast|gain|prepared|spontaneous)\s+(?:the\s+)?(arcane|divine|occult|primal)\s+(?:cantrips?|spells?|spellcasting)\b/i)
+    || plain.match(/\b(arcane|divine|occult|primal)\s+spellcasting\s+(?:archetype|tradition|feature|ability)\b/i);
+  if (tradM) {
+    projState.spellcastingTraditions.add(tradM[1].toLowerCase());
+    projState.isSpellcaster = true;
+  } else if (/\byou\s+(?:become\s+a\s+spellcaster|gain\s+the\s+cast\s+a\s+spell\s+activity)\b/i.test(plain)) {
+    projState.isSpellcaster = true;
+  }
+
+  if (/\b(?:focus\s+pool|gain\s+[^.]{0,60}(?:focus|warden|qi|ki|devotion|order|hex|school|bloodline|revelation|conflux|vessel|link|grave)\s+spell)\b/i.test(plain)) {
+    projState.hasFocusPool = true;
+  }
+}
+
+/**
+ * Evaluates a PF2e `ChoiceSet` `choices.filter` predicate array against a lightweight feat index record.
+ * Handles `item:category:*`, `item:trait:*`, `item:level:*`, `item:rarity:*`, `item:slug:*`,
+ * `{actor|class.slug}` / `{actor|ancestry.slug}` substitution, `{ not }`, `{ or }`, `{ and }`,
+ * and numeric comparisons (`lte`, `lt`, `gte`, `gt`, `eq` with `@actor.level` formulas like `floor(@actor.level/2)`).
+ */
+export function matchesChoiceSetFeatFilter(featRec, filterArr, { actor = null, slotLevel = 1 } = {}) {
+  if (!featRec) return false;
+  if (!Array.isArray(filterArr) || filterArr.length === 0) return true;
+
+  const actorClassSlug = actor?.class ? normalizeSlug(actor.class.slug || actor.class.system?.slug || actor.class.name) : "";
+  const actorAncSlug = actor?.ancestry ? normalizeSlug(actor.ancestry.slug || actor.ancestry.system?.slug || actor.ancestry.name) : "";
+  const actorHerSlug = actor?.heritage ? normalizeSlug(actor.heritage.slug || actor.heritage.system?.slug || actor.heritage.name) : "";
+  const featSlug = normalizeSlug(featRec.name);
+
+  const subActorTokens = (s) => String(s || "")
+    .replace(/\{actor\|class\.slug\}/gi, actorClassSlug)
+    .replace(/\{actor\|ancestry\.slug\}/gi, actorAncSlug)
+    .replace(/\{actor\|heritage\.slug\}/gi, actorHerSlug);
+
+  const resolveOperand = (raw) => {
+    if (typeof raw === "number") return raw;
+    const str = String(raw || "").trim();
+    if (str === "item:level") return Number(featRec.level ?? 0);
+    return evalPf2eNumericExpr(str, { actorLevel: slotLevel });
+  };
+
+  // Tri-state evaluator (`true | false | null` where `null` = unknown/actor-runtime predicate)
+  // so `{ not: "<unknown>" }` stays `null` (pass) instead of negating to `false` and hiding valid feats!
+  const evalStmt = (stmt) => {
+    if (typeof stmt === "string") {
+      const token = subActorTokens(stmt).trim();
+      if (!token) return null;
+      if (token.startsWith("item:category:")) {
+        return normalizeSlug(featRec.category) === normalizeSlug(token.slice("item:category:".length));
+      }
+      if (token.startsWith("item:trait:")) {
+        const want = normalizeSlug(token.slice("item:trait:".length));
+        if (!want) return null;
+        return Array.isArray(featRec.traits) && featRec.traits.includes(want);
+      }
+      if (token.startsWith("item:level:")) {
+        const wantLvl = evalPf2eNumericExpr(token.slice("item:level:".length), { actorLevel: slotLevel });
+        return wantLvl === null ? null : Number(featRec.level ?? 0) === wantLvl;
+      }
+      if (token.startsWith("item:rarity:")) {
+        return normalizeSlug(featRec.rarity || "common") === normalizeSlug(token.slice("item:rarity:".length));
+      }
+      if (token.startsWith("item:slug:")) {
+        return featSlug === normalizeSlug(token.slice("item:slug:".length));
+      }
+      return null;
+    }
+
+    if (!stmt || typeof stmt !== "object") return null;
+    if ("not" in stmt) {
+      const inner = evalStmt(stmt.not);
+      return inner === null ? null : !inner;
+    }
+    if (Array.isArray(stmt.or)) {
+      const results = stmt.or.map(evalStmt);
+      if (results.some(r => r === true)) return true;
+      if (results.some(r => r === null)) return null;
+      return false;
+    }
+    if (Array.isArray(stmt.and)) {
+      const results = stmt.and.map(evalStmt);
+      if (results.some(r => r === false)) return false;
+      if (results.every(r => r === true)) return true;
+      return null;
+    }
+
+    for (const op of ["lte", "lt", "gte", "gt", "eq"]) {
+      if (Array.isArray(stmt[op]) && stmt[op].length === 2) {
+        const a = resolveOperand(stmt[op][0]);
+        const b = resolveOperand(stmt[op][1]);
+        if (a === null || b === null) return null;
+        if (op === "lte") return a <= b;
+        if (op === "lt") return a < b;
+        if (op === "gte") return a >= b;
+        if (op === "gt") return a > b;
+        return a === b;
+      }
+    }
+    return null;
+  };
+
+  return filterArr.every(stmt => evalStmt(stmt) !== false);
+}
+
+function inferMaxLevelFromChoiceFilter(filterArr, slotLevel) {
+  let maxLvl = slotLevel;
+  if (!Array.isArray(filterArr)) return maxLvl;
+  const visit = (stmt) => {
+    if (typeof stmt === "string" && stmt.startsWith("item:level:")) {
+      const n = evalPf2eNumericExpr(stmt.slice("item:level:".length), { actorLevel: slotLevel });
+      if (n !== null && Number.isFinite(n)) maxLvl = Math.min(maxLvl, Math.floor(n));
+    } else if (stmt && typeof stmt === "object") {
+      if (Array.isArray(stmt.lte) && stmt.lte[0] === "item:level") {
+        const n = evalPf2eNumericExpr(stmt.lte[1], { actorLevel: slotLevel });
+        if (n !== null && Number.isFinite(n)) maxLvl = Math.min(maxLvl, Math.floor(n));
+      } else if (Array.isArray(stmt.lt) && stmt.lt[0] === "item:level") {
+        const n = evalPf2eNumericExpr(stmt.lt[1], { actorLevel: slotLevel });
+        if (n !== null && Number.isFinite(n)) maxLvl = Math.min(maxLvl, Math.floor(n) - 1);
+      } else if (Array.isArray(stmt.eq) && stmt.eq[0] === "item:level") {
+        const n = evalPf2eNumericExpr(stmt.eq[1], { actorLevel: slotLevel });
+        if (n !== null && Number.isFinite(n)) maxLvl = Math.min(maxLvl, Math.floor(n));
+      } else if (Array.isArray(stmt.and)) {
+        for (const sub of stmt.and) visit(sub);
+      }
+    }
+  };
+  for (const s of filterArr) visit(s);
+  return Math.max(0, maxLvl);
+}
+
+function localizeChoiceText(raw, fallback = "") {
+  const str = String(raw || "").trim();
+  if (!str) return fallback;
+  const loc = game.i18n?.localize?.(str);
+  if (loc && loc !== str) return loc;
+  if (/^PF2E\./i.test(str)) return fallback || str.split(".").pop() || "";
+  return str;
+}
+
+function resolveUuidOptionLabel(uuid, rawLabel = "") {
+  const loc = localizeChoiceText(rawLabel, "");
+  if (loc && !isLikelyCompendiumOrItemUuid(loc)) return loc;
+  const cached = _plannerItemMetaCache.get(uuid);
+  if (cached?.name) return cached.name;
+  if (Array.isArray(_featIndexCache)) {
+    const hit = _featIndexCache.find(f => f.uuid === uuid);
+    if (hit?.name) return hit.name;
+  }
+  const tail = String(uuid || "").split(".").pop() || "";
+  return tail && !/^[A-Za-z0-9]{16}$/.test(tail) ? tail : (loc || uuid);
+}
+
+const BONUS_GRANT_CHOICE_FLAG = "__bonusGrantedFeat";
+
+/**
+ * Fallback for PF2e multiclass archetype feats that lack a native `ChoiceSet` rule in Foundry
+ * (notably repeatable "Advanced <X>" feats like Advanced Deduction / Advanced Maneuver / Advanced Trickery,
+ * whose description states "You gain one <class> feat... half your character level").
+ * Zero hardcoded class lists — reads the target trait directly from the feat's live PF2e description.
+ */
+function extractVirtualBonusFeatSpec(meta, slotLevel, savedMap) {
+  const rawDesc = String(meta?.description || "");
+  if (!rawDesc) return null;
+
+  let body = rawDesc.replace(/^\s*(?:<p[^>]*>\s*<(?:strong|b)[^>]*>\s*(?:Prerequisites?|Access|Frequency|Trigger|Requirements?|Cost)\b[\s\S]*?<\/p>\s*)+/i, "");
+  body = body.replace(/^\s*<hr\b[^>]*>\s*/i, "");
+  const specialIdx = body.search(/<p[^>]*>\s*<(?:strong|b)[^>]*>\s*Special\b/i);
+  if (specialIdx >= 0) body = body.slice(0, specialIdx);
+  const plain = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  if (!plain) return null;
+
+  const halfLvlMatch = plain.match(
+    /\byou\s+gain\s+(?:one|a|an)\s+([a-z][a-z\s-]{1,28}?)\s+feat\b[\s\S]{0,180}?\bhalf\s+your\s+(?:character\s+)?level\b/i
+  );
+  const basicLvlMatch = !halfLvlMatch && plain.match(
+    /\byou\s+gain\s+(?:one|a|an)\s+1st-\s*or\s*2nd-level\s+([a-z][a-z\s-]{1,28}?)\s+feat\b/i
+  );
+  const m = halfLvlMatch || basicLvlMatch;
+  if (!m) return null;
+
+  const rawWords = String(m[1] || "")
+    .toLowerCase()
+    .replace(/\b(?:common|uncommon|additional|extra|bonus|class)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!rawWords) return null;
+
+  const wantsImpulse = /\bimpulse\b/.test(rawWords);
+  const baseWord = rawWords.replace(/\bimpulse\b/g, "").trim();
+  const targetSlug = normalizeSlug(baseWord);
+  if (!targetSlug || targetSlug === "archetype" || targetSlug === "dedication") return null;
+
+  const maxLevel = halfLvlMatch ? Math.max(1, Math.floor(slotLevel / 2)) : 2;
+  let filter = [];
+  if (targetSlug === "general") {
+    filter = [{ or: ["item:category:general", "item:category:skill"] }, { lte: ["item:level", maxLevel] }];
+  } else if (targetSlug === "skill" || targetSlug === "ancestry") {
+    filter = [`item:category:${targetSlug}`, { lte: ["item:level", maxLevel] }];
+  } else {
+    filter = ["item:category:class", `item:trait:${targetSlug}`, { lte: ["item:level", maxLevel] }];
+    if (wantsImpulse) filter.push("item:trait:impulse");
+  }
+
+  const labelWord = capitalize(targetSlug.replace(/-/g, " "));
+  const saved = savedMap?.[BONUS_GRANT_CHOICE_FLAG] || null;
+  const savedVal = saved && typeof saved === "object" ? String(saved.value ?? "") : (typeof saved === "string" ? saved : "");
+
+  return {
+    kind: "feat-query",
+    isFeatQuery: true,
+    isSelect: false,
+    isBonusGrant: true,
+    flag: BONUS_GRANT_CHOICE_FLAG,
+    ruleIndex: -1,
+    prompt: `Bonus ${labelWord}${wantsImpulse ? " Impulse" : ""} Feat (Lv ≤ ${maxLevel})`,
+    filter,
+    maxLevel,
+    filled: Boolean(savedVal),
+    selection: savedVal ? {
+      value: savedVal,
+      uuid: savedVal,
+      name: saved?.name || resolveUuidOptionLabel(savedVal),
+      img: saved?.img || "systems/pf2e/icons/default-icons/feat.svg",
+      level: Number.isFinite(Number(saved?.level)) ? Number(saved.level) : null,
+      isFeat: true,
+      isDedication: Boolean(saved?.isDedication),
+      prerequisites: Array.isArray(saved?.prerequisites) ? saved.prerequisites : []
+    } : null
+  };
+}
+
+/**
+ * Inspects a planned feat's cached PF2e `ChoiceSet` rules (plus fallback for repeatable
+ * half-level multiclass archetype feats lacking a native ChoiceSet) and returns lightweight
+ * interactive sub-choice descriptors joined with any already-planned selection.
+ */
+export function extractFeatChoiceSpecs(meta, { actor = null, slotLevel = 1, plannedChoices = null } = {}) {
+  if (!meta) return [];
+  const rules = Array.isArray(meta.rules) ? meta.rules : [];
+  const savedMap = plannedChoices && typeof plannedChoices === "object" ? plannedChoices : {};
+  const specs = [];
+  const usedFlags = new Set();
+
+  // Build quick selections map from already-saved choices so predicate-gated second ChoiceSets work
+  const currentSelections = {};
+  for (const [k, v] of Object.entries(savedMap)) {
+    if (v && typeof v === "object" && v.value !== undefined) currentSelections[k] = v.value;
+    else if (typeof v === "string") currentSelections[k] = v;
+  }
+
+  for (let idx = 0; idx < rules.length; idx++) {
+    const r = rules[idx];
+    if (!r || r.key !== "ChoiceSet") continue;
+    // Skip pre-locked ChoiceSets (PF2e already fixed selection) or runtime inventory/attack queries
+    if (r.selection !== undefined && r.selection !== null && r.selection !== "") continue;
+    if (!r.choices) continue;
+    if (!passesLevelPredicate(r.predicate, slotLevel, currentSelections)) continue;
+
+    if (typeof r.choices === "object" && !Array.isArray(r.choices)) {
+      if (r.choices.ownedItems || r.choices.attacks || r.choices.unarmedAttacks || r.choices.spellcasting) continue;
+    }
+
+    let flag = getChoiceSetFlag(r, meta.slug || meta.name, idx);
+    if (usedFlags.has(flag)) flag = `${flag}_${idx}`;
+    usedFlags.add(flag);
+
+    const saved = savedMap[flag] || null;
+    const savedVal = saved && typeof saved === "object" ? String(saved.value ?? "") : (typeof saved === "string" ? saved : "");
+
+    // Type 1: Feat Compendium Query (Basic/Advanced Deduction, General Training, Natural Ambition, Multitalented, etc.)
+    const isFeatQuery = typeof r.choices === "object" && !Array.isArray(r.choices) && (
+      r.choices.itemType === "feat"
+      || (Array.isArray(r.choices.filter) && r.choices.filter.some(s => typeof s === "string" && (s === "item:type:feat" || s.startsWith("item:category:"))))
+    );
+    if (isFeatQuery) {
+      const combinedFilter = [
+        ...(Array.isArray(r.choices.filter) ? r.choices.filter : []),
+        ...(Array.isArray(r.choices.postFilter) ? r.choices.postFilter : [])
+      ];
+      const maxLevel = inferMaxLevelFromChoiceFilter(combinedFilter, slotLevel);
+      const prompt = localizeChoiceText(r.prompt, `Choose Feat (Lv ≤ ${maxLevel})`);
+      specs.push({
+        kind: "feat-query",
+        isFeatQuery: true,
+        isSelect: false,
+        flag,
+        ruleIndex: idx,
+        prompt,
+        filter: combinedFilter,
+        maxLevel,
+        filled: Boolean(savedVal),
+        selection: savedVal ? {
+          value: savedVal,
+          uuid: savedVal,
+          name: saved?.name || resolveUuidOptionLabel(savedVal),
+          img: saved?.img || "systems/pf2e/icons/default-icons/feat.svg",
+          level: Number.isFinite(Number(saved?.level)) ? Number(saved.level) : null,
+          isFeat: true,
+          isDedication: Boolean(saved?.isDedication),
+          prerequisites: Array.isArray(saved?.prerequisites) ? saved.prerequisites : []
+        } : null
+      });
+      continue;
+    }
+
+    // Type 2: Explicit static choices array (e.g. Canny Acumen, Domain/Element/Fixed Feat lists)
+    if (Array.isArray(r.choices) && r.choices.length >= 2) {
+      const options = [];
+      for (const opt of r.choices) {
+        if (!opt || opt.value === undefined || opt.value === null) continue;
+        if (!passesLevelPredicate(opt.predicate, slotLevel, currentSelections)) continue;
+        const val = String(opt.value);
+        const isUuid = isLikelyCompendiumOrItemUuid(val);
+        const label = isUuid ? resolveUuidOptionLabel(val, opt.label) : localizeChoiceText(opt.label, capitalize(val));
+        options.push({
+          value: val,
+          label,
+          isUuid,
+          selected: val === savedVal
+        });
+      }
+      if (options.length >= 2) {
+        const prompt = localizeChoiceText(r.prompt, "Choose Option");
+        const matchedOpt = options.find(o => o.value === savedVal);
+        specs.push({
+          kind: "select",
+          isFeatQuery: false,
+          isSelect: true,
+          flag,
+          ruleIndex: idx,
+          prompt,
+          options,
+          filled: Boolean(savedVal),
+          selection: savedVal ? {
+            value: savedVal,
+            uuid: matchedOpt?.isUuid ? savedVal : null,
+            name: saved?.name || matchedOpt?.label || savedVal,
+            isFeat: Boolean(matchedOpt?.isUuid)
+          } : null
+        });
+      }
+      continue;
+    }
+
+    // Type 3: PF2e CONFIG map (e.g. `{ config: "skills" }`, `{ config: "languages" }`, `{ config: "weaponGroups" }`)
+    const cfgKey = typeof r.choices === "string"
+      ? r.choices
+      : (typeof r.choices?.config === "string" ? r.choices.config : "");
+    const cfgMap = cfgKey ? CONFIG.PF2E?.[cfgKey] : null;
+    if (cfgMap && typeof cfgMap === "object") {
+      const options = [];
+      for (const [k, v] of Object.entries(cfgMap)) {
+        const rawLbl = typeof v === "string" ? v : (v?.label || k);
+        const label = localizeChoiceText(rawLbl, capitalize(k.replace(/-/g, " ")));
+        options.push({
+          value: k,
+          label,
+          isUuid: false,
+          selected: k === savedVal
+        });
+      }
+      options.sort((a, b) => a.label.localeCompare(b.label));
+      if (options.length >= 2 && options.length <= 200) {
+        const prompt = localizeChoiceText(r.prompt, `Choose ${capitalize(cfgKey)}`);
+        const matchedOpt = options.find(o => o.value === savedVal);
+        specs.push({
+          kind: "select",
+          isFeatQuery: false,
+          isSelect: true,
+          flag,
+          ruleIndex: idx,
+          prompt,
+          configKey: cfgKey,
+          options,
+          filled: Boolean(savedVal),
+          selection: savedVal ? {
+            value: savedVal,
+            uuid: null,
+            name: saved?.name || matchedOpt?.label || capitalize(savedVal),
+            isFeat: false
+          } : null
+        });
+      }
+    }
+  }
+
+  // Fallback for PF2e multiclass feats lacking a ChoiceSet rule (e.g. "Advanced Deduction" / "Advanced Maneuver")
+  if (!specs.some(s => s.isFeatQuery)) {
+    const bonusSpec = extractVirtualBonusFeatSpec(meta, slotLevel, savedMap);
+    if (bonusSpec) specs.push(bonusSpec);
+  }
+
+  return specs;
+}
+
+/**
+ * Extracts already-chosen live ChoiceSet selections from an embedded actor feat so reverting
+ * a character to an earlier level preserves nested feat/skill choices cleanly in the Build Plan.
+ */
+function extractLiveFeatChoicesForRevert(actor, liveDoc) {
+  if (!liveDoc) return null;
+  const rules = Array.isArray(liveDoc.system?.rules) ? liveDoc.system.rules : [];
+  const sels = liveDoc.flags?.pf2e?.rulesSelections || {};
+  const out = {};
+  let count = 0;
+
+  // Map granted child items by source UUID or name so we can snapshot name/img/level for feat choices
+  const grantedChildren = (actor?.itemTypes?.feat || []).filter(f => f.flags?.pf2e?.grantedBy?.id === liveDoc.id);
+  const usedFlags = new Set();
+
+  for (let idx = 0; idx < rules.length; idx++) {
+    const r = rules[idx];
+    if (!r || r.key !== "ChoiceSet") continue;
+    let flag = getChoiceSetFlag(r, liveDoc.slug || liveDoc.system?.slug || liveDoc.name, idx);
+    if (usedFlags.has(flag)) flag = `${flag}_${idx}`;
+    usedFlags.add(flag);
+    const rawVal = r.selection ?? sels[flag];
+    if (rawVal === undefined || rawVal === null || rawVal === "") continue;
+    const val = String(rawVal);
+    const isUuid = isLikelyCompendiumOrItemUuid(val);
+
+    if (isUuid) {
+      const child = grantedChildren.find(c =>
+        (c._stats?.compendiumSource || c.flags?.core?.sourceId) === val
+      ) || null;
+      const childTraits = Array.isArray(child?.system?.traits?.value) ? child.system.traits.value.map(normalizeSlug) : [];
+      out[flag] = {
+        value: val,
+        name: child?.name || resolveUuidOptionLabel(val),
+        img: child?.img || "systems/pf2e/icons/default-icons/feat.svg",
+        level: Number(child?.system?.level?.value ?? 0),
+        isFeat: true,
+        isDedication: childTraits.includes("dedication") || /\bdedication\b/i.test(child?.name || ""),
+        prerequisites: (child?.system?.prerequisites?.value || []).map(p => p?.value || p).filter(Boolean)
+      };
+      count++;
+    } else {
+      out[flag] = {
+        value: val,
+        name: capitalize(val.replace(/^system\.(?:attributes\.|skills\.)?|\.rank$/gi, "").replace(/-/g, " ")),
+        isFeat: false
+      };
+      count++;
+    }
+  }
+
+  // Also capture any planner-granted Bonus Feat linked to this parent feat (e.g. Advanced Deduction -> Bonus Feat)
+  const linkedBonus = (actor?.itemTypes?.feat || []).find(f => f.flags?.[MODULE_ID]?.bonusGrantParentId === liveDoc.id);
+  if (linkedBonus && !out[BONUS_GRANT_CHOICE_FLAG]) {
+    const { uuid: bonusUuid } = resolveReusableSourceUuid(linkedBonus, "feat");
+    if (bonusUuid) {
+      const bonusTraits = Array.isArray(linkedBonus.system?.traits?.value) ? linkedBonus.system.traits.value.map(normalizeSlug) : [];
+      out[BONUS_GRANT_CHOICE_FLAG] = {
+        value: bonusUuid,
+        name: linkedBonus.name,
+        img: linkedBonus.img || "systems/pf2e/icons/default-icons/feat.svg",
+        level: Number(linkedBonus.system?.level?.value ?? 0),
+        isFeat: true,
+        isDedication: bonusTraits.includes("dedication") || /\bdedication\b/i.test(linkedBonus.name || ""),
+        prerequisites: (linkedBonus.system?.prerequisites?.value || []).map(p => p?.value || p).filter(Boolean)
+      };
+      count++;
+    }
+  }
+
+  return count > 0 ? out : null;
+}
+
+/* ------------------------------------------------------------------------- */
 /* 3. MASTER LEVEL 1-20 ROADMAP BUILDER                                      */
 /* ------------------------------------------------------------------------- */
 
@@ -1317,9 +2260,10 @@ export function buildLevelRoadmap(actor, options = {}) {
   // 4. Spellcasting milestones & dynamically discovered Subclass / Focus / Deity auto-spells across Levels 1-20
   const spellMilestones = computeSpellMilestonesByLevel(checkerReport);
 
-  // Collect planned future feat slugs -> level so planned tier feats (e.g. Advanced Bloodline at Lv 6)
-  // immediately preview their unlocked focus spell at that exact planned level!
+  // Collect planned future feat slugs -> level (plus cached docs for planned focus feats & nested sub-choices)
+  // so planned feats like Advanced Bloodline, Initiate Warden, or Advanced Warden preview immediately at that level!
   const plannedFeatLevelsBySlug = new Map();
+  const plannedFeatDocs = [];
   for (let l = currentLevel + 1; l <= 20; l++) {
     const lpFeats = plan.levels[String(l)]?.feats;
     if (!lpFeats || typeof lpFeats !== "object") continue;
@@ -1329,10 +2273,29 @@ export function buildLevelRoadmap(actor, options = {}) {
       if (slug && !plannedFeatLevelsBySlug.has(slug)) {
         plannedFeatLevelsBySlug.set(slug, l);
       }
+      if (fSnap.uuid) {
+        const cachedDoc = _plannerItemMetaCache.get(fSnap.uuid);
+        if (cachedDoc) plannedFeatDocs.push({ doc: cachedDoc, level: l });
+      }
+      if (fSnap.choices && typeof fSnap.choices === "object") {
+        for (const ch of Object.values(fSnap.choices)) {
+          if (ch?.name) {
+            const chSlug = normalizeSlug(ch.name);
+            if (chSlug && !plannedFeatLevelsBySlug.has(chSlug)) plannedFeatLevelsBySlug.set(chSlug, l);
+          }
+          if (ch?.value && isLikelyCompendiumOrItemUuid(ch.value)) {
+            const chDoc = _plannerItemMetaCache.get(ch.value);
+            if (chDoc) plannedFeatDocs.push({ doc: chDoc, level: l });
+          }
+        }
+      }
     }
   }
 
-  const grantedProgression = collectActorGrantedSpellsProgression(actor, dualInfo, { plannedFeatLevelsBySlug });
+  const grantedProgression = collectActorGrantedSpellsProgression(actor, dualInfo, {
+    plannedFeatLevelsBySlug,
+    plannedFeatDocs
+  });
   const autoSpellsByLevel = {};
   for (const sp of grantedProgression.autoSpells || []) {
     const uLvl = Math.max(1, Math.min(20, Number(sp.unlockLevel || 1)));
@@ -1354,7 +2317,7 @@ export function buildLevelRoadmap(actor, options = {}) {
     if (!choiceGroupsByLevel[uLvl]) choiceGroupsByLevel[uLvl] = [];
     choiceGroupsByLevel[uLvl].push({
       ...g,
-      tradition: sourceTraditionByKey.get(g.targetSourceKey) || ""
+      tradition: sourceTraditionByKey.get(g.targetSourceKey) || g.fallbackTradition || ""
     });
   }
 
@@ -1367,7 +2330,7 @@ export function buildLevelRoadmap(actor, options = {}) {
     if (sp.name) liveSpellNames.add(String(sp.name).trim().toLowerCase());
   }
 
-  // 5. Running Projections for Attributes & Skill Ranks across Levels 1-20
+  // 5. Running Projections for Attributes, Skills, Proficiencies & Spellcasting across Levels 1-20
   const projectedBoostCounts = getBaseBoostCounts(actor, currentLevel, dualInfo);
   const projectedSkillRanks = {};
   for (const slug of CORE_SKILL_SLUGS) {
@@ -1377,38 +2340,62 @@ export function buildLevelRoadmap(actor, options = {}) {
   for (const lore of actor.itemTypes?.lore || []) {
     projectedMaxLoreRank = Math.max(projectedMaxLoreRank, Number(lore.system?.proficient?.value ?? 1));
   }
-  const basePerceptionRank = Number(actor.system?.perception?.rank ?? 0);
-  const baseArmorRanks = {
-    unarmored: Number(actor.system?.proficiencies?.defenses?.unarmored?.rank ?? 0),
-    light: Number(actor.system?.proficiencies?.defenses?.light?.rank ?? 0),
-    medium: Number(actor.system?.proficiencies?.defenses?.medium?.rank ?? 0),
-    heavy: Number(actor.system?.proficiencies?.defenses?.heavy?.rank ?? 0)
+  const projState = {
+    skillRanks: projectedSkillRanks,
+    perceptionRank: Number(actor.system?.perception?.rank ?? 0),
+    armorRanks: {
+      unarmored: Number(actor.system?.proficiencies?.defenses?.unarmored?.rank ?? 0),
+      light: Number(actor.system?.proficiencies?.defenses?.light?.rank ?? 0),
+      medium: Number(actor.system?.proficiencies?.defenses?.medium?.rank ?? 0),
+      heavy: Number(actor.system?.proficiencies?.defenses?.heavy?.rank ?? 0)
+    },
+    weaponRanks: {
+      unarmed: Number(actor.system?.proficiencies?.attacks?.unarmed?.rank ?? 0),
+      simple: Number(actor.system?.proficiencies?.attacks?.simple?.rank ?? 0),
+      martial: Number(actor.system?.proficiencies?.attacks?.martial?.rank ?? 0),
+      advanced: Number(actor.system?.proficiencies?.attacks?.advanced?.rank ?? 0)
+    },
+    saveRanks: {
+      fortitude: Number(actor.system?.saves?.fortitude?.rank ?? 0),
+      reflex: Number(actor.system?.saves?.reflex?.rank ?? 0),
+      will: Number(actor.system?.saves?.will?.rank ?? 0)
+    },
+    spellcastingTraditions: new Set(),
+    isSpellcaster: false,
+    hasFocusPool: false,
+    recordKnownFeatName
   };
-  const baseWeaponRanks = {
-    unarmed: Number(actor.system?.proficiencies?.attacks?.unarmed?.rank ?? 0),
-    simple: Number(actor.system?.proficiencies?.attacks?.simple?.rank ?? 0),
-    martial: Number(actor.system?.proficiencies?.attacks?.martial?.rank ?? 0),
-    advanced: Number(actor.system?.proficiencies?.attacks?.advanced?.rank ?? 0)
-  };
-  const baseSaveRanks = {
-    fortitude: Number(actor.system?.saves?.fortitude?.rank ?? 0),
-    reflex: Number(actor.system?.saves?.reflex?.rank ?? 0),
-    will: Number(actor.system?.saves?.will?.rank ?? 0)
-  };
-  const baseSpellTraditions = new Set();
   for (const src of checkerReport?.spellcasting?.sources || []) {
-    if (src?.tradition) baseSpellTraditions.add(String(src.tradition).toLowerCase());
+    if (src?.tradition) projState.spellcastingTraditions.add(String(src.tradition).toLowerCase());
   }
   for (const entry of actor.itemTypes?.spellcastingEntry || []) {
     const t = entry.system?.tradition?.value;
-    if (t) baseSpellTraditions.add(String(t).toLowerCase());
+    if (t) projState.spellcastingTraditions.add(String(t).toLowerCase());
   }
-  const baseIsSpellcaster = baseSpellTraditions.size > 0
+  projState.isSpellcaster = projState.spellcastingTraditions.size > 0
     || Boolean(checkerReport?.spellcasting?.hasExpectedSources)
     || (actor.itemTypes?.spellcastingEntry?.length || 0) > 0;
-  const baseHasFocusPool = Number(actor.system?.resources?.focus?.max ?? 0) > 0
+  projState.hasFocusPool = Number(actor.system?.resources?.focus?.max ?? 0) > 0
     || (checkerReport?.spellcasting?.sources || []).some(s => Boolean(s.isFocus));
   const baseHasDeity = Boolean(actor.deity);
+
+  // Track live feats & earlier planned feats with ActiveEffectLike rules so level-scaling upgrades
+  // (e.g. Canny Acumen Lv 17, Acrobat Dedication Lv 7/15) automatically fire at their exact future levels!
+  const liveScalingRuleItems = [];
+  for (const f of actor.itemTypes?.feat || []) {
+    const rules = Array.isArray(f.system?.rules) ? f.system.rules : [];
+    if (!rules.some(r => r?.key === "ActiveEffectLike")) continue;
+    const sels = { ...(f.flags?.pf2e?.rulesSelections || {}) };
+    for (let idx = 0; idx < rules.length; idx++) {
+      const r = rules[idx];
+      if (r?.key === "ChoiceSet" && r.selection !== undefined && r.selection !== null && r.selection !== "") {
+        const fl = getChoiceSetFlag(r, f.slug || f.system?.slug || f.name, idx);
+        if (!(fl in sels)) sels[fl] = r.selection;
+      }
+    }
+    liveScalingRuleItems.push({ rules, selectionsMap: sels, itemLevel: Number(f.system?.level?.value ?? 1) });
+  }
+  const plannedRuleItemsSoFar = [];
 
   const snapshotPrereqState = () => {
     const attrMods = {};
@@ -1419,13 +2406,13 @@ export function buildLevelRoadmap(actor, options = {}) {
       skillRanks: { ...projectedSkillRanks },
       attrMods,
       maxLoreRank: projectedMaxLoreRank,
-      perceptionRank: basePerceptionRank,
-      armorRanks: baseArmorRanks,
-      weaponRanks: baseWeaponRanks,
-      saveRanks: baseSaveRanks,
-      spellcastingTraditions: baseSpellTraditions,
-      isSpellcaster: baseIsSpellcaster,
-      hasFocusPool: baseHasFocusPool,
+      perceptionRank: projState.perceptionRank,
+      armorRanks: { ...projState.armorRanks },
+      weaponRanks: { ...projState.weaponRanks },
+      saveRanks: { ...projState.saveRanks },
+      spellcastingTraditions: new Set(projState.spellcastingTraditions),
+      isSpellcaster: projState.isSpellcaster,
+      hasFocusPool: projState.hasFocusPool,
       hasDeity: baseHasDeity,
       knownFeatNamesLower: new Set(knownFeatNamesLower),
       knownFeatBaseNamesLower: new Set(knownFeatBaseNamesLower)
@@ -1475,9 +2462,30 @@ export function buildLevelRoadmap(actor, options = {}) {
       };
     }
 
-    const warnings = checkPlannedFeatPrereqs(plannedFeat, slotLevel, levelPrereqState || snapshotPrereqState());
+    const slotPrereq = levelPrereqState || snapshotPrereqState();
+    const warnings = checkPlannedFeatPrereqs(plannedFeat, slotLevel, slotPrereq);
     if (plannedFeat?.name) {
       recordKnownFeatName(plannedFeat.name);
+    }
+
+    // Extract any interactive PF2e ChoiceSet sub-choices (e.g. Basic/Advanced Deduction, General Training, Natural Ambition, Skill Training)
+    const cachedMeta = plannedFeat?.uuid ? _plannerItemMetaCache.get(plannedFeat.uuid) : null;
+    const subChoices = cachedMeta
+      ? extractFeatChoiceSpecs(cachedMeta, { actor, slotLevel, plannedChoices: plannedFeat.choices })
+      : [];
+
+    for (const sc of subChoices) {
+      if (sc.filled && sc.selection?.isFeat) {
+        if (sc.selection.name) recordKnownFeatName(sc.selection.name);
+        const subWarn = checkPlannedFeatPrereqs(
+          { level: sc.selection.level ?? 0, prerequisites: sc.selection.prerequisites || [] },
+          sc.maxLevel ?? slotLevel,
+          slotPrereq
+        );
+        for (const w of subWarn) {
+          warnings.push(`${sc.selection.name}: ${w}`);
+        }
+      }
     }
 
     return {
@@ -1491,6 +2499,8 @@ export function buildLevelRoadmap(actor, options = {}) {
       isFuture: true,
       filled: Boolean(plannedFeat),
       feat: plannedFeat,
+      subChoices,
+      hasSubChoices: subChoices.length > 0,
       warnings,
       hasWarnings: warnings.length > 0
     };
@@ -1511,6 +2521,27 @@ export function buildLevelRoadmap(actor, options = {}) {
     const isNextLevel = lvl === currentLevel + 1;
     const isFuture = lvl > currentLevel;
     const lp = plan.levels[String(lvl)] || createEmptyLevelPlanEntry();
+
+    // 0. Forward-project auto-granted Class Features at this future level + level-scaling rules from
+    //    live & earlier-planned feats (e.g. Rogue Lv 7 Perception Mastery, Fighter Weapon Mastery, Canny Acumen Lv 17)
+    if (isFuture) {
+      for (const cf of classFeaturesByLevel[lvl] || []) {
+        if (cf?.name) recordKnownFeatName(cf.name);
+        const cfMeta = cf?.uuid ? _plannerItemMetaCache.get(cf.uuid) : null;
+        if (cfMeta) {
+          applyRulesToPrereqState(cfMeta.rules, {}, lvl, projState, lvl);
+          if (cfMeta.rules.some(r => r?.key === "ActiveEffectLike" && String(r.mode || "upgrade").toLowerCase() === "upgrade")) {
+            plannedRuleItemsSoFar.push({ rules: cfMeta.rules, selectionsMap: {}, itemLevel: lvl });
+          }
+        }
+      }
+      for (const liveItem of liveScalingRuleItems) {
+        applyRulesToPrereqState(liveItem.rules, liveItem.selectionsMap, lvl, projState, liveItem.itemLevel, { upgradeOnly: true });
+      }
+      for (const prevPlanned of plannedRuleItemsSoFar) {
+        applyRulesToPrereqState(prevPlanned.rules, prevPlanned.selectionsMap, lvl, projState, prevPlanned.itemLevel, { upgradeOnly: true });
+      }
+    }
 
     // Snapshot INT modifier BEFORE applying this level's boosts (handles partial boosts accurately!)
     const prevIntMod = computeModFromBoostCount(projectedBoostCounts.int || 0).mod;
@@ -1717,12 +2748,45 @@ export function buildLevelRoadmap(actor, options = {}) {
       featSlots.push(buildFeatSlot("general", "General Feat", "general", [], lvl, isFuture, lp, activeDedications, levelPrereqState));
     }
 
-    // Record any newly planned Dedication feats at this level for subsequent future levels (lvl+1..20)
+    // Record any newly planned Dedication feats, ChoiceSet sub-choices & rule proficiency upgrades for subsequent levels (lvl+1..20)
     if (isFuture) {
       for (const s of featSlots) {
-        if (s.feat?.name && (s.feat.isDedication || /\bdedication\b/i.test(s.feat.name))) {
+        if (!s.feat) continue;
+        if (s.feat.name && (s.feat.isDedication || /\bdedication\b/i.test(s.feat.name))) {
           const desc = makeDedicationDescriptor(s.feat.name);
           if (desc.nameLower) knownDedicationsMap.set(desc.nameLower, desc);
+        }
+
+        const selectionsMap = {};
+        for (const sc of s.subChoices || []) {
+          if (sc.filled && sc.selection?.value !== undefined) {
+            selectionsMap[sc.flag] = sc.selection.value;
+            if (sc.selection.isFeat) {
+              if (sc.selection.isDedication || /\bdedication\b/i.test(sc.selection.name || "")) {
+                const subDesc = makeDedicationDescriptor(sc.selection.name);
+                if (subDesc.nameLower) knownDedicationsMap.set(subDesc.nameLower, subDesc);
+              }
+              const subMeta = sc.selection.uuid ? _plannerItemMetaCache.get(sc.selection.uuid) : null;
+              if (subMeta) {
+                applyRulesToPrereqState(subMeta.rules, {}, lvl, projState, subMeta.level || lvl);
+                applyPlannedSpellcastingProjection(subMeta, projState);
+                if (subMeta.rules.some(r => r?.key === "ActiveEffectLike" && String(r.mode || "upgrade").toLowerCase() === "upgrade")) {
+                  plannedRuleItemsSoFar.push({ rules: subMeta.rules, selectionsMap: {}, itemLevel: subMeta.level || lvl });
+                }
+              }
+            }
+          }
+        }
+
+        const fMeta = s.feat.uuid ? _plannerItemMetaCache.get(s.feat.uuid) : null;
+        if (fMeta) {
+          // Skip `GrantItem` when already applied via chosen sub-feat above so `mode: "add"` never double-applies!
+          const hasChosenSubFeat = (s.subChoices || []).some(sc => sc.filled && sc.selection?.isFeat);
+          applyRulesToPrereqState(fMeta.rules, selectionsMap, lvl, projState, fMeta.level || lvl, { skipGrantItem: hasChosenSubFeat });
+          applyPlannedSpellcastingProjection(fMeta, projState);
+          if (fMeta.rules.some(r => r?.key === "ActiveEffectLike" && String(r.mode || "upgrade").toLowerCase() === "upgrade")) {
+            plannedRuleItemsSoFar.push({ rules: fMeta.rules, selectionsMap, itemLevel: fMeta.level || lvl });
+          }
         }
       }
     }
@@ -1901,14 +2965,22 @@ export function buildLevelRoadmap(actor, options = {}) {
     const hasPlannedFormulas = plannedFormulas.length > 0;
     const formulasComplete = !isAlchemistFutureGain || plannedFormulas.length >= (formulaMilestone?.gain || 2);
 
-    // F. Level plan completion badge (for future levels)
+    // F. Level plan completion badge (for future levels, including any planned feat ChoiceSet sub-choices)
+    const subChoiceTotal = isFuture
+      ? featSlots.reduce((sum, s) => sum + (s.subChoices?.length || 0), 0)
+      : 0;
+    const subChoiceDone = isFuture
+      ? featSlots.reduce((sum, s) => sum + (s.subChoices || []).filter(c => c.filled).length, 0)
+      : 0;
     let plannedItemsTotal = featSlots.length
+      + subChoiceTotal
       + (hasBoosts ? 1 : 0)
       + (hasIntBonus ? 1 : 0)
       + (hasSkillIncrease ? 1 : 0)
       + (hasMandatorySpells ? 1 : 0)
       + (isAlchemistFutureGain ? 1 : 0);
     let plannedItemsDone = featSlots.filter(s => s.filled).length
+      + subChoiceDone
       + (hasBoosts && boostInfo?.complete ? 1 : 0)
       + (hasIntBonus && intBonusInfo?.complete ? 1 : 0)
       + (hasSkillIncrease && skillIncreaseInfo?.complete ? 1 : 0)
@@ -3269,11 +4341,21 @@ export function inspectPlannedLevels(actor, targetLevels = [], { effectiveCurren
     for (const slot of lvlData.featSlots || []) {
       if (slot.filled && slot.feat) {
         hasPlanned = true;
+        const chosenSubLabels = (slot.subChoices || [])
+          .filter(c => c.filled && c.selection?.name)
+          .map(c => c.selection.name);
         plannedItems.push({
           kind: "planned",
           label: slot.groupLabel,
-          text: slot.feat.name
+          text: chosenSubLabels.length > 0
+            ? `${slot.feat.name} (→ ${chosenSubLabels.join(", ")})`
+            : slot.feat.name
         });
+        for (const sc of slot.subChoices || []) {
+          if (!sc.filled) {
+            unplannedItems.push(`${slot.feat.name}: ${sc.prompt}`);
+          }
+        }
       } else {
         unplannedItems.push(slot.groupLabel);
       }
@@ -3402,6 +4484,7 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
     ? effectiveCurrentLevel
     : Math.min(...cleanLevels) - 1;
 
+  await preloadPlannerProjectionData(actor, { effectiveCurrentLevel: effCur });
   const roadmap = buildLevelRoadmap(actor, { effectiveCurrentLevel: effCur });
   const plan = getActorLevelPlan(actor);
   const summary = [];
@@ -3560,9 +4643,71 @@ export async function applyPlannedLevelChoices(actor, targetLevels, { updateActo
           obj.system.location = liveSlot.id;
         }
 
+        // Pre-populate any planned PF2e ChoiceSet selections directly on the feat's rules so PF2e
+        // auto-applies the chosen sub-feat/skill via native ChoiceSet + GrantItem without re-prompting!
+        // Uses the exact same skip/predicate logic as `extractFeatChoiceSpecs` so flag indices always align.
+        const appliedSubNames = [];
+        if (planned.choices && typeof planned.choices === "object" && Array.isArray(obj.system?.rules)) {
+          const itemSlugOrName = obj.system?.slug || obj.name || planned.name;
+          const usedFlags = new Set();
+          const currentSelections = {};
+          for (const [k, v] of Object.entries(planned.choices)) {
+            if (v && typeof v === "object" && v.value !== undefined) currentSelections[k] = v.value;
+            else if (typeof v === "string") currentSelections[k] = v;
+          }
+          for (let rIdx = 0; rIdx < obj.system.rules.length; rIdx++) {
+            const r = obj.system.rules[rIdx];
+            if (!r || r.key !== "ChoiceSet") continue;
+            if (r.selection !== undefined && r.selection !== null && r.selection !== "") continue;
+            if (!r.choices) continue;
+            if (!passesLevelPredicate(r.predicate, targetLevel, currentSelections)) continue;
+            if (typeof r.choices === "object" && !Array.isArray(r.choices)) {
+              if (r.choices.ownedItems || r.choices.attacks || r.choices.unarmedAttacks || r.choices.spellcasting) continue;
+            }
+            let fl = getChoiceSetFlag(r, itemSlugOrName, rIdx);
+            if (usedFlags.has(fl)) fl = `${fl}_${rIdx}`;
+            usedFlags.add(fl);
+            const savedCh = planned.choices[fl];
+            const savedVal = savedCh && typeof savedCh === "object" ? savedCh.value : savedCh;
+            if (savedVal !== undefined && savedVal !== null && savedVal !== "") {
+              r.selection = savedVal;
+              if (savedCh?.name) appliedSubNames.push(savedCh.name);
+            }
+          }
+        }
+
         const created = await actor.createEmbeddedDocuments("Item", [obj]);
         if (created?.length > 0) {
-          addedFeats.push(created[0].name);
+          // If this feat used a planner Bonus Feat sub-choice (e.g. "Advanced Deduction" / "Advanced Maneuver"
+          // where Foundry PF2e has no native ChoiceSet rule), embed the chosen feat into PF2e's Bonus Feats section!
+          const bonusChoice = planned.choices?.[BONUS_GRANT_CHOICE_FLAG];
+          const bonusUuid = bonusChoice && typeof bonusChoice === "object" ? bonusChoice.value : bonusChoice;
+          if (bonusUuid && isLikelyCompendiumOrItemUuid(bonusUuid)) {
+            try {
+              const bonusObj = await materializePlannedItem({ uuid: bonusUuid }, "feat");
+              if (bonusObj) {
+                bonusObj.system = bonusObj.system || {};
+                bonusObj.system.location = null; // PF2e native Bonus Feats section
+                bonusObj.flags = bonusObj.flags || {};
+                bonusObj.flags[MODULE_ID] = {
+                  ...(bonusObj.flags[MODULE_ID] || {}),
+                  bonusGrantParentId: created[0].id
+                };
+                const bonusCreated = await actor.createEmbeddedDocuments("Item", [bonusObj]);
+                if (bonusCreated?.length > 0) {
+                  appliedSubNames.push(`${bonusCreated[0].name} [Bonus]`);
+                }
+              }
+            } catch (bonusErr) {
+              console.warn(`PF2e Awesome GM Utilities | Failed to add planned bonus feat for "${planned.name}":`, bonusErr);
+            }
+          }
+
+          addedFeats.push(
+            appliedSubNames.length > 0
+              ? `${created[0].name} (→ ${appliedSubNames.join(", ")})`
+              : created[0].name
+          );
         }
       } catch (err) {
         console.warn(`PF2e Awesome GM Utilities | Failed to add planned feat "${planned.name}":`, err);
@@ -4460,8 +5605,14 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
         touched = true;
       }
 
+      const staleChoiceClearPaths = [];
       for (const f of info.feats) {
         const liveDoc = actor.items?.get(f.itemId);
+        const liveChoices = extractLiveFeatChoicesForRevert(actor, liveDoc);
+        const prevSlot = entry.feats?.[f.slotKey];
+        if (prevSlot?.choices && (!liveChoices || prevSlot.uuid !== (f.sourceUuid || null))) {
+          staleChoiceClearPaths.push(`flags.${MODULE_ID}.${PLAN_FLAG_KEY}.levels.${info.level}.feats.${f.slotKey}.choices`);
+        }
         const snapshot = {
           uuid: f.sourceUuid || null,
           name: f.name,
@@ -4471,11 +5622,21 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
           isDedication: f.isDedication,
           prerequisites: f.prerequisites
         };
+        if (liveChoices) {
+          snapshot.choices = liveChoices;
+        }
         if (f.isCustomSnapshot && liveDoc) {
           snapshot.itemData = sanitizeEmbeddedItemSnapshot(liveDoc);
         }
         entry.feats[f.slotKey] = snapshot;
         touched = true;
+      }
+      if (staleChoiceClearPaths.length > 0) {
+        const ForcedDeletion = foundry.data.operators.ForcedDeletion;
+        const delOp = globalThis._del ?? (typeof ForcedDeletion === "function" ? new ForcedDeletion() : ForcedDeletion);
+        const clearPatch = {};
+        for (const p of staleChoiceClearPaths) clearPatch[p] = delOp;
+        await actor.update(clearPatch);
       }
 
       if (info.trackedSkillIncrease?.slug) {
@@ -4556,6 +5717,13 @@ export async function revertActorToLevel(actor, targetLevel, options = {}) {
         if (actor.items?.has(f.itemId)) {
           itemIdsToDelete.add(f.itemId);
           removedFeatNames.push(f.name);
+          // Also remove any linked Bonus Feat added by the planner for this parent feat (e.g. Advanced Deduction)
+          for (const childBonus of actor.itemTypes?.feat || []) {
+            if (childBonus.flags?.[MODULE_ID]?.bonusGrantParentId === f.itemId && !itemIdsToDelete.has(childBonus.id)) {
+              itemIdsToDelete.add(childBonus.id);
+              removedFeatNames.push(childBonus.name);
+            }
+          }
         }
       }
     }

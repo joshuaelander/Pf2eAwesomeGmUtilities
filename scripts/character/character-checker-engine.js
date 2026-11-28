@@ -1653,9 +1653,10 @@ function analyzeSpellcasting(actor, level, dualInfo) {
       const autoHint = unlockedAutoSpells.length > 0
         ? ` — will auto-add ${unlockedAutoSpells.length} spell${unlockedAutoSpells.length === 1 ? "" : "s"} (${unlockedAutoSpells.slice(0, 3).map(s => s.name).join(", ")}${unlockedAutoSpells.length > 3 ? ` +${unlockedAutoSpells.length - 3}` : ""})`
         : "";
+      const choicePickTotalMissing = unlockedChoiceGroups.reduce((s, g) => s + Math.max(1, Number(g.pickCount || 1)), 0);
       items.push({
         ...src,
-        expectedFocusSpells: src.isFocus ? Math.max(src.expectedFocusSpells || 1, unlockedAutoSpells.length) : src.expectedFocusSpells,
+        expectedFocusSpells: src.isFocus ? Math.max(src.expectedFocusSpells || 1, unlockedAutoSpells.length + choicePickTotalMissing) : src.expectedFocusSpells,
         entryId: null,
         entryExists: false,
         status: "missing",
@@ -1754,14 +1755,20 @@ function analyzeSpellcasting(actor, level, dualInfo) {
     // Special evaluation path for Focus Spellcasting entries (no daily slots — tracks Focus Spells)
     if (src.isFocus || src.castingType === "focus") {
       const currentFocusSpells = entrySpells.length;
-      const expectedFocusSpells = Math.max(1, Number(src.expectedFocusSpells || 1), unlockedAutoSpells.length);
+      const choicePickTotal = unlockedChoiceGroups.reduce((s, g) => s + Math.max(1, Number(g.pickCount || 1)), 0);
+      const expectedFocusSpells = Math.max(1, Number(src.expectedFocusSpells || 1), unlockedAutoSpells.length + choicePickTotal);
       const missingFocus = Math.max(0, expectedFocusSpells - currentFocusSpells);
+      // If the player already fulfilled their focus spell count (e.g. with an AP/homebrew warden spell not in the core list),
+      // avoid nagging with unresolved choice chips.
+      const effectivePendingChoices = missingFocus > 0 ? pendingChoiceGroups : [];
 
       const hasMissing = missingFocus > 0 || missingAutoSpells.length > 0;
       const status = hasMissing ? "incomplete" : "complete";
       const statusLabel = missingAutoSpells.length > 0
         ? `Add ${missingAutoSpells.length} Focus Spell${missingAutoSpells.length === 1 ? "" : "s"}`
-        : (missingFocus > 0 ? "Needs Spells" : "Ready");
+        : (effectivePendingChoices.length > 0
+          ? `Choose ${missingFocus} Focus Spell${missingFocus === 1 ? "" : "s"}`
+          : (missingFocus > 0 ? "Needs Spells" : "Ready"));
 
       items.push({
         ...src,
@@ -1785,13 +1792,15 @@ function analyzeSpellcasting(actor, level, dualInfo) {
         missingAutoSpellsCount: missingAutoSpells.length,
         hasMissingAutoSpells: missingAutoSpells.length > 0,
         missingAutoSpellsText: missingAutoSpells.map(s => s.name).join(", "),
-        pendingChoiceGroups,
-        hasPendingChoices: pendingChoiceGroups.length > 0,
+        pendingChoiceGroups: effectivePendingChoices,
+        hasPendingChoices: effectivePendingChoices.length > 0,
         spellsMissingNote: missingAutoSpells.length > 0
           ? `Auto-add available: ${missingAutoSpells.map(s => s.name).join(", ")}`
-          : (missingFocus > 0
-            ? `Add ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} to "${entry.name}"`
-            : `${currentFocusSpells} focus spell(s) configured`)
+          : (effectivePendingChoices.length > 0
+            ? `Choose ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} below (${effectivePendingChoices.map(g => g.sourceLabel).join(", ")})`
+            : (missingFocus > 0
+              ? `Add ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} to "${entry.name}"`
+              : `${currentFocusSpells} focus spell(s) configured`))
       });
 
       if (hasMissing) {
@@ -1801,10 +1810,14 @@ function analyzeSpellcasting(actor, level, dualInfo) {
           category: "Spellcasting",
           title: missingAutoSpells.length > 0
             ? `${entry.name}: ${missingAutoSpells.length} focus spell${missingAutoSpells.length === 1 ? "" : "s"} ready to auto-add`
-            : `${entry.name}: ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} missing`,
+            : (effectivePendingChoices.length > 0
+              ? `${entry.name}: choose ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"}`
+              : `${entry.name}: ${missingFocus} focus spell${missingFocus === 1 ? "" : "s"} missing`),
           detail: missingAutoSpells.length > 0
             ? `Detected from PF2e features: ${missingAutoSpells.map(s => s.name).join(", ")} (${currentFocusSpells}/${expectedFocusSpells} in entry).`
-            : `Focus spells in entry: ${currentFocusSpells}/${expectedFocusSpells} · ${src.expectedSpellsNote}`
+            : (effectivePendingChoices.length > 0
+              ? `Pick your chosen focus spell (${effectivePendingChoices.map(g => g.sourceLabel).join(", ")}) in the Spellcasting section (${currentFocusSpells}/${expectedFocusSpells} in entry).`
+              : `Focus spells in entry: ${currentFocusSpells}/${expectedFocusSpells} · ${src.expectedSpellsNote}`)
         });
       }
       continue;

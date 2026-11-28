@@ -379,6 +379,51 @@
                             <span class="pf2e-lp-slot-sub">Feat Lv {{this.feat.level}}</span>
                           </div>
                         </div>
+
+                        {{#if this.hasSubChoices}}
+                          <div class="pf2e-lp-subchoices">
+                            {{#each this.subChoices}}
+                              <div class="pf2e-lp-subchoice-row {{#if this.filled}}is-filled{{else}}is-empty{{/if}}">
+                                <span class="pf2e-lp-subchoice-prompt" title="{{this.prompt}}">
+                                  <i class="fa-solid fa-turn-up fa-rotate-90"></i> {{this.prompt}}
+                                </span>
+                                {{#if this.isFeatQuery}}
+                                  {{#if this.filled}}
+                                    <div class="pf2e-lp-subchoice-chosen">
+                                      <img src="{{this.selection.img}}" alt="" />
+                                      <a class="pf2e-lp-subchoice-name" data-lp-action="inspect-uuid" data-uuid="{{this.selection.uuid}}" title="Open granted feat sheet">{{this.selection.name}}</a>
+                                      {{#if ../../focusedLevel.canEditThisLevel}}
+                                        <button type="button" class="pf2e-lp-subchoice-btn" data-lp-action="pick-feat-choice" data-level="{{../../focusedLevel.level}}" data-slot-key="{{../slotKey}}" data-choice-flag="{{this.flag}}" title="Change planned granted feat">
+                                          <i class="fa-solid fa-pen"></i>
+                                        </button>
+                                        <button type="button" class="pf2e-lp-subchoice-btn is-del" data-lp-action="clear-feat-choice" data-level="{{../../focusedLevel.level}}" data-slot-key="{{../slotKey}}" data-choice-flag="{{this.flag}}" title="Clear granted feat choice">
+                                          <i class="fa-solid fa-xmark"></i>
+                                        </button>
+                                      {{/if}}
+                                    </div>
+                                  {{else}}
+                                    {{#if ../../focusedLevel.canEditThisLevel}}
+                                      <button type="button" class="pf2e-lp-btn pf2e-lp-btn-sm pf2e-lp-subchoice-pick" data-lp-action="pick-feat-choice" data-level="{{../../focusedLevel.level}}" data-slot-key="{{../slotKey}}" data-choice-flag="{{this.flag}}">
+                                        <i class="fa-solid fa-magnifying-glass"></i> Pick Granted Feat (Lv &le; {{this.maxLevel}})
+                                      </button>
+                                    {{/if}}
+                                  {{/if}}
+                                {{else if this.isSelect}}
+                                  {{#if ../../focusedLevel.canEditThisLevel}}
+                                    <select class="pf2e-lp-select pf2e-lp-subchoice-select" data-level="{{../../focusedLevel.level}}" data-slot-key="{{../slotKey}}" data-choice-flag="{{this.flag}}">
+                                      <option value="">-- {{this.prompt}} --</option>
+                                      {{#each this.options}}
+                                        <option value="{{this.value}}" {{#if this.selected}}selected{{/if}}>{{this.label}}</option>
+                                      {{/each}}
+                                    </select>
+                                  {{else if this.filled}}
+                                    <span class="pf2e-lp-subchoice-static">{{this.selection.name}}</span>
+                                  {{/if}}
+                                {{/if}}
+                              </div>
+                            {{/each}}
+                          </div>
+                        {{/if}}
                       {{else}}
                         <div class="pf2e-lp-slot-placeholder">
                           {{#if ../focusedLevel.canEditThisLevel}}

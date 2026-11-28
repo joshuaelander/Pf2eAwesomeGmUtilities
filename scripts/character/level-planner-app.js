@@ -26,6 +26,7 @@ import {
   buildLevelRoadmap,
   clearActorLevelPlan,
   clearPlannedFeat,
+  clearPlannedFeatChoice,
   computeMatchingArchetypeFeatUuids,
   embedLiveCoreItem,
   evaluateFeatPrerequisites,
@@ -40,12 +41,16 @@ import {
   inspectPlannedLevels,
   isLevelPlannerEnabled,
   isPlannerUpdatingActor,
+  matchesChoiceSetFeatFilter,
   openNativeBrowserForFeatSlot,
   openNativeBrowserForFormulas,
   openNativeBrowserForSpells,
   openNativePackForCoreBuild,
+  preloadPlannerProjectionData,
   revertActorToLevel,
-  updatePlannedLevelData
+  setPlannedFeatSnapshot,
+  updatePlannedLevelData,
+  warmPlannerItemMeta
 } from "./level-planner-engine.js";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -240,8 +245,9 @@ export function openQuickPickerDialog({
  * Shared Feat Quick Picker dialog (with prerequisite evaluation, sorting, `"Prereqs Met"` toggle,
  * and Free Archetype Dedication auto-default). Used by both Level Planner and Character Checker!
  */
-export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: rawPrereqState = null, onSelectFeat } = {}) {
+export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: rawPrereqState = null, choiceSetSpec = null, onSelectFeat } = {}) {
   const esc = foundry.utils.escapeHTML;
+  const isChoiceSetMode = Boolean(choiceSetSpec && choiceSetSpec.isFeatQuery);
   const slotDedications = Array.isArray(slot.dedications) ? slot.dedications : [];
   const hasDedications = slotDedications.length > 0;
   const dedShortNames = slotDedications.map(d => d.shortLabel).filter(Boolean).join(", ");
@@ -249,16 +255,23 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
     ? `My Archetypes (${dedShortNames})`
     : `My Archetype (${dedShortNames})`;
 
-  const defaultScope = slot.groupId === "archetype"
-    ? (hasDedications ? "my-archetypes" : "archetype-dedications")
-    : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot");
+  const effectiveMaxLevel = isChoiceSetMode
+    ? Math.max(0, Number(choiceSetSpec.maxLevel ?? slot.level ?? levelNum))
+    : Math.max(1, Number(slot.level ?? levelNum));
 
-  const defaultPrereqsOnly = slot.category === "skill" || slot.category === "general";
+  const defaultScope = isChoiceSetMode
+    ? "choiceset"
+    : (slot.groupId === "archetype"
+      ? (hasDedications ? "my-archetypes" : "archetype-dedications")
+      : (slot.groupId === "class" || slot.groupId === "dualclass" ? "class-only" : "slot"));
+
+  const defaultPrereqsOnly = isChoiceSetMode || slot.category === "skill" || slot.category === "general";
 
   // Build a clean prereq snapshot for this slot (excluding the feat currently sitting in THIS slot if replacing it)
   let prereqState = rawPrereqState;
-  if (prereqState && slot.feat?.name) {
-    const replacingName = String(slot.feat.name).trim().toLowerCase();
+  const replacingNameRaw = isChoiceSetMode ? choiceSetSpec.selection?.name : slot.feat?.name;
+  if (prereqState && replacingNameRaw) {
+    const replacingName = String(replacingNameRaw).trim().toLowerCase();
     const liveOwned = (actor.itemTypes?.feat || []).some(f => String(f.name || "").trim().toLowerCase() === replacingName);
     if (!liveOwned && prereqState.knownFeatNamesLower?.has?.(replacingName)) {
       const nextKnown = new Set(prereqState.knownFeatNamesLower);
@@ -274,7 +287,12 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
   const traitSummary = traitDisplayList.length > 0 ? ` (${traitDisplayList.join(", ")})` : "";
 
   let scopeOptionsHtml = "";
-  if (slot.groupId === "class" || slot.groupId === "dualclass") {
+  if (isChoiceSetMode) {
+    scopeOptionsHtml = `
+      <option value="choiceset" selected>Legal Choices (Lv ≤ ${effectiveMaxLevel})</option>
+      <option value="all">All Feats (Unfiltered)</option>
+    `;
+  } else if (slot.groupId === "class" || slot.groupId === "dualclass") {
     scopeOptionsHtml = `
       <option value="class-only" selected>Class Feats Only${esc(traitSummary)}</option>
       ${hasDedications ? `<option value="my-archetypes">${esc(myArchLabel)}</option>` : ""}
@@ -314,29 +332,37 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
   }
 
   const slotTraits = (slot.traits || []).map(normalizeSlug).filter(Boolean);
+  const dialogTitle = isChoiceSetMode
+    ? `${slot.feat?.name || slot.groupLabel}: ${choiceSetSpec.prompt} — Level ${levelNum}`
+    : `Pick ${slot.groupLabel} — Level ${levelNum}`;
+  const searchPlaceholder = isChoiceSetMode
+    ? `Search granted feats (Lv ≤ ${effectiveMaxLevel})...`
+    : `Search ${slot.groupLabel} (Lv ≤ ${effectiveMaxLevel})...`;
 
   openQuickPickerDialog({
-    title: `Pick ${slot.groupLabel} — Level ${levelNum}`,
+    title: dialogTitle,
     icon: "fa-solid fa-star",
     width: 680,
     closeAction: "close",
     closeLabel: "Close",
     closeIcon: "fa-solid fa-xmark",
     controlsHtml: `
-      <input type="text" class="pf2e-lp-picker-search" placeholder="Search ${esc(slot.groupLabel)} (Lv ≤ ${slot.level})..." autofocus />
+      <input type="text" class="pf2e-lp-picker-search" placeholder="${esc(searchPlaceholder)}" autofocus />
       <select class="pf2e-lp-picker-scope" title="Filter scope">${scopeOptionsHtml}</select>
-      <label class="pf2e-lp-picker-check" title="Show only feats whose skill, attribute, and feat prerequisites are met by your character sheet (and planned increases up to Level ${levelNum}). Uncheck to show all with unmet prereqs sorted to the bottom.">
+      <label class="pf2e-lp-picker-check" title="Show only feats whose skill, attribute, proficiency, and feat prerequisites are met by your character sheet (and planned increases/class features up to Level ${levelNum}). Uncheck to show all with unmet prereqs sorted to the bottom.">
         <input type="checkbox" class="pf2e-lp-picker-prereqs" ${defaultPrereqsOnly ? "checked" : ""} />
         <span>Prereqs Met</span>
       </label>
-      <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${slot.level}">
+      <label class="pf2e-lp-picker-check" title="Include feats higher than Level ${effectiveMaxLevel}">
         <input type="checkbox" class="pf2e-lp-picker-any-lvl" />
         <span>Any Lv</span>
       </label>
     `,
     loadingText: "Loading lightweight feat index...",
     changeSelectors: [".pf2e-lp-picker-scope", ".pf2e-lp-picker-prereqs", ".pf2e-lp-picker-any-lvl"],
-    onBrowse: () => openNativeBrowserForFeatSlot(slot),
+    onBrowse: isChoiceSetMode
+      ? () => openNativeBrowserForFeatSlot({ ...slot, level: effectiveMaxLevel, groupId: "general", category: "", traits: [] })
+      : () => openNativeBrowserForFeatSlot(slot),
     loadItems: async (root, ctx) => {
       const allFeats = await getLightweightFeatIndex();
       ctx.myArchetypeUuids = hasDedications ? computeMatchingArchetypeFeatUuids(allFeats, slotDedications) : new Set();
@@ -355,7 +381,7 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
       }
 
       const scopeSelect = root.querySelector(".pf2e-lp-picker-scope");
-      if (slot.groupId === "archetype" && scopeSelect) {
+      if (!isChoiceSetMode && slot.groupId === "archetype" && scopeSelect) {
         const hasEligibleOwnedAtLevel = hasDedications && allFeats.some(f =>
           ctx.myArchetypeUuids.has(f.uuid) && f.level <= slot.level
         );
@@ -375,10 +401,22 @@ export function openFeatQuickPickerDialog(actor, levelNum, slot, { prereqState: 
       let unmetCount = 0;
 
       for (const f of allFeats) {
-        if (!anyLvl && f.level > slot.level) continue;
+        if (!anyLvl && f.level > effectiveMaxLevel) continue;
         if (f.category === "classfeature" || f.category === "ancestryfeature") continue;
 
-        if (scope === "class-only") {
+        if (scope === "choiceset" && isChoiceSetMode) {
+          const filterToUse = anyLvl
+            ? (choiceSetSpec.filter || []).filter(stmt => {
+              if (typeof stmt === "string" && stmt.startsWith("item:level:")) return false;
+              if (stmt && typeof stmt === "object") {
+                const pair = stmt.lte || stmt.lt || stmt.eq;
+                if (Array.isArray(pair) && pair[0] === "item:level") return false;
+              }
+              return true;
+            })
+            : (choiceSetSpec.filter || []);
+          if (!matchesChoiceSetFeatFilter(f, filterToUse, { actor, slotLevel: levelNum })) continue;
+        } else if (scope === "class-only") {
           if (f.category !== "class") continue;
           if (slotTraits.length > 0 && !slotTraits.some(t => f.traits.includes(t))) continue;
         } else if (scope === "class-and-archetype") {
@@ -695,6 +733,9 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     const selectedActor = this._selectedActorId ? game.actors?.get(this._selectedActorId) : null;
+    if (selectedActor) {
+      await preloadPlannerProjectionData(selectedActor);
+    }
     const roadmap = selectedActor ? buildLevelRoadmap(selectedActor) : null;
     const canEdit = Boolean(selectedActor && (isGM || selectedActor.isOwner));
 
@@ -831,12 +872,17 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
               ? (l.skillIncreaseInfo?.chosenTransition || "Choose Skill")
               : "Live Sheet")
             : "—",
-          featsSummary: l.featSlots.map(s => ({
-            slotLabel: s.groupLabel,
-            featName: s.feat?.name || null,
-            filled: s.filled,
-            hasWarnings: s.hasWarnings
-          })),
+          featsSummary: l.featSlots.map(s => {
+            const subNames = (s.subChoices || []).filter(c => c.filled && c.selection?.name).map(c => c.selection.name);
+            return {
+              slotLabel: s.groupLabel,
+              featName: s.feat?.name
+                ? (subNames.length > 0 ? `${s.feat.name} → ${subNames.join(", ")}` : s.feat.name)
+                : null,
+              filled: s.filled,
+              hasWarnings: s.hasWarnings
+            };
+          }),
           plannedSpellsCount: l.plannedSpells.length,
           autoSpellsText: l.hasAutoGrantedSpells
             ? `Auto: ${l.autoGrantedSpells.map(s => s.name).join(", ")}`
@@ -849,16 +895,31 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       for (const l of roadmap.levels) {
         for (const s of l.featSlots) {
           if (!s.feat) continue;
+          const subSummary = (s.subChoices || []).filter(c => c.filled && c.selection?.name && !c.selection?.isFeat).map(c => c.selection.name);
           summaryFeats.push({
             level: l.level,
             isFuture: l.isFuture,
             groupLabel: s.groupLabel,
-            name: s.feat.name,
+            name: subSummary.length > 0 ? `${s.feat.name} (${subSummary.join(", ")})` : s.feat.name,
             uuid: s.feat.uuid,
             img: s.feat.img || "systems/pf2e/icons/default-icons/feat.svg",
             hasWarnings: Boolean(s.hasWarnings),
             warningText: (s.warnings || []).join("; ")
           });
+          for (const sc of s.subChoices || []) {
+            if (sc.filled && sc.selection?.isFeat && sc.selection?.name) {
+              summaryFeats.push({
+                level: l.level,
+                isFuture: l.isFuture,
+                groupLabel: `↳ ${s.feat.name}`,
+                name: sc.selection.name,
+                uuid: sc.selection.uuid,
+                img: sc.selection.img || "systems/pf2e/icons/default-icons/feat.svg",
+                hasWarnings: false,
+                warningText: ""
+              });
+            }
+          }
         }
       }
 
@@ -1044,6 +1105,49 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
     }
 
+    // 4B. Planned Feat Sub-Choice Dropdowns (e.g. Skill Training, Canny Acumen, static ChoiceSets)
+    container.querySelectorAll(".pf2e-lp-subchoice-select").forEach(sel => {
+      sel.addEventListener("change", async (e) => {
+        const actor = this._getSelectedActor();
+        if (!actor) return;
+        const levelNum = Number(e.target.dataset.level || this._selectedLevel);
+        const slotKey = e.target.dataset.slotKey;
+        const choiceFlag = e.target.dataset.choiceFlag;
+        const val = String(e.target.value || "");
+        if (!levelNum || !slotKey || !choiceFlag) return;
+
+        if (!val) {
+          await clearPlannedFeatChoice(actor, levelNum, slotKey, choiceFlag);
+          this.render({ force: false });
+          return;
+        }
+
+        const optEl = e.target.selectedOptions?.[0];
+        const label = String(optEl?.textContent || val).trim();
+        const isUuid = /^(?:Compendium\.[^.]+\.[^.]+\.|Item\.)/i.test(val);
+        let featSnap = null;
+        if (isUuid) {
+          featSnap = await warmPlannerItemMeta(val);
+        }
+
+        await updatePlannedLevelData(actor, levelNum, (entry) => {
+          const fObj = entry.feats?.[slotKey];
+          if (!fObj) return;
+          if (!fObj.choices || typeof fObj.choices !== "object") fObj.choices = {};
+          fObj.choices[choiceFlag] = {
+            value: val,
+            name: featSnap?.name || label,
+            img: featSnap?.img || "systems/pf2e/icons/default-icons/feat.svg",
+            level: featSnap?.level ?? null,
+            isFeat: Boolean(isUuid),
+            isDedication: Boolean(featSnap?.traits?.includes("dedication") || /\bdedication\b/i.test(featSnap?.name || "")),
+            prerequisites: []
+          };
+        });
+        this.render({ force: false });
+      });
+    });
+
     // 5. Native Drag & Drop for Future Feat Slots, Spells, and Alchemist Formulas
     const bindDropZones = (selector, onDropFn) => {
       container.querySelectorAll(selector).forEach(zone => {
@@ -1171,6 +1275,34 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const slotKey = el.dataset.slotKey;
         if (!levelNum || !slotKey) return;
         await clearPlannedFeat(actor, levelNum, slotKey);
+        this.render({ force: false });
+        break;
+      }
+
+      case "pick-feat-choice": {
+        if (!actor) return;
+        const levelNum = Number(el.dataset.level);
+        const slotKey = el.dataset.slotKey;
+        const choiceFlag = el.dataset.choiceFlag;
+        if (!levelNum || !slotKey || !choiceFlag) return;
+        await preloadPlannerProjectionData(actor);
+        const roadmap = buildLevelRoadmap(actor);
+        const lvlRow = roadmap?.levels?.find(l => l.level === levelNum);
+        const slot = lvlRow?.featSlots?.find(s => s.slotKey === slotKey);
+        const spec = slot?.subChoices?.find(c => c.flag === choiceFlag);
+        if (slot && spec?.isFeatQuery) {
+          await this._openFeatChoiceQuickPicker(actor, levelNum, slot, spec, lvlRow?.prereqState || null);
+        }
+        break;
+      }
+
+      case "clear-feat-choice": {
+        if (!actor) return;
+        const levelNum = Number(el.dataset.level);
+        const slotKey = el.dataset.slotKey;
+        const choiceFlag = el.dataset.choiceFlag;
+        if (!levelNum || !slotKey || !choiceFlag) return;
+        await clearPlannedFeatChoice(actor, levelNum, slotKey, choiceFlag);
         this.render({ force: false });
         break;
       }
@@ -1347,9 +1479,8 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
       prerequisites: (doc.system?.prerequisites?.value || []).map(p => p?.value || p).filter(Boolean)
     };
 
-    await updatePlannedLevelData(actor, levelNum, (entry) => {
-      entry.feats[slotKey] = snapshot;
-    });
+    await setPlannedFeatSnapshot(actor, levelNum, slotKey, snapshot);
+    await warmPlannerItemMeta(doc.uuid);
 
     ui.notifications?.info(`Planned "${doc.name}" for Level ${levelNum} (${slotLabel}).`);
     this.render({ force: false });
@@ -1437,18 +1568,45 @@ export class LevelPlannerApp extends HandlebarsApplicationMixin(ApplicationV2) {
     return openFeatQuickPickerDialog(actor, levelNum, slot, {
       prereqState: rawPrereqState,
       onSelectFeat: async (chosen, { dialog }) => {
+        const snapshot = {
+          uuid: chosen.uuid,
+          name: chosen.name,
+          img: chosen.img,
+          level: chosen.level,
+          category: chosen.category,
+          isDedication: Boolean(chosen.traits?.includes("dedication") || /\bdedication\b/i.test(chosen.name || "")),
+          prerequisites: chosen.prerequisites || []
+        };
+        await setPlannedFeatSnapshot(actor, levelNum, slot.slotKey, snapshot);
+        await warmPlannerItemMeta(chosen.uuid);
+        ui.notifications?.info(`Planned "${chosen.name}" for Level ${levelNum} (${slot.groupLabel}).`);
+        dialog.close();
+        this.render({ force: false });
+      }
+    });
+  }
+
+  async _openFeatChoiceQuickPicker(actor, levelNum, slot, choiceSetSpec, rawPrereqState = null) {
+    return openFeatQuickPickerDialog(actor, levelNum, slot, {
+      prereqState: rawPrereqState,
+      choiceSetSpec,
+      onSelectFeat: async (chosen, { dialog }) => {
         await updatePlannedLevelData(actor, levelNum, (entry) => {
-          entry.feats[slot.slotKey] = {
-            uuid: chosen.uuid,
+          const fObj = entry.feats?.[slot.slotKey];
+          if (!fObj) return;
+          if (!fObj.choices || typeof fObj.choices !== "object") fObj.choices = {};
+          fObj.choices[choiceSetSpec.flag] = {
+            value: chosen.uuid,
             name: chosen.name,
             img: chosen.img,
             level: chosen.level,
-            category: chosen.category,
+            isFeat: true,
             isDedication: Boolean(chosen.traits?.includes("dedication") || /\bdedication\b/i.test(chosen.name || "")),
             prerequisites: chosen.prerequisites || []
           };
         });
-        ui.notifications?.info(`Planned "${chosen.name}" for Level ${levelNum} (${slot.groupLabel}).`);
+        await warmPlannerItemMeta(chosen.uuid);
+        ui.notifications?.info(`Planned "${chosen.name}" for ${slot.feat?.name || slot.groupLabel} (Level ${levelNum}).`);
         dialog.close();
         this.render({ force: false });
       }
@@ -2231,6 +2389,7 @@ export function registerSheetLevelUpPrompt(onOpenLevelPlannerForActor) {
         const targetLevels = [];
         for (let l = prevLevel + 1; l <= newLevel; l++) targetLevels.push(l);
 
+        await preloadPlannerProjectionData(actor, { effectiveCurrentLevel: prevLevel });
         const inspection = inspectPlannedLevels(actor, targetLevels, { effectiveCurrentLevel: prevLevel });
         if (!inspection || inspection.levels.length === 0) return;
 
